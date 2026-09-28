@@ -3568,6 +3568,7 @@ dependencies = [
  "serde_yaml",
  "sys-locale",
  "tempfile",
+ "toml 0.8.23",
  "walkdir",
  "winresource",
 ]

@@ -2856,23 +2856,23 @@ fn codex_plugin_roots(codex_home: &Path) -> Vec<SkillRoot> {
 }
 
 fn enabled_plugin_ids(config: &str) -> Vec<String> {
-    let mut current = None;
-    let mut enabled = Vec::new();
-    for raw_line in config.lines() {
-        let line = raw_line.trim();
-        if let Some(value) = line
-            .strip_prefix("[plugins.\"")
-            .and_then(|value| value.strip_suffix("\"]"))
-        {
-            current = Some(value.to_string());
-        } else if line.starts_with('[') {
-            current = None;
-        } else if line == "enabled = true" {
-            if let Some(id) = current.take() {
-                enabled.push(id);
-            }
-        }
-    }
+    let Ok(config) = toml::from_str::<toml::Value>(config) else {
+        return Vec::new();
+    };
+    let Some(plugins) = config.get("plugins").and_then(toml::Value::as_table) else {
+        return Vec::new();
+    };
+    let mut enabled = plugins
+        .iter()
+        .filter_map(|(id, plugin)| {
+            plugin
+                .get("enabled")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true)
+                .then(|| id.clone())
+        })
+        .collect::<Vec<_>>();
+    enabled.sort();
     enabled
 }
 
@@ -3422,6 +3422,11 @@ mod tests {
         );
         fs::write(temp.path().join("config.toml"), config.clone()).unwrap();
         assert_eq!(enabled_plugin_ids(&config), vec!["on@market"]);
+        let dotted_config = "[plugins]\n\
+             \"on@market\".enabled = true\n\
+             \"off@market\".enabled = false\n";
+        assert_eq!(enabled_plugin_ids(dotted_config), vec!["on@market"]);
+        assert!(enabled_plugin_ids("[plugins\ninvalid").is_empty());
         assert!(
             codex_disabled_skills(temp.path(), temp.path())
                 .contains(&fs::canonicalize(&skill).unwrap())
