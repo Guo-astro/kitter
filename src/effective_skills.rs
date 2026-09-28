@@ -2822,6 +2822,140 @@ fn plugin_display_fallback(plugin_id: &str) -> &str {
         .unwrap_or(plugin_id)
 }
 
+const AGENT_PLUGIN_MANIFEST: &str = "plugin.json";
+const AGENT_PLUGIN_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const AGENT_PLUGIN_SCHEMA_PREFIX: &str = "https://agent-plugins.org/schemas/";
+const CODEX_LEGACY_PLUGIN_MANIFESTS: &[&str] = &[
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CodexPluginManifestFormat {
+    AgentPlugin,
+    Legacy,
+}
+
+fn codex_plugin_manifest(plugin_root: &Path) -> Option<(&'static str, CodexPluginManifestFormat)> {
+    let agent_manifest = plugin_root.join(AGENT_PLUGIN_MANIFEST);
+    match fs::symlink_metadata(&agent_manifest) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.file_type().is_file() => {
+            return None;
+        }
+        Ok(_) => {
+            if let Ok(content) = fs::read_to_string(&agent_manifest)
+                && let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&content)
+                && let Some(schema) = manifest.get("$schema").and_then(|value| value.as_str())
+            {
+                if schema == AGENT_PLUGIN_SCHEMA {
+                    return Some((
+                        AGENT_PLUGIN_MANIFEST,
+                        CodexPluginManifestFormat::AgentPlugin,
+                    ));
+                }
+                if schema.starts_with(AGENT_PLUGIN_SCHEMA_PREFIX) {
+                    return None;
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return None,
+    }
+
+    for relative_path in CODEX_LEGACY_PLUGIN_MANIFESTS {
+        let manifest = plugin_root.join(relative_path);
+        let parent = manifest.parent()?;
+        match fs::symlink_metadata(parent) {
+            Ok(metadata) if !metadata.file_type().is_dir() => return None,
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return None,
+        }
+        match fs::symlink_metadata(&manifest) {
+            Ok(metadata) if metadata.file_type().is_file() => {
+                return Some((relative_path, CodexPluginManifestFormat::Legacy));
+            }
+            Ok(_) => return None,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+fn codex_agent_plugin_display_name(
+    plugin_root: &Path,
+    manifest: &serde_json::Value,
+    fallback: &str,
+) -> String {
+    let inline_extension = manifest.pointer("/extensions/com.openai");
+    let inline_display_name = inline_extension
+        .and_then(|extension| extension.pointer("/interface/displayName"))
+        .and_then(serde_json::Value::as_str);
+    let overlay_display_name = inline_extension.is_none().then(|| {
+        fs::read_to_string(plugin_root.join(".codex-plugin/plugin.json"))
+            .ok()
+            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+            .and_then(|overlay| {
+                overlay
+                    .pointer("/interface/displayName")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
+    });
+    inline_display_name
+        .map(str::to_string)
+        .or_else(|| overlay_display_name.flatten())
+        .or_else(|| {
+            manifest
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn codex_plugin_skill_roots(
+    plugin_root: &Path,
+    plugin_id: &str,
+    fallback_display_name: &str,
+) -> Vec<SkillRoot> {
+    let Some((manifest_relative_path, format)) = codex_plugin_manifest(plugin_root) else {
+        return Vec::new();
+    };
+    match format {
+        CodexPluginManifestFormat::AgentPlugin => {
+            let Ok(content) = fs::read_to_string(plugin_root.join(manifest_relative_path)) else {
+                return Vec::new();
+            };
+            let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&content) else {
+                return Vec::new();
+            };
+            let display_name =
+                codex_agent_plugin_display_name(plugin_root, &manifest, fallback_display_name);
+            vec![
+                SkillRoot::plugin(
+                    plugin_root.join("skills"),
+                    SkillScope::System,
+                    plugin_id,
+                    display_name,
+                )
+                .direct_children(),
+            ]
+        }
+        CodexPluginManifestFormat::Legacy => plugin_skill_roots(
+            plugin_root,
+            manifest_relative_path,
+            plugin_id,
+            "skills",
+            SkillScope::System,
+            fallback_display_name,
+        ),
+    }
+}
+
 fn codex_plugin_roots(codex_home: &Path) -> Vec<SkillRoot> {
     let Ok(config) = fs::read_to_string(codex_home.join("config.toml")) else {
         return Vec::new();
@@ -2840,18 +2974,10 @@ fn codex_plugin_roots(codex_home: &Path) -> Vec<SkillRoot> {
                 .filter(|entry| entry.path().is_dir())
                 .max_by_key(|entry| entry.file_name())?;
             let plugin_root = version.path();
-            let display_name = plugin_display_fallback(&plugin);
-            Some(plugin_skill_roots(
-                &plugin_root,
-                ".codex-plugin/plugin.json",
-                &id,
-                "skills",
-                SkillScope::System,
-                display_name,
-            ))
+            let display_name = plugin_display_fallback(plugin);
+            Some(codex_plugin_skill_roots(&plugin_root, &id, display_name))
         })
         .flatten()
-        .map(SkillRoot::direct_children)
         .collect()
 }
 
@@ -2864,13 +2990,15 @@ fn enabled_plugin_ids(config: &str) -> Vec<String> {
     };
     let mut enabled = plugins
         .iter()
-        .filter_map(|(id, plugin)| {
-            plugin
-                .get("enabled")
-                .and_then(toml::Value::as_bool)
-                .unwrap_or(true)
-                .then(|| id.clone())
+        .filter(|(_, plugin)| {
+            plugin.as_table().is_some_and(|plugin| {
+                plugin
+                    .get("enabled")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(true)
+            })
         })
+        .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
     enabled.sort();
     enabled
@@ -3427,6 +3555,7 @@ mod tests {
              \"off@market\".enabled = false\n";
         assert_eq!(enabled_plugin_ids(dotted_config), vec!["on@market"]);
         assert!(enabled_plugin_ids("[plugins\ninvalid").is_empty());
+        assert!(enabled_plugin_ids("[plugins]\ninvalid = true").is_empty());
         assert!(
             codex_disabled_skills(temp.path(), temp.path())
                 .contains(&fs::canonicalize(&skill).unwrap())
@@ -3661,6 +3790,188 @@ mod tests {
                 display_name: "Deployer".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn codex_plugin_manifest_formats_control_skill_discovery() {
+        let temp = tempdir().unwrap();
+        let home = temp.path().join("home");
+        let codex_home = home.join(".codex");
+        let cache = codex_home.join("plugins/cache/market");
+        let plugin_root = |name: &str| cache.join(name).join("1.0.0");
+        fs::create_dir_all(&codex_home).unwrap();
+        fs::write(
+            codex_home.join("config.toml"),
+            [
+                "portable",
+                "codex-legacy",
+                "claude-legacy",
+                "cursor-legacy",
+                "portable-precedence",
+                "legacy-precedence",
+                "unrelated-root",
+                "unsupported-root",
+            ]
+            .into_iter()
+            .map(|name| format!("[plugins.\"{name}@market\"]\nenabled = true\n"))
+            .collect::<String>(),
+        )
+        .unwrap();
+
+        let portable = plugin_root("portable");
+        fs::create_dir_all(&portable).unwrap();
+        fs::write(
+            portable.join("plugin.json"),
+            format!(
+                r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA}","name":"portable","extensions":{{"com.openai":{{"interface":{{"displayName":"Portable Tools"}}}}}}}}"#
+            ),
+        )
+        .unwrap();
+        write_skill(&portable.join("skills"), "portable-direct", "");
+        write_skill(&portable.join("skills/category"), "portable-nested", "");
+
+        for (plugin, manifest) in [
+            ("codex-legacy", ".codex-plugin/plugin.json"),
+            ("claude-legacy", ".claude-plugin/plugin.json"),
+            ("cursor-legacy", ".cursor-plugin/plugin.json"),
+        ] {
+            let root = plugin_root(plugin);
+            fs::create_dir_all(root.join(Path::new(manifest).parent().unwrap())).unwrap();
+            fs::write(root.join(manifest), format!(r#"{{"name":"{plugin}"}}"#)).unwrap();
+            write_skill(
+                &root.join("skills/category"),
+                &format!("{plugin}-nested"),
+                "",
+            );
+        }
+
+        let portable_precedence = plugin_root("portable-precedence");
+        fs::create_dir_all(portable_precedence.join(".codex-plugin")).unwrap();
+        fs::write(
+            portable_precedence.join("plugin.json"),
+            format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA}","name":"portable-precedence"}}"#),
+        )
+        .unwrap();
+        fs::write(
+            portable_precedence.join(".codex-plugin/plugin.json"),
+            r#"{"name":"legacy-decoy","skills":"legacy-skills"}"#,
+        )
+        .unwrap();
+        write_skill(
+            &portable_precedence.join("skills"),
+            "portable-precedence-direct",
+            "",
+        );
+        write_skill(
+            &portable_precedence.join("legacy-skills"),
+            "portable-precedence-decoy",
+            "",
+        );
+
+        let legacy_precedence = plugin_root("legacy-precedence");
+        fs::create_dir_all(legacy_precedence.join(".codex-plugin")).unwrap();
+        fs::create_dir_all(legacy_precedence.join(".claude-plugin")).unwrap();
+        fs::write(
+            legacy_precedence.join(".codex-plugin/plugin.json"),
+            r#"{"name":"codex-first","skills":"codex-skills"}"#,
+        )
+        .unwrap();
+        fs::write(
+            legacy_precedence.join(".claude-plugin/plugin.json"),
+            r#"{"name":"claude-second","skills":"claude-skills"}"#,
+        )
+        .unwrap();
+        write_skill(
+            &legacy_precedence.join("codex-skills/category"),
+            "legacy-precedence-codex",
+            "",
+        );
+        write_skill(
+            &legacy_precedence.join("claude-skills/category"),
+            "legacy-precedence-claude",
+            "",
+        );
+
+        let unrelated_root = plugin_root("unrelated-root");
+        fs::create_dir_all(unrelated_root.join(".claude-plugin")).unwrap();
+        fs::write(
+            unrelated_root.join("plugin.json"),
+            r#"{"name":"unrelated-package"}"#,
+        )
+        .unwrap();
+        fs::write(
+            unrelated_root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"unrelated-root"}"#,
+        )
+        .unwrap();
+        write_skill(
+            &unrelated_root.join("skills/category"),
+            "unrelated-root-legacy",
+            "",
+        );
+
+        let unsupported_root = plugin_root("unsupported-root");
+        fs::create_dir_all(unsupported_root.join(".codex-plugin")).unwrap();
+        fs::write(
+            unsupported_root.join("plugin.json"),
+            r#"{"$schema":"https://agent-plugins.org/schemas/2.0.0/plugin.schema.json","name":"unsupported"}"#,
+        )
+        .unwrap();
+        fs::write(
+            unsupported_root.join(".codex-plugin/plugin.json"),
+            r#"{"name":"unsupported-fallback"}"#,
+        )
+        .unwrap();
+        write_skill(
+            &unsupported_root.join("skills/category"),
+            "unsupported-root-decoy",
+            "",
+        );
+
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        let context = DiscoveryContext {
+            cwd: repo.clone(),
+            home,
+            repository_root: Some(repo),
+        };
+        let estimate = estimate_with_policy(&CodexPolicy, &context);
+        let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
+        let names = plugin_skills
+            .iter()
+            .map(|skill| skill.name.as_str())
+            .collect::<HashSet<_>>();
+
+        for expected in [
+            "portable-direct",
+            "codex-legacy-nested",
+            "claude-legacy-nested",
+            "cursor-legacy-nested",
+            "portable-precedence-direct",
+            "legacy-precedence-codex",
+            "unrelated-root-legacy",
+        ] {
+            assert!(names.contains(expected), "missing {expected}: {names:?}");
+        }
+        for excluded in [
+            "portable-nested",
+            "portable-precedence-decoy",
+            "legacy-precedence-claude",
+            "unsupported-root-decoy",
+        ] {
+            assert!(
+                !names.contains(excluded),
+                "unexpected {excluded}: {names:?}"
+            );
+        }
+        assert!(plugin_skills.iter().any(|skill| {
+            skill.name == "portable-direct"
+                && skill.source
+                    == (SkillSource::Plugin {
+                        id: "portable@market".to_string(),
+                        display_name: "Portable Tools".to_string(),
+                    })
+        }));
     }
 
     #[test]
