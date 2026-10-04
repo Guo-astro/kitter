@@ -266,6 +266,7 @@ enum TargetArg {
     Cursor,
     Opencode,
     Pi,
+    Omp,
     Grok,
     Antigravity,
     Droid,
@@ -281,6 +282,7 @@ impl From<TargetArg> for InstallTarget {
             TargetArg::Cursor => Self::Cursor,
             TargetArg::Opencode => Self::OpenCode,
             TargetArg::Pi => Self::Pi,
+            TargetArg::Omp => Self::Omp,
             TargetArg::Grok => Self::Grok,
             TargetArg::Antigravity => Self::Antigravity,
             TargetArg::Droid => Self::Droid,
@@ -291,6 +293,7 @@ impl From<TargetArg> for InstallTarget {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum AgentArg {
+    Dimagent,
     Codex,
     Claude,
     Cursor,
@@ -300,6 +303,7 @@ enum AgentArg {
     Amp,
     Droid,
     Pi,
+    Omp,
     Grok,
     Openclaw,
     Hermes,
@@ -317,6 +321,8 @@ impl From<AgentArg> for AgentKind {
             AgentArg::Amp => Self::Amp,
             AgentArg::Droid => Self::Droid,
             AgentArg::Pi => Self::Pi,
+            AgentArg::Omp => Self::Omp,
+            AgentArg::Dimagent => Self::DimAgent,
             AgentArg::Grok => Self::Grok,
             AgentArg::Openclaw => Self::OpenClaw,
             AgentArg::Hermes => Self::Hermes,

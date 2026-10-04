@@ -198,6 +198,7 @@ pub enum InstallTarget {
     Cursor,
     OpenCode,
     Pi,
+    Omp,
     Grok,
     Antigravity,
     Droid,

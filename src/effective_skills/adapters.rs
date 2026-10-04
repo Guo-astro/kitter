@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use super::additional_agents::{DimAgentAdapter, OmpAdapter};
 use super::scanner::ScanProfile;
 use super::{
     AgentContextEstimate, AmpPolicy, AntigravityPolicy, ClaudeCodeAdapter, CodexAdapter,
@@ -63,6 +64,35 @@ impl AgentAdapter for PiAdapter {
             ScanProfile::PiIgnored,
             MetadataProfile::StrictFrontmatter,
         )
+    }
+}
+
+impl AgentAdapter for OmpAdapter {
+    fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate {
+        let skills = discover(
+            self,
+            context,
+            ScanProfile::ProviderChildren,
+            MetadataProfile::ProviderFrontmatter,
+        );
+        estimate_skills(
+            self,
+            super::additional_agents::resolve_omp_collisions(skills, context),
+        )
+    }
+}
+
+impl AgentAdapter for DimAgentAdapter {
+    fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate {
+        let mut skills = discover(
+            self,
+            context,
+            ScanProfile::DimRecursive,
+            MetadataProfile::StrictFrontmatter,
+        );
+        // Apply disabled IDs after resolving name shadowing, as DimAgent does.
+        skills.retain(|skill| skill.visibility != super::SkillVisibility::ManualOnly);
+        estimate_skills(self, skills)
     }
 }
 
@@ -150,7 +180,7 @@ pub(super) fn inspect_project(
     context: &DiscoveryContext,
     include_global_only: bool,
 ) -> Vec<AgentContextEstimate> {
-    let adapters: [&dyn AgentAdapter; 10] = [
+    let adapters: [&dyn AgentAdapter; 12] = [
         &CodexAdapter,
         &ClaudeCodeAdapter,
         &CursorAdapter,
@@ -160,6 +190,8 @@ pub(super) fn inspect_project(
         &AmpAdapter,
         &DroidAdapter,
         &PiAdapter,
+        &OmpAdapter,
+        &DimAgentAdapter,
         &GrokAdapter,
     ];
     let mut estimates = adapters

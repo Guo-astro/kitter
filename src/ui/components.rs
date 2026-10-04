@@ -57,6 +57,8 @@ impl KitterApp {
                 | "icons/provider-amp.svg"
                 | "icons/provider-antigravity.svg"
                 | "icons/provider-trae.svg"
+                | "icons/provider-omp.svg"
+                | "icons/provider-dimagent.svg"
         )
     }
 
@@ -68,6 +70,8 @@ impl KitterApp {
             "icons/provider-amp.svg" => &AMP_COLOR_IMAGE,
             "icons/provider-antigravity.svg" => &ANTIGRAVITY_COLOR_IMAGE,
             "icons/provider-trae.svg" => &TRAE_COLOR_IMAGE,
+            "icons/provider-omp.svg" => &OMP_COLOR_IMAGE,
+            "icons/provider-dimagent.svg" => &DIMAGENT_COLOR_IMAGE,
             _ => unreachable!("color_brand_icon called for a monochrome icon"),
         };
         img(ImageSource::Custom(Arc::new(move |_, cx| {

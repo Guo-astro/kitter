@@ -159,7 +159,7 @@ kitter install <skill> \
   --target codex
 ```
 
-Available targets include `universal`, `codex`, `claude`, `cursor`, `opencode`, `pi`, `grok`, `antigravity`, `droid`, and `copilot`. Repeat `--target` to install into several targets in one operation.
+Available targets include `universal`, `codex`, `claude`, `cursor`, `opencode`, `pi`, `omp`, `grok`, `antigravity`, `droid`, and `copilot`. Repeat `--target` to install into several targets in one operation. Use `universal` for DimAgent; omp supports both `universal` and `omp`.
 
 ## Common workflows
 

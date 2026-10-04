@@ -7,6 +7,14 @@ pub struct Assets;
 
 const ICONS: &[(&str, &[u8])] = &[
     (
+        "icons/provider-omp.svg",
+        include_bytes!("../assets/icons/provider-omp.svg"),
+    ),
+    (
+        "icons/provider-dimagent.svg",
+        include_bytes!("../assets/icons/provider-dimagent.svg"),
+    ),
+    (
         "icons/sparkle.svg",
         include_bytes!("../assets/icons/sparkle.svg"),
     ),

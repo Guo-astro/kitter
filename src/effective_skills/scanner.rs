@@ -7,6 +7,8 @@ use super::SkillRoot;
 #[derive(Clone, Copy)]
 pub(super) enum ScanProfile {
     DirectChildren,
+    ProviderChildren,
+    DimRecursive,
     Recursive {
         max_depth: usize,
         max_directories: usize,
@@ -28,16 +30,21 @@ pub(super) fn scan(root: &SkillRoot, profile: ScanProfile) -> Vec<PathBuf> {
     if root.flat_markdown_only {
         return flat_markdown(root);
     }
+    if matches!(profile, ScanProfile::ProviderChildren) {
+        return provider_children(root);
+    }
     if root.direct_children_only {
         return direct_children(root);
     }
     let mut files = match profile {
         ScanProfile::DirectChildren => direct_children(root),
+        ScanProfile::ProviderChildren => provider_children(root),
         ScanProfile::Recursive {
             max_depth,
             max_directories,
             max_entries,
-        } => recursive(root, max_depth, max_directories, max_entries),
+        } => recursive(root, max_depth, max_directories, max_entries, true, false),
+        ScanProfile::DimRecursive => recursive(root, 11, 2_000, 20_000, false, true),
         ScanProfile::PiIgnored => pi_ignored(root),
     };
     files.sort();
@@ -55,6 +62,20 @@ fn flat_markdown(root: &SkillRoot) -> Vec<PathBuf> {
         .filter(|path| {
             path.is_file() && path.extension().is_some_and(|extension| extension == "md")
         })
+        .collect::<Vec<_>>();
+    files.sort();
+    files
+}
+
+fn provider_children(root: &SkillRoot) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(&root.path) else {
+        return Vec::new();
+    };
+    let mut files = entries
+        .flatten()
+        .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+        .map(|entry| entry.path().join("SKILL.md"))
+        .filter(|path| path.is_file())
         .collect::<Vec<_>>();
     files.sort();
     files
@@ -91,6 +112,8 @@ fn recursive(
     max_depth: usize,
     max_directories: usize,
     max_entries: usize,
+    include_root_manifest: bool,
+    include_hidden: bool,
 ) -> Vec<PathBuf> {
     let mut result = Vec::new();
     let mut stack = vec![(root.path.clone(), 0usize)];
@@ -107,7 +130,7 @@ fn recursive(
         }
         directories += 1;
         let manifest = directory.join("SKILL.md");
-        if manifest.is_file() {
+        if (depth > 0 || include_root_manifest) && manifest.is_file() {
             result.push(manifest);
             continue;
         }
@@ -126,7 +149,7 @@ fn recursive(
             }
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.starts_with('.') || name == "node_modules" {
+            if !include_hidden && (name.starts_with('.') || name == "node_modules") {
                 continue;
             }
             let path = entry.path();

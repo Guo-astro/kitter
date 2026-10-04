@@ -12,6 +12,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 mod adapters;
+mod additional_agents;
 mod catalog;
 mod scanner;
 
@@ -27,6 +28,8 @@ pub enum AgentKind {
     Amp,
     Droid,
     Pi,
+    Omp,
+    DimAgent,
     Grok,
     OpenClaw,
     Hermes,
@@ -44,6 +47,8 @@ impl AgentKind {
             Self::Amp => "amp",
             Self::Droid => "droid",
             Self::Pi => "pi",
+            Self::Omp => "omp",
+            Self::DimAgent => "dimagent",
             Self::Grok => "grok",
             Self::OpenClaw => "openclaw",
             Self::Hermes => "hermes",
@@ -61,6 +66,8 @@ impl AgentKind {
             Self::Amp => "Amp",
             Self::Droid => "Droid",
             Self::Pi => "Pi",
+            Self::Omp => "omp",
+            Self::DimAgent => "DimAgent",
             Self::Grok => "Grok",
             Self::OpenClaw => "OpenClaw",
             Self::Hermes => "Hermes",
@@ -503,6 +510,7 @@ pub fn estimate_project_with_home(project: &Path, home: &Path) -> Vec<AgentConte
 enum MetadataProfile {
     StrictFrontmatter,
     BodyFallback,
+    ProviderFrontmatter,
 }
 
 fn estimate_with_policy(
@@ -3113,9 +3121,13 @@ fn read_metadata_with_profile(path: &Path, profile: MetadataProfile) -> Option<S
             .name
             .filter(|s| !s.trim().is_empty())
             .unwrap_or(fallback),
-        description: parsed
-            .description
-            .unwrap_or_else(|| first_body_paragraph(&content)),
+        description: parsed.description.unwrap_or_else(|| {
+            if matches!(profile, MetadataProfile::ProviderFrontmatter) {
+                String::new()
+            } else {
+                first_body_paragraph(&content)
+            }
+        }),
         has_explicit_description,
         when_to_use: parsed.when_to_use,
         source_path: path.to_path_buf(),
@@ -4056,7 +4068,13 @@ mod tests {
         write_skill(&home.join(".agents/skills"), "user-skill", "");
 
         let estimates = estimate_project_with_home(&home, &home);
-        for agent in [AgentKind::Codex, AgentKind::OpenCode, AgentKind::Pi] {
+        for agent in [
+            AgentKind::Codex,
+            AgentKind::OpenCode,
+            AgentKind::Pi,
+            AgentKind::Omp,
+            AgentKind::DimAgent,
+        ] {
             let estimate = estimates.iter().find(|item| item.agent == agent).unwrap();
             assert!(
                 estimate

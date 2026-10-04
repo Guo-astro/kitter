@@ -19,6 +19,7 @@ pub fn global_target_root(home: &Path, target: InstallTarget) -> PathBuf {
             })
             .unwrap_or_else(|| home.join(".pi/agent"))
             .join("skills"),
+        InstallTarget::Omp => omp_agent_dir(home).join("skills"),
         InstallTarget::OpenCode => std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join(".config"))
@@ -27,6 +28,37 @@ pub fn global_target_root(home: &Path, target: InstallTarget) -> PathBuf {
         InstallTarget::Copilot => home.join(".copilot/skills"),
         _ => home.join(target_directory(target)),
     }
+}
+
+/// OMP profiles use separate agent directories; the default profile honors Pi's
+/// shared environment variable, but keeps its own default directory.
+pub(crate) fn omp_agent_dir(home: &Path) -> PathBuf {
+    let profile = std::env::var("OMP_PROFILE")
+        .or_else(|_| std::env::var("PI_PROFILE"))
+        .unwrap_or_default();
+    let profile = profile.trim();
+    if !profile.is_empty()
+        && profile != "default"
+        && profile.len() <= 64
+        && profile
+            .bytes()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && profile.bytes().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, b'-' | b'_' | b'.')
+        })
+    {
+        return home.join(".omp/profiles").join(profile).join("agent");
+    }
+    std::env::var_os("PI_CODING_AGENT_DIR")
+        .map(|value| {
+            let value = value.to_string_lossy();
+            value.strip_prefix("~/").map_or_else(
+                || PathBuf::from(value.as_ref()),
+                |relative| home.join(relative),
+            )
+        })
+        .unwrap_or_else(|| home.join(".omp/agent"))
 }
 
 pub fn installation_root(project: &Path, target: InstallTarget) -> PathBuf {
@@ -54,6 +86,7 @@ pub const PROJECT_INSTALL_TARGETS: &[InstallTarget] = &[
     InstallTarget::Cursor,
     InstallTarget::OpenCode,
     InstallTarget::Pi,
+    InstallTarget::Omp,
     InstallTarget::Grok,
     InstallTarget::Antigravity,
     InstallTarget::Droid,
@@ -85,6 +118,11 @@ pub const INDEPENDENT_INSTALL_TARGETS: &[InstallTargetInfo] = &[
         target: InstallTarget::Pi,
         name: "Pi",
         icon_path: "icons/provider-pi.svg",
+    },
+    InstallTargetInfo {
+        target: InstallTarget::Omp,
+        name: "omp",
+        icon_path: "icons/provider-omp.svg",
     },
     InstallTargetInfo {
         target: InstallTarget::Grok,
@@ -184,6 +222,29 @@ pub const AGENT_ICON_ORDER: &[AgentIconInfo] = &[
         global_only: false,
     },
     AgentIconInfo {
+        id: "omp",
+        name: "omp",
+        icon_path: "icons/provider-omp.svg",
+        install_targets: &[
+            InstallTarget::Omp,
+            InstallTarget::ClaudeCode,
+            InstallTarget::Codex,
+            InstallTarget::OpenCode,
+            InstallTarget::Antigravity,
+            InstallTarget::Copilot,
+        ],
+        shared_agents: true,
+        global_only: false,
+    },
+    AgentIconInfo {
+        id: "dimagent",
+        name: "DimAgent",
+        icon_path: "icons/provider-dimagent.svg",
+        install_targets: &[],
+        shared_agents: true,
+        global_only: false,
+    },
+    AgentIconInfo {
         id: "grok",
         name: "Grok",
         icon_path: "icons/provider-grok.svg",
@@ -261,6 +322,7 @@ pub fn target_directory(target: InstallTarget) -> &'static str {
         InstallTarget::Cursor => ".cursor/skills",
         InstallTarget::OpenCode => ".opencode/skills",
         InstallTarget::Pi => ".pi/skills",
+        InstallTarget::Omp => ".omp/skills",
         InstallTarget::Grok => ".grok/skills",
         InstallTarget::Antigravity => ".agent/skills",
         InstallTarget::Droid => ".factory/skills",
@@ -286,6 +348,8 @@ mod tests {
                 "cursor",
                 "opencode",
                 "pi",
+                "omp",
+                "dimagent",
                 "grok",
                 "openclaw",
                 "hermes",

@@ -77,6 +77,8 @@ static OPENCLAW_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
 static AMP_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
 static ANTIGRAVITY_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
 static TRAE_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
+static OMP_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
+static DIMAGENT_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
 
 fn display_path(path: &Path) -> String {
     let Some(home) = dirs::home_dir() else {

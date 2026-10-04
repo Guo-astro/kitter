@@ -64,6 +64,8 @@ Kitter 为每个 Skill 保留一份长期维护的来源。打开它的 **安装
 
 选中一个 Skill 和目标项目，再选择共享的 `.agents/skills` 目录或指定 Agent 的目录。Kitter 建立托管链接，而不是复制出互不相关的副本，因此每个项目都可以拥有自己的 Skill 组合，同时保持来源一致。
 
+DimAgent 使用共享安装选项。Oh My Pi（omp）可以使用共享选项，也可以安装到自己的 `.omp/skills` 目录（CLI 使用 `--target omp`）。omp 的用户级安装默认使用 `~/.omp/agent/skills`。
+
 <p align="center">
   <img src="./assets/readme/install-skill.zh-CN.png" width="100%" alt="Kitter 安装对话框，可选择目标项目和 Agent 安装位置">
 </p>

@@ -391,6 +391,7 @@ fn git_origin(path: &Path) -> Option<SkillOrigin> {
 /// are deliberately not read. Keep project roots aligned with normal installation.
 const EXTRA_DIRECT_ROOTS: &[&str] = &[
     ".pi/agent/skills",
+    ".omp/agent/skills",
     ".config/opencode/skills",
     ".openclaw/skills",
     ".hermes/skills",
@@ -430,10 +431,11 @@ fn plugin_path(path: &Path) -> bool {
     components.windows(2).any(|pair| {
         matches!(
             pair[0].as_ref(),
-            ".claude" | ".codex" | ".cursor" | ".opencode" | ".pi"
+            ".claude" | ".codex" | ".cursor" | ".opencode" | ".pi" | ".omp"
         ) && matches!(pair[1].as_ref(), "plugins" | "extensions" | "packages")
     }) || components.windows(3).any(|part| {
-        (part[0] == ".pi" && part[1] == "agent" || part[0] == ".config" && part[1] == "opencode")
+        (matches!(part[0].as_ref(), ".pi" | ".omp") && part[1] == "agent"
+            || part[0] == ".config" && part[1] == "opencode")
             && matches!(part[2].as_ref(), "plugins" | "extensions" | "packages")
     })
 }
@@ -590,7 +592,7 @@ impl Scanner<'_> {
                 }
             } else if agent_directory(path) {
                 self.direct_root(&path.join("skills"));
-                if path.ends_with(".pi") {
+                if path.ends_with(".pi") || path.ends_with(".omp") {
                     self.direct_root(&path.join("agent/skills"));
                 }
                 // Do not walk sessions, plugins, extensions, or skill payloads.
@@ -805,6 +807,8 @@ mod tests {
             ".codex/skills",
             ".pi/skills",
             ".pi/agent/skills",
+            ".omp/agent/skills",
+            "project/.omp/skills",
             ".config/opencode/skills",
             "project/.cursor/skills",
         ];
@@ -823,6 +827,7 @@ mod tests {
             "checkout/skills/loose",
             "project/docs/example",
             ".pi/agent/extensions/pkg/.claude/skills/hidden",
+            ".omp/agent/extensions/pkg/.agents/skills/hidden",
             ".codex/plugins/cache/pkg/.agents/skills/hidden",
         ] {
             skill(&home.join(path), "not-direct");

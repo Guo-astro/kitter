@@ -64,6 +64,8 @@ Kitter keeps one maintained source for each skill. Open its **Installs** tab to 
 
 Select a skill, choose a project, then install it into the shared `.agents/skills` directory or an agent-specific directory. Kitter creates managed links instead of independent copies, so projects can use different combinations without creating update drift.
 
+DimAgent uses the shared install option. For Oh My Pi (omp), choose the shared option or its own `.omp/skills` target (`--target omp` in the CLI). User-level omp installs use `~/.omp/agent/skills` by default.
+
 <p align="center">
   <img src="./assets/readme/install-skill.en.png" width="100%" alt="Kitter installation dialog for selecting a project and agent targets">
 </p>

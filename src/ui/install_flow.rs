@@ -430,6 +430,7 @@ impl KitterApp {
             InstallTarget::Cursor => "target-cursor",
             InstallTarget::OpenCode => "target-opencode",
             InstallTarget::Pi => "target-pi",
+            InstallTarget::Omp => "target-omp",
             InstallTarget::Grok => "target-grok",
             InstallTarget::Antigravity => "target-antigravity",
             InstallTarget::Droid => "target-droid",
