@@ -3557,8 +3557,8 @@ mod tests {
         let config = format!(
             "[plugins.\"on@market\"]\nenabled = true\n\
              [plugins.\"off@market\"]\nenabled = false\n\
-             [[skills.config]]\npath = \"{}\"\nenabled = false\n",
-            skill.display()
+             [[skills.config]]\npath = {}\nenabled = false\n",
+            toml::Value::String(skill.to_string_lossy().into_owned())
         );
         fs::write(temp.path().join("config.toml"), config.clone()).unwrap();
         assert_eq!(enabled_plugin_ids(&config), vec!["on@market"]);
@@ -3587,8 +3587,8 @@ mod tests {
         fs::write(
             home.join(".codex/config.toml"),
             format!(
-                "[[skills.config]]\npath = \"{}\"\nenabled = true\n",
-                external.display()
+                "[[skills.config]]\npath = {}\nenabled = true\n",
+                toml::Value::String(external.to_string_lossy().into_owned())
             ),
         )
         .unwrap();
