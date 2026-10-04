@@ -47,6 +47,30 @@ pub struct AdoptionCandidate {
 }
 
 impl AdoptionCandidate {
+    pub(crate) fn from_local_record(record: &SkillRecord) -> Result<Self> {
+        let SkillOrigin::Local { path, source_root } = &record.origin else {
+            unreachable!("local record required");
+        };
+        let source = path.canonicalize()?;
+        let (_, description) = read_marker(&source.join("SKILL.md"))?;
+        let marker_hash = marker_hash(&source)?;
+        Ok(Self {
+            id: source.to_string_lossy().into_owned(),
+            name: record.name.clone(),
+            description,
+            origin: SkillOrigin::Local {
+                // Keep the saved identity so adoption finds the existing library entry.
+                path: path.clone(),
+                source_root: source_root.clone(),
+            },
+            source,
+            references: Vec::new(),
+            issue: None,
+            existing_storage: Some(record.storage_name.clone()),
+            marker_hash,
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn fixture(id: &str, origin: SkillOrigin) -> Self {
         Self {

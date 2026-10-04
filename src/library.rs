@@ -407,11 +407,20 @@ impl SkillLibrary {
         fs::read_to_string(path).context("该文件不是可预览的文本文件")
     }
 
-    pub fn import(&mut self, source: &Path, record: SkillRecord) -> Result<()> {
+    pub fn import(&mut self, source: &Path, mut record: SkillRecord) -> Result<()> {
         if !source.join("SKILL.md").is_file() {
             bail!("所选目录中没有 SKILL.md");
         }
         validate_name(&record.name)?;
+        let local_source = if matches!(record.origin, SkillOrigin::Local { .. }) {
+            let source = source.canonicalize()?;
+            if let SkillOrigin::Local { path, .. } = &mut record.origin {
+                *path = source.clone();
+            }
+            Some(source)
+        } else {
+            None
+        };
         let identity = record.identity_key();
         if self
             .registry
@@ -423,8 +432,12 @@ impl SkillLibrary {
         }
         let storage_name = self.storage_name_for(&record.name, &identity);
         let destination = self.config.library_dir.join(&storage_name);
-        copy_tree(source, &destination)?;
-        let mut record = record;
+        if let Some(source) = &local_source {
+            crate::directory_link::create(source, &destination)?;
+            record.update_available = false;
+        } else {
+            copy_tree(source, &destination)?;
+        }
         record.storage_name = storage_name.clone();
         if record.last_operated_at == 0 {
             record.last_operated_at = operation_stamp();
@@ -438,9 +451,22 @@ impl SkillLibrary {
         }) {
             record.group_id = None;
         }
+        let before = self.registry.clone();
         self.registry.trigger_overrides.remove(&storage_name);
         self.registry.skills.insert(storage_name, record);
-        self.save()
+        if local_source.is_none() {
+            return self.save();
+        }
+        if let Err(error) = self.save() {
+            self.registry = before;
+            if let Some(link) = crate::directory_link::inspect(&destination)? {
+                crate::directory_link::remove(&destination, link)?;
+            } else {
+                fs::remove_dir_all(&destination)?;
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub(crate) fn contains_identity(&self, identity: &str) -> bool {
@@ -1551,6 +1577,94 @@ mod tests {
     }
 
     #[test]
+    fn local_import_links_source_and_removal_keeps_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture_skill(&source, "demo");
+        let mut library = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+        let group = library.create_group("local").unwrap();
+        library
+            .import(
+                &source,
+                SkillRecord {
+                    name: "demo".into(),
+                    storage_name: String::new(),
+                    description: String::new(),
+                    origin: SkillOrigin::Local {
+                        path: source.clone(),
+                        source_root: None,
+                    },
+                    update_available: false,
+                    group_id: Some(group.id.clone()),
+                    last_operated_at: 0,
+                },
+            )
+            .unwrap();
+        let record = library.record("demo").unwrap();
+        let path = library.skill_path_by_storage(&record.storage_name).unwrap();
+        assert!(library.is_linked_source(&record.storage_name));
+        assert_eq!(path.canonicalize().unwrap(), source.canonicalize().unwrap());
+        fs::write(source.join("body.txt"), "changed").unwrap();
+        assert_eq!(
+            fs::read_to_string(path.join("body.txt")).unwrap(),
+            "changed"
+        );
+        assert_eq!(crate::source::check_updates(&mut library).unwrap(), 0);
+        let mut reopened = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+        assert_eq!(reopened.record("demo").unwrap().group_id, Some(group.id));
+        reopened.remove_by_storage(&record.storage_name).unwrap();
+        assert!(source.join("SKILL.md").is_file());
+        assert!(path.symlink_metadata().is_err());
+    }
+
+    #[test]
+    fn updating_legacy_local_copy_links_source_and_keeps_backup() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture_skill(&source, "demo");
+        let mut library = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+        let group = library.create_group("local").unwrap();
+        // Reproduce the copy and registry written by earlier versions.
+        library
+            .import(
+                &source,
+                SkillRecord {
+                    name: "demo".into(),
+                    storage_name: String::new(),
+                    description: String::new(),
+                    origin: SkillOrigin::Unknown,
+                    update_available: false,
+                    group_id: Some(group.id.clone()),
+                    last_operated_at: 0,
+                },
+            )
+            .unwrap();
+        library.registry.skills.get_mut("demo").unwrap().origin = SkillOrigin::Local {
+            path: source.clone(),
+            source_root: None,
+        };
+        library.save().unwrap();
+        let installed = library.skill_path_by_storage("demo").unwrap();
+        fs::write(installed.join("local-edit.txt"), "keep me").unwrap();
+        crate::source::update_by_storage(&mut library, "demo").unwrap();
+        assert!(library.is_linked_source("demo"));
+        assert_eq!(
+            installed.canonicalize().unwrap(),
+            source.canonicalize().unwrap()
+        );
+        assert_eq!(library.record("demo").unwrap().group_id, Some(group.id));
+        let backup = library.registry.adopted_sources["demo"]
+            .previous_library
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(backup.join("local-edit.txt")).unwrap(),
+            "keep me"
+        );
+        assert!(!source.join("local-edit.txt").exists());
+    }
+
+    #[test]
     fn trigger_override_survives_updates_and_follow_restores_the_new_source() {
         let temp = tempfile::tempdir().unwrap();
         let data_dir = temp.path().join("data");
@@ -1570,10 +1684,7 @@ mod tests {
                     name: "demo".into(),
                     storage_name: String::new(),
                     description: String::new(),
-                    origin: SkillOrigin::Local {
-                        path: source.clone(),
-                        source_root: None,
-                    },
+                    origin: SkillOrigin::Unknown,
                     update_available: false,
                     group_id: None,
                     last_operated_at: 0,

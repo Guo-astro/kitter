@@ -205,9 +205,10 @@ pub fn scan_local(root: &Path) -> Result<SkillScan> {
     if !root.is_dir() {
         bail!("请选择一个文件夹");
     }
+    let root = root.canonicalize()?;
 
     let mut skill_dirs = BTreeSet::new();
-    for entry in WalkDir::new(root)
+    for entry in WalkDir::new(&root)
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| {
@@ -380,6 +381,11 @@ fn update_record(library: &mut SkillLibrary, mut record: SkillRecord) -> Result<
     let storage_name = record.storage_name.clone();
     if library.is_linked_source(&storage_name) {
         bail!("此技能链接到原始目录，请在来源中更新");
+    }
+    if matches!(record.origin, SkillOrigin::Local { .. }) {
+        let candidate = crate::adoption::AdoptionCandidate::from_local_record(&record)?;
+        library.adopt(&candidate, &[])?;
+        return Ok(());
     }
     let temp = TempDir::new()?;
     let mut updated_origin = None;
@@ -1077,6 +1083,26 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
             )
             .unwrap();
 
+        // Linked local skills are excluded; copied skills still report progress.
+        for name in ["gamma", "delta"] {
+            let path = source_root.join(name);
+            write_skill(&path, name);
+            library
+                .import(
+                    &path,
+                    SkillRecord {
+                        name: name.into(),
+                        storage_name: String::new(),
+                        description: String::new(),
+                        origin: SkillOrigin::Unknown,
+                        update_available: false,
+                        group_id: None,
+                        last_operated_at: 0,
+                    },
+                )
+                .unwrap();
+        }
+
         let mut reports = Vec::new();
         let count = check_updates_with_progress(&mut library, |progress| {
             reports.push(progress);
@@ -1099,8 +1125,10 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
             .iter()
             .filter_map(|progress| progress.current.clone())
             .collect::<HashSet<_>>();
-        assert!(names.contains("alpha"));
-        assert!(names.contains("beta"));
+        assert!(names.contains("gamma"));
+        assert!(names.contains("delta"));
+        assert!(!names.contains("alpha"));
+        assert!(!names.contains("beta"));
     }
 
     #[test]
