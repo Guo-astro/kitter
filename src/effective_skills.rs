@@ -3016,75 +3016,35 @@ fn codex_disabled_skills(codex_home: &Path, home: &Path) -> HashSet<PathBuf> {
     let Ok(config) = fs::read_to_string(codex_home.join("config.toml")) else {
         return HashSet::new();
     };
-    let mut in_skill = false;
-    let mut path = None;
-    let mut disabled = HashSet::new();
-    for raw_line in config.lines() {
-        let line = raw_line.trim();
-        if line == "[[skills.config]]" {
-            in_skill = true;
-            path = None;
-        } else if line.starts_with('[') {
-            in_skill = false;
-            path = None;
-        } else if in_skill {
-            if let Some(value) = line
-                .strip_prefix("path = \"")
-                .and_then(|v| v.strip_suffix('"'))
-            {
-                path = Some(PathBuf::from(value));
-            } else if line == "enabled = false" {
-                if let Some(path) = path.take() {
-                    let path = resolve_agent_path(&path.to_string_lossy(), home, codex_home);
-                    disabled.insert(fs::canonicalize(&path).unwrap_or(path));
-                }
-            }
-        }
-    }
-    disabled
+    skill_config_entries(&config)
+        .into_iter()
+        .filter(|(_, enabled)| !enabled)
+        .map(|(path, _)| {
+            let path = resolve_agent_path(&path.to_string_lossy(), home, codex_home);
+            fs::canonicalize(&path).unwrap_or(path)
+        })
+        .collect()
 }
 
-#[cfg(test)]
 fn skill_config_entries(config: &str) -> Vec<(PathBuf, bool)> {
-    let mut entries = Vec::new();
-    let mut in_skill = false;
-    let mut path = None;
-    let mut enabled = true;
-    let flush = |entries: &mut Vec<(PathBuf, bool)>, path: &mut Option<PathBuf>, enabled: bool| {
-        if let Some(path) = path.take() {
-            entries.push((path, enabled));
-        }
+    let Ok(config) = toml::from_str::<toml::Value>(config) else {
+        return Vec::new();
     };
-    for raw_line in config.lines() {
-        let line = raw_line.trim();
-        if line == "[[skills.config]]" {
-            if in_skill {
-                flush(&mut entries, &mut path, enabled);
-            }
-            in_skill = true;
-            enabled = true;
-        } else if line.starts_with('[') {
-            if in_skill {
-                flush(&mut entries, &mut path, enabled);
-            }
-            in_skill = false;
-        } else if in_skill {
-            if let Some(value) = line
-                .strip_prefix("path = \"")
-                .and_then(|v| v.strip_suffix('"'))
-            {
-                path = Some(PathBuf::from(value));
-            } else if line == "enabled = false" {
-                enabled = false;
-            } else if line == "enabled = true" {
-                enabled = true;
-            }
-        }
-    }
-    if in_skill {
-        flush(&mut entries, &mut path, enabled);
-    }
-    entries
+    config
+        .get("skills")
+        .and_then(|skills| skills.get("config"))
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.get("path")?.as_str()?;
+            let enabled = entry
+                .get("enabled")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true);
+            Some((PathBuf::from(path), enabled))
+        })
+        .collect()
 }
 
 fn cwd_to_boundary(cwd: &Path, boundary: Option<&Path>) -> Vec<PathBuf> {
@@ -3546,6 +3506,24 @@ mod tests {
         assert!(rendered.starts_with("\n\nThe following skills provide specialized instructions"));
         assert!(rendered.contains("<location>"));
         assert_eq!(estimate.estimated_tokens, approx_token_count(&rendered));
+    }
+
+    #[test]
+    fn codex_skill_config_decodes_windows_paths_and_ignores_key_order() {
+        let config = r#"
+[[skills.config]]
+enabled = false
+path = "C:\\Users\\test\\skills\\demo\\SKILL.md"
+[[skills.config]]
+path = 'D:\skills\active\SKILL.md'
+"#;
+        assert_eq!(
+            skill_config_entries(config),
+            vec![
+                (PathBuf::from(r"C:\Users\test\skills\demo\SKILL.md"), false),
+                (PathBuf::from(r"D:\skills\active\SKILL.md"), true),
+            ]
+        );
     }
 
     #[test]
