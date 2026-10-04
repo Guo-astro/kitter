@@ -180,6 +180,9 @@ pub(super) fn inspect_project(
     context: &DiscoveryContext,
     include_global_only: bool,
 ) -> Vec<AgentContextEstimate> {
+    let dimagent = DimAgentAdapter {
+        home: super::additional_agents::dim_home(context),
+    };
     let adapters: [&dyn AgentAdapter; 12] = [
         &CodexAdapter,
         &ClaudeCodeAdapter,
@@ -191,7 +194,7 @@ pub(super) fn inspect_project(
         &DroidAdapter,
         &PiAdapter,
         &OmpAdapter,
-        &DimAgentAdapter,
+        &dimagent,
         &GrokAdapter,
     ];
     let mut estimates = adapters
@@ -205,4 +208,12 @@ pub(super) fn inspect_project(
         ]);
     }
     estimates
+}
+
+#[cfg(test)]
+pub(super) fn inspect_dimagent(
+    context: &DiscoveryContext,
+    home: std::path::PathBuf,
+) -> AgentContextEstimate {
+    DimAgentAdapter { home }.inspect(context)
 }

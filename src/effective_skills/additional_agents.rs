@@ -3,7 +3,9 @@
 use super::*;
 
 pub(super) struct OmpAdapter;
-pub(super) struct DimAgentAdapter;
+pub(super) struct DimAgentAdapter {
+    pub(super) home: PathBuf,
+}
 
 fn json_file(path: &Path) -> serde_json::Value {
     fs::read_to_string(path)
@@ -257,7 +259,7 @@ fn skill_frontmatter_value(metadata: &SkillMetadata) -> serde_yaml::Value {
         .unwrap_or_default()
 }
 
-fn dim_home(context: &DiscoveryContext) -> PathBuf {
+pub(super) fn dim_home(context: &DiscoveryContext) -> PathBuf {
     env::var("DIMCODE_HOME")
         .ok()
         .filter(|v| !v.trim().is_empty())
@@ -278,7 +280,7 @@ impl AgentSkillPolicy for DimAgentAdapter {
         // DimAgent scans host/user sources first; same-name workspace skills
         // are shadowed even when their user-level counterpart is disabled.
         let mut roots = vec![
-            SkillRoot::new(dim_home(context).join("skills"), SkillScope::User),
+            SkillRoot::new(self.home.join("skills"), SkillScope::User),
             SkillRoot::new(context.home.join(".agents/skills"), SkillScope::User),
         ];
         if !is_global_context(context) {
@@ -307,7 +309,7 @@ impl AgentSkillPolicy for DimAgentAdapter {
         root: &SkillRoot,
         dir: &Path,
         _: &SkillMetadata,
-        context: &DiscoveryContext,
+        _: &DiscoveryContext,
     ) -> SkillVisibility {
         let relative = dir
             .strip_prefix(&root.path)
@@ -319,7 +321,7 @@ impl AgentSkillPolicy for DimAgentAdapter {
         } else {
             format!("user:{relative}")
         };
-        if json_file(&dim_home(context).join("skills.json"))
+        if json_file(&self.home.join("skills.json"))
             .get("disabledSkillIds")
             .and_then(|v| v.as_array())
             .is_some_and(|values| values.iter().any(|v| v.as_str() == Some(&id)))
@@ -453,6 +455,9 @@ mod tests {
         }
     }
     fn estimate(context: &DiscoveryContext, agent: AgentKind) -> AgentContextEstimate {
+        if agent == AgentKind::DimAgent {
+            return adapters::inspect_dimagent(context, context.home.join(".dimcode/v2"));
+        }
         adapters::inspect_project(context, false)
             .into_iter()
             .find(|s| s.agent == agent)
@@ -599,7 +604,7 @@ mod tests {
         write_skill(&home.join(".agents/skills"), "same", "");
         write_skill(&repo.join(".agents/skills"), "same", "");
         let context = context(home, repo.clone(), repo);
-        let state = dim_home(&context);
+        let state = context.home.join(".dimcode/v2");
         fs::create_dir_all(&state).unwrap();
         fs::write(
             state.join("skills.json"),
