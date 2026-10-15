@@ -6,7 +6,7 @@ impl KitterApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some(self.tr("选择", "Choose").into()),
+            prompt: Some(t!("common.choose").to_string().into()),
         });
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Ok(Some(paths))) = receiver.await
@@ -56,7 +56,7 @@ impl KitterApp {
         } else {
             self.projects_view.open_project.clone()
         }) else {
-            self.show_notice(self.tr("请先选择项目", "Choose a project first"), cx);
+            self.show_notice(t!("add.project_required").to_string(), cx);
             return;
         };
         let selected = self.selected_skill_keys();
@@ -100,17 +100,22 @@ impl KitterApp {
         self.install_flow.modal = false;
         self.close_dialog(cx);
         let summary = if failures.is_empty() {
-            if self.uses_english() {
-                format!("Installed {}", counted(installed, "skill", "skills"))
-            } else if installed == 1 {
-                "已安装".to_string()
+            if installed == 1 {
+                t!("install.installed_single", count = installed).to_string()
             } else {
-                format!("已安装 {} 个技能", installed)
+                crate::i18n::tn(
+                    "common.installed_skills",
+                    installed,
+                    &[("count", installed.to_string())],
+                )
             }
-        } else if self.uses_english() {
-            format!("Installed {installed}; {} failed", failures.len())
         } else {
-            format!("已安装 {} 个，{} 个失败", installed, failures.len())
+            t!(
+                "common.install_partial",
+                count = installed,
+                failed = failures.len()
+            )
+            .to_string()
         };
         self.refresh(cx);
         if failures.is_empty() {
@@ -169,10 +174,7 @@ impl KitterApp {
                     Ok(scan) => {
                         this.add_flow.selected = scan.default_selection();
                         if scan.candidates.is_empty() {
-                            this.add_flow.error = Some(
-                                this.tr("没有发现可托管的技能", "No skills available to adopt")
-                                    .into(),
-                            );
+                            this.add_flow.error = Some(t!("add.adoption_empty").to_string().into());
                         }
                         this.add_flow.adoption_scan = Some(Arc::new(scan));
                         this.reset_adoption_rows();
@@ -193,7 +195,7 @@ impl KitterApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some(self.tr("选择", "Choose").into()),
+            prompt: Some(t!("common.choose").to_string().into()),
         });
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(paths))) = prompt.await {
@@ -219,7 +221,6 @@ impl KitterApp {
         };
         let selected = self.add_flow.selected.clone();
         let data_dir = self.model.library.data_dir().to_path_buf();
-        let english = self.uses_english();
         self.add_flow.task = Some(AddTask::Importing);
         self.add_flow.error = None;
         self.notify_dialog(cx);
@@ -247,7 +248,7 @@ impl KitterApp {
                             Err(error) => failures.push(format!(
                                 "{}: {}",
                                 candidate.name,
-                                messages::error_message(&error.to_string(), english)
+                                messages::error_message(&error)
                             )),
                         }
                     }
@@ -270,11 +271,11 @@ impl KitterApp {
                         this.refresh(cx);
                         if failures.is_empty() {
                             this.close_dialog(cx);
-                            let message = if this.uses_english() {
-                                format!("Adopted {}", counted(succeeded.len(), "skill", "skills"))
-                            } else {
-                                format!("已托管 {} 个技能", succeeded.len())
-                            };
+                            let message = crate::i18n::tn(
+                                "common.adopted_skills",
+                                succeeded.len(),
+                                &[("count", (succeeded.len()).to_string())],
+                            );
                             this.show_notice(message, cx);
                         } else {
                             this.add_flow.error = Some(failures.join("\n"));
@@ -315,7 +316,7 @@ impl KitterApp {
                     match kind {
                         AddKind::Npx => source::scan_npx(&input),
                         AddKind::Claude => source::scan_claude(&input),
-                        AddKind::Local => anyhow::bail!("请选择技能文件夹"),
+                        AddKind::Local => crate::user_bail!("errors.skill_folder_required"),
                         AddKind::Existing => unreachable!("handled before source scan"),
                     }
                 })

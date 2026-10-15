@@ -109,8 +109,9 @@ impl AppConfig {
                 ..Self::default()
             });
         }
-        let bytes = fs::read(&path).with_context(|| format!("读取配置失败：{}", path.display()))?;
-        serde_json::from_slice(&bytes).context("配置格式无效")
+        let bytes = fs::read(&path)
+            .with_context(|| t!("errors.config_read_failed", path = path.display()).to_string())?;
+        serde_json::from_slice(&bytes).context(t!("errors.config_invalid").to_string())
     }
 
     pub fn save(&self) -> Result<()> {

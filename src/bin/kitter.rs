@@ -1,4 +1,6 @@
-use kitter::text::counted;
+// Reuse the library backend; do not embed a second translation catalogue.
+use kitter::_rust_i18n_try_translate;
+use rust_i18n::_tr as t;
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     path::{Path, PathBuf},
@@ -388,13 +390,18 @@ struct TagOutput {
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("error: {error:#}");
+        eprintln!(
+            "{}",
+            t!("cli.error", error = kitter::i18n::error_diagnostic(&error))
+        );
         std::process::exit(1);
     }
 }
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    kitter::i18n::apply_language(kitter::config::Language::System);
+    kitter::i18n::apply_language(kitter::AppConfig::load()?.language);
     let mut library = SkillLibrary::open()?;
     match cli.command {
         Command::List { tag, json } => list_skills(&library, tag.as_deref(), json),
@@ -453,7 +460,10 @@ fn run() -> Result<()> {
             if json {
                 println!("{{\"updates\":{count}}}");
             } else {
-                println!("{} can be updated", counted(count, "skill", "skills"));
+                println!(
+                    "{}",
+                    kitter::i18n::tn("cli.update_count", count, &[("count", (count).to_string())])
+                );
             }
             Ok(())
         }
@@ -486,7 +496,7 @@ fn list_skills(library: &SkillLibrary, tag: Option<&str>, json: bool) -> Result<
     if json {
         println!("{}", serde_json::to_string_pretty(&skills)?);
     } else if skills.is_empty() {
-        println!("No skills found");
+        println!("{}", t!("cli.no_skills_found").to_string());
     } else {
         for skill in skills {
             let group = skill
@@ -540,16 +550,25 @@ fn show_skill(library: &SkillLibrary, selector: &str, json: bool) -> Result<()> 
     } else {
         println!("{}", skill.name);
         if skill.id != skill.name {
-            println!("ID: {}", skill.id);
+            println!("{}", t!("cli.id", id = skill.id).to_string());
         }
         println!("{}", skill.description);
-        println!("Source: {}", skill.origin.label());
-        println!("Path: {}", skill.path.display());
+        println!(
+            "{}",
+            t!("cli.source", source = skill.origin.label()).to_string()
+        );
+        println!(
+            "{}",
+            t!("cli.path", path = skill.path.display()).to_string()
+        );
         if let Some(group) = skill.group {
-            println!("Group: {group}");
+            println!("{}", t!("cli.group", group = group).to_string());
         }
         if !skill.tags.is_empty() {
-            println!("Tags: {}", skill.tags.join(", "));
+            println!(
+                "{}",
+                t!("cli.tags", tags = skill.tags.join(", ")).to_string()
+            );
         }
     }
     Ok(())
@@ -591,9 +610,9 @@ fn add_skills(library: &mut SkillLibrary, add: AddSource) -> Result<()> {
             skills,
             group,
         } => {
-            let path = path
-                .canonicalize()
-                .with_context(|| format!("找不到来源目录：{}", path.display()))?;
+            let path = path.canonicalize().with_context(|| {
+                t!("errors.source_folder_missing", path = path.display()).to_string()
+            })?;
             (source::scan_local(&path)?, skills, group)
         }
         AddSource::Npx {
@@ -621,15 +640,27 @@ fn add_skills(library: &mut SkillLibrary, add: AddSource) -> Result<()> {
             .cloned()
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            bail!("没有从来源中找到：{}", missing.join(", "));
+            bail!(t!("errors.not_found_in_source", names = missing.join(", ")).to_string());
         }
         selected.into_iter().collect()
     };
     let summary = scan.import_selected(library, &selected, group.as_deref())?;
     println!(
-        "Added {}, skipped {} already added",
-        counted(summary.added, "skill", "skills"),
-        counted(summary.skipped, "skill", "skills")
+        "{}",
+        t!(
+            "cli.import_summary",
+            added = kitter::i18n::tn(
+                "common.skill_count",
+                summary.added,
+                &[("count", (summary.added).to_string())]
+            ),
+            skipped = kitter::i18n::tn(
+                "common.skill_count",
+                summary.skipped,
+                &[("count", (summary.skipped).to_string())]
+            )
+        )
+        .to_string()
     );
     Ok(())
 }
@@ -641,7 +672,7 @@ fn adopt_skills(
     all: bool,
     json: bool,
 ) -> Result<()> {
-    let home = dirs::home_dir().context("找不到用户目录")?;
+    let home = dirs::home_dir().context(kitter::user_error!("errors.home_missing"))?;
     let roots = if roots.is_empty() {
         vec![home.clone()]
     } else {
@@ -663,7 +694,10 @@ fn adopt_skills(
             source: candidate.source.clone(),
             origin: candidate.origin.clone(),
             references: candidate.references.clone(),
-            issue: candidate.issue.clone(),
+            issue: candidate
+                .issue
+                .as_ref()
+                .map(|_| t!("errors.sources_mismatch", locale = "zh-CN").to_string()),
             conflict: scan.has_conflict(&candidate.identity()),
             already_managed: candidate.existing_storage.is_some(),
             selectable: scan.selectable_ids().contains(&candidate.id),
@@ -674,17 +708,17 @@ fn adopt_skills(
         if json {
             println!("{}", serde_json::to_string_pretty(&output)?);
         } else if output.is_empty() {
-            println!("No existing skill installations found");
+            println!("{}", t!("cli.no_installations").to_string());
         } else {
             for candidate in output {
                 let status = if candidate.issue.is_some() {
-                    "unavailable"
+                    t!("cli.unavailable").to_string()
                 } else if candidate.conflict {
-                    "choose-source"
+                    t!("cli.choose_source").to_string()
                 } else if candidate.already_managed {
-                    "managed"
+                    t!("cli.managed").to_string()
                 } else {
-                    "ready"
+                    t!("cli.ready").to_string()
                 };
                 println!(
                     "{:<24} {:<14} {}",
@@ -693,7 +727,7 @@ fn adopt_skills(
                     candidate.source.display()
                 );
             }
-            println!("Run with --all or one or more --source paths to adopt");
+            println!("{}", t!("cli.adopt_hint").to_string());
         }
         return Ok(());
     }
@@ -709,14 +743,23 @@ fn adopt_skills(
             .candidates
             .iter()
             .find(|candidate| candidate.source == source)
-            .with_context(|| format!("扫描结果中没有这个来源：{}", source.display()))?;
+            .with_context(|| {
+                t!("errors.scan_source_missing", path = source.display()).to_string()
+            })?;
         if let Some(issue) = &candidate.issue {
-            bail!("无法托管 {}：{issue}", candidate.source.display());
+            bail!(
+                t!(
+                    "errors.cannot_adopt",
+                    path = candidate.source.display(),
+                    issue = issue
+                )
+                .to_string()
+            );
         }
         scan.select(&mut selected, &candidate.id);
     }
     if selected.is_empty() {
-        bail!("没有可托管的 skill；冲突来源需要使用 --source 明确选择");
+        bail!(t!("errors.adopt_source_required").to_string());
     }
 
     let mut adopted = 0usize;
@@ -732,10 +775,17 @@ fn adopt_skills(
             .and_then(|()| library.adopt(candidate, &scan.references_for(candidate)));
         match result {
             Ok(_) => adopted += 1,
-            Err(error) => failures.push(format!("{}：{error:#}", candidate.name)),
+            Err(error) => failures.push(
+                t!(
+                    "errors.item_detail",
+                    item = candidate.name,
+                    error = kitter::i18n::error_diagnostic(&error)
+                )
+                .to_string(),
+            ),
         }
     }
-    finish_batch("Adopted", "skill", adopted, failures)
+    finish_batch("common.adopted_skills", adopted, failures)
 }
 
 fn remove_skills(library: &mut SkillLibrary, selectors: &[String]) -> Result<()> {
@@ -745,10 +795,17 @@ fn remove_skills(library: &mut SkillLibrary, selectors: &[String]) -> Result<()>
     for skill in skills {
         match library.remove_by_storage(&skill.record.storage_name) {
             Ok(()) => removed += 1,
-            Err(error) => failures.push(format!("{}：{error:#}", skill.record.name)),
+            Err(error) => failures.push(
+                t!(
+                    "errors.item_detail",
+                    item = skill.record.name,
+                    error = kitter::i18n::error_diagnostic(&error)
+                )
+                .to_string(),
+            ),
         }
     }
-    finish_batch("Removed", "skill", removed, failures)
+    finish_batch("cli.removed_skills", removed, failures)
 }
 
 fn install_skills(
@@ -765,10 +822,17 @@ fn install_skills(
     for skill in skills {
         match project::install_from_path(&project_path, &skill.path, &skill.record.name, &targets) {
             Ok(()) => installed += 1,
-            Err(error) => failures.push(format!("{}：{error:#}", skill.record.name)),
+            Err(error) => failures.push(
+                t!(
+                    "errors.item_detail",
+                    item = skill.record.name,
+                    error = kitter::i18n::error_diagnostic(&error)
+                )
+                .to_string(),
+            ),
         }
     }
-    finish_batch("Installed", "skill", installed, failures)
+    finish_batch("common.installed_skills", installed, failures)
 }
 
 fn uninstall_skills(
@@ -780,7 +844,7 @@ fn uninstall_skills(
     include_unmanaged: bool,
 ) -> Result<()> {
     if selectors.is_empty() && paths.is_empty() {
-        bail!("请指定至少一个 skill 或 --path 安装位置");
+        bail!(t!("errors.removal_selection_required").to_string());
     }
     let project_path = canonical_project(project_path)?;
     let installed = project::list(&project_path, &library.config.library_dir)?;
@@ -803,13 +867,15 @@ fn uninstall_skills(
             .filter(|installation| targets.is_empty() || targets.contains(&installation.target))
             .find(|installation| project::installation_key(&installation.path) == requested_key)
             .cloned()
-            .with_context(|| format!("这个项目中没有安装位置：{}", requested.display()))?;
+            .with_context(|| {
+                t!("errors.installation_not_found", path = requested.display()).to_string()
+            })?;
         selected.push(matching);
     }
     for selector in selectors {
         let library_matches = matching_library_skills(&library_skills, selector);
         if library_matches.len() > 1 {
-            bail!("存在多个名为 {selector} 的 skill，请使用 list 中的 ID");
+            bail!(t!("errors.cli_skill_ambiguous", name = selector).to_string());
         }
         let matching = installed
             .iter()
@@ -829,7 +895,7 @@ fn uninstall_skills(
             .cloned()
             .collect::<Vec<_>>();
         if matching.is_empty() {
-            bail!("这个项目中没有匹配的安装：{selector}");
+            bail!(t!("errors.installation_unmatched", name = selector).to_string());
         }
         selected.extend(matching);
     }
@@ -840,12 +906,15 @@ fn uninstall_skills(
         .collect::<Vec<_>>();
     if !unsafe_paths.is_empty() && !include_unmanaged {
         bail!(
-            "所选位置包含外部链接或直接保存的文件；确认后使用 --include-unmanaged：{}",
-            unsafe_paths.join(", ")
+            t!(
+                "errors.unmanaged_confirmation",
+                paths = unsafe_paths.join(", ")
+            )
+            .to_string()
         );
     }
     let report = project::remove_project_skills(&selected);
-    finish_batch("Removed", "installation", report.removed, report.failures)
+    finish_batch("cli.removed_installations", report.removed, report.failures)
 }
 
 fn inspect_project(
@@ -881,8 +950,11 @@ fn inspect_project(
         return Ok(());
     }
 
-    println!("Project: {}", path.display());
-    println!("Direct installations: {}", direct.len());
+    println!("{}", t!("cli.project", path = path.display()).to_string());
+    println!(
+        "{}",
+        t!("cli.direct_installations", count = direct.len()).to_string()
+    );
     for skill in &direct {
         let targets = skill
             .installations
@@ -895,20 +967,24 @@ fn inspect_project(
             .iter()
             .all(|installation| installation.managed)
         {
-            "Kitter"
+            "Kitter".to_string()
         } else {
-            "external"
+            t!("cli.external").to_string()
         };
         println!("  {:<28} {:<12} {targets}", skill.name, origin);
     }
-    println!("Agents:");
+    println!("{}", t!("cli.agents").to_string());
     for estimate in &estimates {
         println!(
-            "  {:<18} {:>3} discovered  {:>3} visible  ~{} tokens",
-            estimate.agent.label(),
-            estimate.discovered_count,
-            estimate.model_visible_count,
-            estimate.estimated_tokens
+            "{}",
+            t!(
+                "cli.agent_summary",
+                agent = format!("{:<18}", estimate.agent.label()),
+                discovered = format!("{:>3}", estimate.discovered_count),
+                visible = format!("{:>3}", estimate.model_visible_count),
+                tokens = estimate.estimated_tokens
+            )
+            .to_string()
         );
     }
     let effective = group_effective_skills(
@@ -916,7 +992,10 @@ fn inspect_project(
             .iter()
             .flat_map(|estimate| estimate.skills.iter().map(|skill| (estimate.agent, skill))),
     );
-    println!("Effective skills: {}", effective.len());
+    println!(
+        "{}",
+        t!("cli.effective_skills", count = effective.len()).to_string()
+    );
     for group in effective {
         let agents = group
             .entries()
@@ -927,7 +1006,11 @@ fn inspect_project(
             .entries()
             .iter()
             .any(|(_, skill)| skill.source.is_plugin());
-        let kind = if plugin { "plugin" } else { "skill" };
+        let kind = if plugin {
+            t!("cli.plugin").to_string()
+        } else {
+            t!("cli.skill").to_string()
+        };
         println!(
             "  {:<28} {:<7} {}",
             group.name(),
@@ -940,7 +1023,7 @@ fn inspect_project(
 
 fn update_skills(library: &mut SkillLibrary, selectors: &[String], all: bool) -> Result<()> {
     if selectors.is_empty() && !all {
-        bail!("请指定至少一个 skill，或使用 --all");
+        bail!(t!("errors.update_selection_required").to_string());
     }
     let skills = if all {
         library.list()?
@@ -952,10 +1035,17 @@ fn update_skills(library: &mut SkillLibrary, selectors: &[String], all: bool) ->
     for skill in skills {
         match source::update_by_storage(library, &skill.record.storage_name) {
             Ok(()) => updated += 1,
-            Err(error) => failures.push(format!("{}：{error:#}", skill.record.name)),
+            Err(error) => failures.push(
+                t!(
+                    "errors.item_detail",
+                    item = skill.record.name,
+                    error = kitter::i18n::error_diagnostic(&error)
+                )
+                .to_string(),
+            ),
         }
     }
-    finish_batch("Updated", "skill", updated, failures)
+    finish_batch("cli.updated_skills", updated, failures)
 }
 
 fn manage_groups(library: &mut SkillLibrary, action: GroupAction) -> Result<()> {
@@ -977,13 +1067,17 @@ fn manage_groups(library: &mut SkillLibrary, action: GroupAction) -> Result<()> 
             if json {
                 println!("{}", serde_json::to_string_pretty(&groups)?);
             } else if groups.is_empty() {
-                println!("No groups");
+                println!("{}", t!("cli.no_groups").to_string());
             } else {
                 for group in groups {
                     println!(
                         "{:<28} {}",
                         group.name,
-                        counted(group.skills, "skill", "skills")
+                        kitter::i18n::tn(
+                            "common.skill_count",
+                            group.skills,
+                            &[("count", (group.skills).to_string())]
+                        )
                     );
                 }
             }
@@ -1046,7 +1140,7 @@ fn manage_tags(library: &SkillLibrary, action: TagAction) -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&output)?);
             } else if output.is_empty() {
-                println!("No tags");
+                println!("{}", t!("cli.no_tags").to_string());
             } else {
                 let duplicate_names = output.iter().fold(BTreeMap::new(), |mut counts, tag| {
                     *counts.entry(tag.name.to_lowercase()).or_insert(0usize) += 1;
@@ -1067,7 +1161,11 @@ fn manage_tags(library: &SkillLibrary, action: TagAction) -> Result<()> {
                     println!(
                         "{indent}#{:<26} {}{id}",
                         tag.name,
-                        counted(tag.assignments, "assignment", "assignments")
+                        kitter::i18n::tn(
+                            "cli.assignments",
+                            tag.assignments,
+                            &[("count", (tag.assignments).to_string())]
+                        )
                     );
                 }
             }
@@ -1077,11 +1175,11 @@ fn manage_tags(library: &SkillLibrary, action: TagAction) -> Result<()> {
             let parent = parent
                 .map(|parent| resolve_tag(tags, &parent))
                 .transpose()?;
-            tags.add(&name, parent).map_err(anyhow::Error::msg)?;
+            tags.add(&name, parent).map_err(anyhow::Error::from)?;
         }
         TagAction::Rename { tag, name } => {
             let tag = resolve_tag(tags, &tag)?;
-            tags.rename(tag, &name).map_err(anyhow::Error::msg)?;
+            tags.rename(tag, &name).map_err(anyhow::Error::from)?;
         }
         TagAction::Delete { tag } => {
             let tag = resolve_tag(tags, &tag)?;
@@ -1111,7 +1209,7 @@ fn manage_tags(library: &SkillLibrary, action: TagAction) -> Result<()> {
                 false
             };
             if !moved {
-                bail!("只能在同一级标签之间调整顺序");
+                bail!(t!("errors.tag_reorder_invalid").to_string());
             }
         }
     }
@@ -1121,7 +1219,7 @@ fn manage_tags(library: &SkillLibrary, action: TagAction) -> Result<()> {
 fn manage_library(library: &mut SkillLibrary, set: Option<PathBuf>) -> Result<()> {
     if let Some(path) = set {
         if !path.is_absolute() {
-            bail!("请使用绝对路径");
+            bail!(t!("errors.absolute_path_required").to_string());
         }
         std::fs::create_dir_all(&path)?;
         library.config.library_dir = path;
@@ -1164,7 +1262,7 @@ fn resolve_group(library: &SkillLibrary, selector: &str) -> Result<SkillGroup> {
         .groups()
         .into_iter()
         .find(|group| group.id == selector || group.name.eq_ignore_ascii_case(selector))
-        .with_context(|| format!("没有找到分组：{selector}"))
+        .with_context(|| t!("errors.group_not_found", name = selector).to_string())
 }
 
 fn resolve_tag(tags: &TagState, selector: &str) -> Result<TagId> {
@@ -1172,11 +1270,11 @@ fn resolve_tag(tags: &TagState, selector: &str) -> Result<TagId> {
     if let Some(id) = selector.strip_prefix("id:") {
         let id = id
             .parse::<TagId>()
-            .with_context(|| format!("无效的标签 ID：{selector}"))?;
+            .with_context(|| t!("errors.tag_id_invalid", id = selector).to_string())?;
         return tags
             .tag(id)
             .map(|tag| tag.id)
-            .with_context(|| format!("没有找到标签：{selector}"));
+            .with_context(|| t!("errors.tag_not_found", name = selector).to_string());
     }
     let matches = tags
         .tags()
@@ -1185,8 +1283,8 @@ fn resolve_tag(tags: &TagState, selector: &str) -> Result<TagId> {
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [tag] => Ok(tag.id),
-        [] => bail!("没有找到标签：{selector}"),
-        _ => bail!("存在多个名为 {selector} 的标签，请使用 list 中显示的 ID"),
+        [] => bail!(t!("errors.tag_not_found", name = selector).to_string()),
+        _ => bail!(t!("errors.tag_ambiguous", name = selector).to_string()),
     }
 }
 
@@ -1199,29 +1297,33 @@ fn tag_keys(library: &SkillLibrary, items: &[String]) -> Result<Vec<String>> {
 
 fn canonical_project(path: &Path) -> Result<PathBuf> {
     if !path.is_dir() {
-        bail!("项目文件夹不存在：{}", path.display());
+        bail!(t!("errors.project_missing", path = path.display()).to_string());
     }
     path.canonicalize()
-        .with_context(|| format!("无法读取项目：{}", path.display()))
+        .with_context(|| t!("errors.project_read_failed", path = path.display()).to_string())
 }
 
 fn same_file(left: &Path, right: &Path) -> bool {
     left.canonicalize().ok() == right.canonicalize().ok()
 }
 
-fn finish_batch(action: &str, item: &str, succeeded: usize, failures: Vec<String>) -> Result<()> {
+fn finish_batch(key: &str, succeeded: usize, failures: Vec<String>) -> Result<()> {
+    let message = kitter::i18n::tn(key, succeeded, &[("count", succeeded.to_string())]);
     if failures.is_empty() {
-        println!("{action} {}", counted(succeeded, item, &format!("{item}s")));
+        println!("{message}");
         return Ok(());
     }
     if succeeded > 0 {
-        eprintln!("{action} {}", counted(succeeded, item, &format!("{item}s")));
+        eprintln!("{message}");
     }
-    bail!(
-        "{} failed: {}",
-        counted(failures.len(), "operation", "operations"),
-        failures.join("; ")
-    )
+    bail!(kitter::i18n::tn(
+        "cli.operations_failed",
+        failures.len(),
+        &[
+            ("count", (failures.len()).to_string()),
+            ("failures", (failures.join("; ")).to_string())
+        ]
+    ))
 }
 
 #[cfg(test)]

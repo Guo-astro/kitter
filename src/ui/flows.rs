@@ -14,23 +14,10 @@ impl KitterApp {
         self.add_flow.error = None;
         self.add_flow.group_enabled = true;
         self.add_flow.group_name = None;
-        let english = self.uses_english();
         let placeholder = match self.add_flow.kind {
-            AddKind::Claude => {
-                if english {
-                    "Plugin name or claude plugin install command"
-                } else {
-                    "插件名称或 claude plugin install 命令"
-                }
-            }
-            AddKind::Npx => {
-                if english {
-                    "Paste a skills.sh/GitHub URL or npx skills add command"
-                } else {
-                    "粘贴 skills.sh、GitHub 地址或 npx skills add 命令"
-                }
-            }
-            AddKind::Local | AddKind::Existing => "",
+            AddKind::Claude => t!("add.plugin_placeholder").to_string(),
+            AddKind::Npx => t!("add.source_placeholder").to_string(),
+            AddKind::Local | AddKind::Existing => String::new(),
         };
         self.add_flow.primary_input.update(cx, |input, cx| {
             input.set_value("", window, cx);
@@ -54,23 +41,10 @@ impl KitterApp {
         self.add_flow.adoption_scan = None;
         self.add_flow.adoption_expanded.clear();
         self.add_flow.kind = kind;
-        let english = self.uses_english();
         let placeholder = match kind {
-            AddKind::Claude => {
-                if english {
-                    "Plugin name or claude plugin install command"
-                } else {
-                    "插件名称或 claude plugin install 命令"
-                }
-            }
-            AddKind::Npx => {
-                if english {
-                    "Paste a skills.sh/GitHub URL or npx skills add command"
-                } else {
-                    "粘贴 skills.sh、GitHub 地址或 npx skills add 命令"
-                }
-            }
-            AddKind::Local | AddKind::Existing => "",
+            AddKind::Claude => t!("add.plugin_placeholder").to_string(),
+            AddKind::Npx => t!("add.source_placeholder").to_string(),
+            AddKind::Local | AddKind::Existing => String::new(),
         };
         self.add_flow.primary_input.update(cx, |input, cx| {
             input.set_value("", window, cx);
@@ -169,16 +143,15 @@ impl KitterApp {
                 let message = match result {
                     Ok((library, 0)) => {
                         this.model.library = library;
-                        this.tr("所有技能都是最新版本", "All skills are up to date")
-                            .to_string()
+                        t!("common.updates_current").to_string()
                     }
                     Ok((library, count)) => {
                         this.model.library = library;
-                        if this.uses_english() {
-                            format!("{} can be updated", counted(count, "skill", "skills"))
-                        } else {
-                            format!("发现 {count} 个可更新的技能")
-                        }
+                        crate::i18n::tn(
+                            "updates.available_count",
+                            count,
+                            &[("count", (count).to_string())],
+                        )
                     }
                     Err(error) => this.error_message(error),
                 };
@@ -210,7 +183,7 @@ impl KitterApp {
                 let message = match result {
                     Ok(library) => {
                         this.model.library = library;
-                        this.tr("技能已更新", "Skill updated").to_string()
+                        t!("updates.skill_updated").to_string()
                     }
                     Err(error) => this.error_message(error),
                 };
@@ -263,31 +236,21 @@ impl KitterApp {
                         this.model.library = library;
                         this.add_flow.selected.clear();
                         this.close_dialog(cx);
-                        let message = if this.uses_english() {
-                            match (summary.added, summary.skipped) {
-                                (0, skipped) => {
-                                    format!("No new skills added · {skipped} already added")
-                                }
-                                (added, 0) => {
-                                    format!("Added {}", counted(added, "skill", "skills"))
-                                }
-                                (added, skipped) => {
-                                    format!(
-                                        "Added {} · {skipped} already added",
-                                        counted(added, "skill", "skills")
-                                    )
-                                }
-                            }
-                        } else {
-                            match (summary.added, summary.skipped) {
-                                (0, skipped) => {
-                                    format!("没有新增技能，已跳过 {skipped} 个已添加技能")
-                                }
-                                (added, 0) => format!("已添加 {added} 个技能"),
-                                (added, skipped) => {
-                                    format!("已添加 {added} 个技能，跳过 {skipped} 个已添加技能")
-                                }
-                            }
+                        let message = match (summary.added, summary.skipped) {
+                            (0, skipped) => t!("add.skipped_summary", count = skipped).to_string(),
+                            (added, 0) => crate::i18n::tn(
+                                "add.added_skills",
+                                added,
+                                &[("count", (added).to_string())],
+                            ),
+                            (added, skipped) => crate::i18n::tn(
+                                "add.added_with_skips",
+                                added,
+                                &[
+                                    ("count", (added).to_string()),
+                                    ("skipped", (skipped).to_string()),
+                                ],
+                            ),
                         };
                         this.show_notice(message, cx);
                         this.refresh(cx);

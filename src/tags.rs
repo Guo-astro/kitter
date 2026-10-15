@@ -81,18 +81,22 @@ impl TagState {
             .filter(move |tag| tag.parent == Some(parent))
     }
 
-    pub fn add(&mut self, name: &str, parent: Option<TagId>) -> Result<TagId, &'static str> {
+    pub fn add(
+        &mut self,
+        name: &str,
+        parent: Option<TagId>,
+    ) -> Result<TagId, crate::i18n::UserError> {
         let name = normalize_name(name)?;
         if let Some(parent_id) = parent {
             let Some(parent_tag) = self.tag(parent_id) else {
-                return Err("父标签不存在");
+                return Err(crate::user_error!("errors.parent_tag_missing"));
             };
             if parent_tag.parent.is_some() {
-                return Err("子标签下不能继续创建标签");
+                return Err(crate::user_error!("errors.tag_depth_exceeded"));
             }
         }
         if self.sibling_name_exists(&name, parent, None) {
-            return Err("同一级已经存在这个标签");
+            return Err(crate::user_error!("errors.tag_duplicate"));
         }
         self.next_id += 1;
         let id = self.next_id;
@@ -100,14 +104,14 @@ impl TagState {
         Ok(id)
     }
 
-    pub fn rename(&mut self, id: TagId, name: &str) -> Result<(), &'static str> {
+    pub fn rename(&mut self, id: TagId, name: &str) -> Result<(), crate::i18n::UserError> {
         let name = normalize_name(name)?;
         let Some(tag) = self.tag(id) else {
-            return Err("标签不存在");
+            return Err(crate::user_error!("errors.tag_missing"));
         };
         let parent = tag.parent;
         if self.sibling_name_exists(&name, parent, Some(id)) {
-            return Err("同一级已经存在这个标签");
+            return Err(crate::user_error!("errors.tag_duplicate"));
         }
         if let Some(tag) = self.tags.iter_mut().find(|tag| tag.id == id) {
             tag.name = name;
@@ -279,13 +283,13 @@ impl TagState {
     }
 }
 
-fn normalize_name(name: &str) -> Result<String, &'static str> {
+fn normalize_name(name: &str) -> Result<String, crate::i18n::UserError> {
     let name = name.trim().trim_start_matches('#').trim();
     if name.is_empty() {
-        return Err("请输入标签名称");
+        return Err(crate::user_error!("errors.tag_name_required"));
     }
     if name.contains('/') {
-        return Err("标签名称不能包含 / ");
+        return Err(crate::user_error!("errors.tag_name_invalid"));
     }
     Ok(name.to_string())
 }
@@ -300,9 +304,11 @@ mod tests {
         let parent = tags.add("开发", None).unwrap();
         let child = tags.add("调试", Some(parent)).unwrap();
         assert_eq!(tags.path(child).as_deref(), Some("开发/调试"));
-        assert_eq!(
-            tags.add("更深", Some(child)),
-            Err("子标签下不能继续创建标签")
+        let error = tags.add("更深", Some(child)).unwrap_err();
+        assert!(
+            ["en", "zh-CN"]
+                .iter()
+                .any(|locale| error.message == t!("errors.tag_depth_exceeded", locale = locale))
         );
     }
 

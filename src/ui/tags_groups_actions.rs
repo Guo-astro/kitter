@@ -88,10 +88,12 @@ impl KitterApp {
             self.selected_skill()
                 .map(|skill| skill.record.name.clone())
                 .or_else(|| Some(first))
-        } else if self.uses_english() {
-            Some(counted(skills.len(), "skill", "skills"))
         } else {
-            Some(format!("{} 个技能", skills.len()))
+            Some(crate::i18n::tn(
+                "common.skill_count",
+                skills.len(),
+                &[("count", (skills.len()).to_string())],
+            ))
         };
         self.open_dialog(DialogKind::AssignTags, cx);
     }
@@ -246,7 +248,7 @@ impl KitterApp {
         {
             Ok(()) => {
                 self.refresh(cx);
-                self.show_notice(self.tr("已更新技能分组", "Skill group updated"), cx);
+                self.show_notice(t!("skills.group_updated").to_string(), cx);
             }
             Err(error) => self.show_notice(self.error_message(error), cx),
         }
@@ -278,7 +280,7 @@ impl KitterApp {
                 self.groups_flow.move_skills.clear();
                 self.close_dialog(cx);
                 self.refresh(cx);
-                self.show_notice(self.tr("已更新技能分组", "Skill group updated"), cx);
+                self.show_notice(t!("skills.group_updated").to_string(), cx);
             }
             Some(error) => self.show_notice(error, cx),
         }
@@ -305,12 +307,9 @@ impl KitterApp {
                 self.skills_view.selection.remove(&names, &order);
                 self.refresh(cx);
                 let message = if delete_skills {
-                    self.tr("已删除分组及其中的技能", "Group and its skills deleted")
+                    t!("skills.group_skills_deleted").to_string()
                 } else {
-                    self.tr(
-                        "已删除分组，技能已移到未分组",
-                        "Group deleted; skills are now ungrouped",
-                    )
+                    t!("skills.group_deleted").to_string()
                 };
                 self.show_notice(message, cx);
             }

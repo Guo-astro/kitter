@@ -21,6 +21,7 @@ desktop = [
 ui-test = ["desktop", "gpui/test-support"]
 
 [dependencies]
+rust-i18n = "3"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 dirs = "6.0"
@@ -82,3 +83,7 @@ opt-level = 2
 # shim until upstream makes its tracing dependency optional.
 [patch."https://github.com/zed-industries/zed"]
 ztracing = { path = "crates/ztracing-shim" }
+
+[dev-dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"

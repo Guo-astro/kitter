@@ -31,9 +31,8 @@ impl TriggerSource {
         let manual = mode == TriggerMode::Manual;
         let (frontmatter, body) = split_frontmatter(&self.skill_md);
         let mut fields = match frontmatter {
-            Some(frontmatter) => {
-                serde_yaml::from_str::<Mapping>(frontmatter).context("技能的 YAML 配置无法修改")?
-            }
+            Some(frontmatter) => serde_yaml::from_str::<Mapping>(frontmatter)
+                .context(t!("errors.skill_yaml_readonly").to_string())?,
             None => Mapping::new(),
         };
         fields.insert(key("disable-model-invocation"), Value::Bool(manual));
@@ -45,9 +44,8 @@ impl TriggerSource {
         let skill_md = format!("---\n{}---\n{body}", serde_yaml::to_string(&fields)?);
 
         let mut openai = match self.openai_yaml.as_deref() {
-            Some(content) => {
-                serde_yaml::from_str::<Mapping>(content).context("Codex 技能配置无法修改")?
-            }
+            Some(content) => serde_yaml::from_str::<Mapping>(content)
+                .context(t!("errors.codex_config_readonly").to_string())?,
             None => Mapping::new(),
         };
         mapping_field(&mut openai, "policy")?
@@ -81,7 +79,7 @@ fn mapping_field<'a>(mapping: &'a mut Mapping, name: &str) -> Result<&'a mut Map
         .entry(key(name))
         .or_insert_with(|| Value::Mapping(Mapping::new()));
     let Value::Mapping(field) = field else {
-        bail!("技能的 YAML 配置无法修改");
+        bail!(t!("errors.skill_yaml_readonly").to_string());
     };
     Ok(field)
 }

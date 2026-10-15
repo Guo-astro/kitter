@@ -137,15 +137,17 @@ impl KitterApp {
                     .as_ref()
                     .is_some_and(|scan| scan.has_conflict(&candidate.identity()));
                 let label = if let Some(issue) = &candidate.issue {
-                    self.error_message(issue)
+                    self.error_message(issue.clone())
                 } else if conflict {
-                    self.tr("选择版本", "Choose version").into()
+                    t!("adoption.choose_version").to_string().into()
                 } else if candidate.existing_storage.is_some() {
-                    self.tr("已托管", "Managed").into()
-                } else if self.uses_english() {
-                    counted(candidate.references.len(), "reference", "references")
+                    t!("adoption.managed").to_string().into()
                 } else {
-                    format!("{} 处引用", candidate.references.len())
+                    crate::i18n::tn(
+                        "adoption.reference_count",
+                        candidate.references.len(),
+                        &[("count", (candidate.references.len()).to_string())],
+                    )
                 };
                 base.id(ElementId::Name(format!("adoption-row-{index}").into()))
                     .h(px(54.))
@@ -224,7 +226,7 @@ impl KitterApp {
                         11.,
                         p.muted,
                     ))
-                    .child(self.tr("引用位置", "References"))
+                    .child(t!("adoption.references").to_string())
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let Some(candidate) = this
                             .add_flow

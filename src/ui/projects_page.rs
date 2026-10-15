@@ -59,14 +59,14 @@ impl KitterApp {
             .collect::<Vec<_>>();
         let selected = self.projects_view.batch_filter.clone();
         let filter_tooltip = if selected.is_some() {
-            self.tr("更改筛选", "Change filter")
+            t!("projects.change_filter").to_string()
         } else {
-            self.tr("筛选", "Filter")
+            t!("projects.filter").to_string()
         }
         .to_string();
-        let all_label = self.tr("全部技能", "All skills").to_string();
-        let group_label = self.tr("分组", "Groups").to_string();
-        let tag_label = self.tr("标签", "Tags").to_string();
+        let all_label = t!("common.all_skills").to_string();
+        let group_label = t!("common.groups").to_string();
+        let tag_label = t!("common.tags").to_string();
         Popover::new("project-skill-batch-filter")
             .appearance(false)
             .anchor(Anchor::TopRight)
@@ -254,19 +254,19 @@ impl KitterApp {
             .as_ref()
             .is_some_and(|home| home == open_project);
         let select_all_label = if all_selected {
-            self.tr("取消全选", "Deselect all")
+            t!("projects.deselect_all").to_string()
         } else {
-            self.tr("全选当前结果", "Select visible")
+            t!("projects.select_visible").to_string()
         }
         .to_string();
         let remove_label = if global_scope {
-            self.tr("从用户级目录移除", "Remove from user-level locations")
+            t!("projects.global_remove").to_string()
         } else {
-            self.tr("从此项目移除", "Remove from project")
+            t!("projects.remove_from_project").to_string()
         }
         .to_string();
-        let select_first_label = self.tr("请先选择技能", "Select skills first").to_string();
-        let exit_label = self.tr("退出选择", "Exit selection").to_string();
+        let select_first_label = t!("projects.select_skills_first").to_string();
+        let exit_label = t!("projects.exit_selection").to_string();
         let select_names = selectable_names.clone();
         let mut controls = div().h(px(37.)).flex().items_center().gap(px(4.)).child(
             div()
@@ -436,7 +436,7 @@ impl KitterApp {
             .map(|location| display_effective_root(location, open_project))
             .collect::<Vec<_>>();
         if effective.built_in {
-            location_labels.push(self.tr("内置", "Built-in").to_string());
+            location_labels.push(t!("projects.built_in").to_string());
         }
         let locations = location_labels.join(" · ");
         let name = effective.name.clone();
@@ -639,9 +639,9 @@ impl KitterApp {
                     .text_color(p.muted)
                     .text_center()
                     .child(if self.model.library.config.recent_projects.is_empty() {
-                        self.tr("还没有项目", "No projects yet")
+                        t!("projects.empty_title").to_string()
                     } else {
-                        self.tr("没有匹配的项目", "No matching projects")
+                        t!("projects.search_empty").to_string()
                     }),
             );
         }
@@ -677,14 +677,14 @@ impl KitterApp {
             let set_tags_path = path.clone();
             let remove_app = project_context_app.clone();
             let remove_path = path.clone();
-            let set_tags_label = self.tr("设置标签", "Set tags").to_string();
+            let set_tags_label = t!("common.set_tags").to_string();
             let reveal_label = if cfg!(target_os = "macos") {
-                self.tr("在访达中显示", "Show in Finder")
+                t!("common.show_in_finder").to_string()
             } else {
-                self.tr("在文件夹中显示", "Show in folder")
+                t!("common.show_in_folder").to_string()
             }
             .to_string();
-            let remove_label = self.tr("移除项目", "Remove project").to_string();
+            let remove_label = t!("projects.remove_project").to_string();
             let remove_menu_color = p.danger;
             recent_rows = recent_rows.child(
                 div()
@@ -844,7 +844,7 @@ impl KitterApp {
                             .font_family(MONO)
                             .text_size(px(13.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(self.tr("全局生效", "Global")),
+                            .child(t!("projects.global").to_string()),
                     )
                     .child(
                         div()
@@ -854,11 +854,12 @@ impl KitterApp {
                             .text_color(p.muted)
                             .truncate()
                             .child(match global_skill_count {
-                                Some(count) if self.uses_english() => {
-                                    counted(count, "user-level skill", "user-level skills")
-                                }
-                                Some(count) => format!("{count} 个用户级技能"),
-                                None => self.tr("正在扫描…", "Scanning…").into(),
+                                Some(count) => crate::i18n::tn(
+                                    "projects.user_level_skills",
+                                    count,
+                                    &[("count", (count).to_string())],
+                                ),
+                                None => t!("common.scanning").to_string().into(),
                             }),
                     ),
             )
@@ -883,7 +884,7 @@ impl KitterApp {
             .child(
                 self.panel_header(
                     "projects-panel-window-drag",
-                    self.tr("项目", "Projects"),
+                    t!("common.projects").to_string(),
                     self.model.library.config.project_paths().len(),
                     cx,
                 )
@@ -892,7 +893,7 @@ impl KitterApp {
                         "open-project-folder",
                         "icons/plus.svg",
                         p.text,
-                        self.tr("打开项目文件夹", "Open project folder"),
+                        t!("projects.folder_picker").to_string(),
                         cx,
                     )
                     .on_mouse_down(
@@ -929,7 +930,10 @@ impl KitterApp {
                             .and_then(|tag| self.tags_flow.projects.path(tag))
                             .map(|path| format!("#{path}  {visible_project_count}"))
                             .unwrap_or_else(|| {
-                                format!("{}  {visible_project_count}", self.tr("项目", "Projects"))
+                                format!(
+                                    "{}  {visible_project_count}",
+                                    t!("common.projects").to_string()
+                                )
                             }),
                     )
                     .child(div().flex_1())
@@ -965,7 +969,7 @@ impl KitterApp {
                     .text_size(px(13.))
                     .text_color(p.muted)
                     .child(self.shell.spinner_accent.clone())
-                    .child(self.tr("正在扫描项目…", "Scanning project…"))
+                    .child(t!("projects.scanning_project").to_string())
             } else {
                 self.context_estimate_panel(open_project, &estimates, cx)
             };
@@ -1016,23 +1020,11 @@ impl KitterApp {
                         .child(Self::icon("icons/package.svg", 28., p.muted))
                         .child(div().mt(px(10.)).text_size(px(14.)).child(
                             if self.projects_view.selected_project_agent.is_some() {
-                                if self.uses_english() {
-                                    format!("No effective skills for {selected_agent}")
-                                } else {
-                                    format!("没有检测到对 {selected_agent} 生效的技能")
-                                }
+                                t!("projects.agent_empty", agent = selected_agent).to_string()
                             } else if is_global {
-                                self.tr(
-                                    "没有检测到用户级生效的技能",
-                                    "No user-level skills detected",
-                                )
-                                .to_string()
+                                t!("projects.user_skills_empty").to_string()
                             } else {
-                                self.tr(
-                                    "没有检测到对这个项目生效的技能",
-                                    "No effective skills detected for this project",
-                                )
-                                .to_string()
+                                t!("projects.effective_empty").to_string()
                             },
                         )),
                 );
@@ -1074,7 +1066,7 @@ impl KitterApp {
                     ));
                 } else {
                     let batch_project_path = open_project.clone();
-                    let batch_label = self.tr("批量选择", "Select multiple").to_string();
+                    let batch_label = t!("projects.select_multiple").to_string();
                     tabs = tabs.child(
                         div().h(px(37.)).flex().items_center().child(
                             div()
@@ -1128,7 +1120,7 @@ impl KitterApp {
                                     "project-detail-name",
                                     300,
                                     if is_global {
-                                        self.tr("全局生效", "Global").to_string()
+                                        t!("projects.global").to_string()
                                     } else {
                                         open_project
                                             .file_name()
@@ -1197,9 +1189,9 @@ impl KitterApp {
                         .text_size(px(16.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(if first {
-                            self.tr("打开第一个项目文件夹", "Open your first project folder")
+                            t!("projects.empty_action").to_string()
                         } else {
-                            self.tr("打开一个项目文件夹", "Open a project folder")
+                            t!("projects.open_folder").to_string()
                         }),
                 )
                 .child(
@@ -1210,16 +1202,13 @@ impl KitterApp {
                         .text_size(px(14.))
                         .line_height(relative(1.55))
                         .text_color(p.muted)
-                        .child(self.tr(
-                            "Kitter 会读取项目里的技能，并让你管理它们的安装边界。",
-                            "Kitter reads the skills in a project and lets you manage where they are installed.",
-                        )),
+                        .child(t!("projects.empty_hint").to_string()),
                 )
                 .child(
                     self.primary_icon_button(
                         "empty-open-project",
                         "icons/folder.svg",
-                        self.tr("打开项目文件夹", "Open project folder"),
+                        t!("projects.folder_picker").to_string(),
                         cx,
                     )
                     .mt(px(17.))

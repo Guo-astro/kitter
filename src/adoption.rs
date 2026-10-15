@@ -41,7 +41,7 @@ pub struct AdoptionCandidate {
     pub source: PathBuf,
     pub origin: SkillOrigin,
     pub references: Vec<SkillReference>,
-    pub issue: Option<String>,
+    pub issue: Option<crate::i18n::UserError>,
     pub existing_storage: Option<String>,
     marker_hash: u64,
 }
@@ -101,7 +101,9 @@ impl AdoptionCandidate {
     }
     pub fn verify(&self) -> Result<()> {
         if marker_hash(&self.source)? != self.marker_hash {
-            bail!("技能已变化，请重新扫描：{}", self.source.display());
+            bail!(crate::user_error!("errors.skill_changed_notice").detail(
+                t!("errors.skill_changed_detail", path = self.source.display()).to_string()
+            ));
         }
         Ok(())
     }
@@ -205,7 +207,7 @@ fn read_marker(path: &Path) -> Result<(String, String)> {
     let text = fs::read_to_string(path)?;
     let mut lines = text.lines();
     if lines.next().map(str::trim) != Some("---") {
-        bail!("缺少 frontmatter");
+        bail!(t!("errors.missing_frontmatter").to_string());
     }
     let mut header = Vec::new();
     let mut closed = false;
@@ -217,7 +219,7 @@ fn read_marker(path: &Path) -> Result<(String, String)> {
         header.push(line);
     }
     if !closed {
-        bail!("frontmatter 未闭合");
+        bail!(t!("errors.unclosed_frontmatter").to_string());
     }
     #[derive(Deserialize)]
     struct Metadata {
@@ -228,7 +230,7 @@ fn read_marker(path: &Path) -> Result<(String, String)> {
     let metadata: Metadata = serde_yaml::from_str(&header.join("\n"))?;
     library::validate_name(&metadata.name)?;
     if metadata.name.trim().is_empty() {
-        bail!("技能名称为空");
+        bail!(t!("errors.skill_name_empty").to_string());
     }
     Ok((metadata.name, metadata.description))
 }
@@ -543,7 +545,7 @@ impl Scanner<'_> {
             if matches!(candidate.origin, SkillOrigin::Local { .. }) {
                 candidate.origin = origin;
             } else if candidate.origin.identity_key(&name) != origin.identity_key(&name) {
-                candidate.issue = Some("来源记录不一致".into());
+                candidate.issue = Some(crate::user_error!("errors.sources_mismatch").into());
             }
         }
         if !candidate
@@ -646,7 +648,9 @@ pub fn scan_roots(
     managed: &[SkillSummary],
     cancel: &AtomicBool,
 ) -> Result<AdoptionScan> {
-    let home = home.canonicalize().context("找不到用户目录")?;
+    let home = home
+        .canonicalize()
+        .context(crate::user_error!("errors.home_missing"))?;
     let canonical_library = library_dir
         .canonicalize()
         .unwrap_or_else(|_| library_dir.to_path_buf());
@@ -669,11 +673,11 @@ pub fn scan_roots(
         scanner.walk(project);
     }
     if cancel.load(Ordering::Relaxed) {
-        bail!("已取消扫描");
+        crate::user_bail!("errors.scan_cancelled");
     }
     for candidate in scanner.candidates.values_mut() {
         if cancel.load(Ordering::Relaxed) {
-            bail!("已取消扫描");
+            crate::user_bail!("errors.scan_cancelled");
         }
         if matches!(candidate.origin, SkillOrigin::Local { .. }) {
             if let Some(origin) = git_origin(&candidate.source) {
@@ -735,23 +739,35 @@ pub fn validate_reference(reference: &SkillReference) -> Result<()> {
     if reference.kind != ReferenceKind::Link {
         return Ok(());
     }
-    let link = directory_link::inspect(&reference.path)?.context("引用已变化，请重新扫描")?;
+    let link = directory_link::inspect(&reference.path)?
+        .context(crate::user_error!("errors.reference_changed_notice"))?;
     if Some(&link.target) != reference.original_target.as_ref()
         || reference.path.canonicalize()? != reference.source
     {
-        bail!("引用已变化，请重新扫描：{}", reference.path.display());
+        bail!(
+            crate::user_error!("errors.skill_changed_notice").detail(
+                t!(
+                    "errors.reference_changed_detail",
+                    path = reference.path.display()
+                )
+                .to_string()
+            )
+        );
     }
     Ok(())
 }
 
 pub fn replace_link(path: &Path, target: &Path) -> Result<()> {
-    let parent = path.parent().context("无效的安装路径")?;
+    let parent = path
+        .parent()
+        .context(t!("errors.installation_path_invalid").to_string())?;
     let temp = tempfile::Builder::new()
         .prefix(".kitter-adopt-")
         .tempdir_in(parent)?;
     let staged = temp.path().join("link");
     directory_link::create(target, &staged)?;
-    fs::rename(&staged, path).with_context(|| format!("无法切换引用：{}", path.display()))
+    fs::rename(&staged, path)
+        .with_context(|| t!("errors.reference_switch_failed", path = path.display()).to_string())
 }
 
 pub fn rollback_links(changed: &[SkillReference]) -> Vec<String> {

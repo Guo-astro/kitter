@@ -93,16 +93,13 @@ impl KitterApp {
 
     pub(super) fn update_check_notice(&self) -> String {
         match &self.model.update_check {
-            Some(progress) if progress.total > 0 => {
-                if self.uses_english() {
-                    format!("Checking updates {}/{}", progress.scanned, progress.total)
-                } else {
-                    format!("正在检查更新 {}/{}", progress.scanned, progress.total)
-                }
-            }
-            _ => self
-                .tr("正在检查更新…", "Checking for updates…")
-                .to_string(),
+            Some(progress) if progress.total > 0 => t!(
+                "updates.scan_progress",
+                scanned = progress.scanned,
+                total = progress.total
+            )
+            .to_string(),
+            _ => t!("updates.checking_notice").to_string(),
         }
     }
 }

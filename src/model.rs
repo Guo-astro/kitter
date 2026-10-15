@@ -109,8 +109,8 @@ impl SkillSource {
             Self::Local { path } => path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "本地导入".into()),
-            Self::Unknown => "本地技能".into(),
+                .unwrap_or_else(|| t!("sources.local_import").to_string().into()),
+            Self::Unknown => t!("sources.local_skill").to_string().into(),
         }
     }
 }

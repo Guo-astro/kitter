@@ -241,7 +241,7 @@ impl SkillLibrary {
     ) -> Result<()> {
         let path = self.skill_path_by_storage(storage_name)?;
         if self.is_linked_source(storage_name) {
-            bail!("此技能暂不支持更改触发时机");
+            bail!(t!("errors.trigger_unsupported").to_string());
         }
         let before = TriggerSource::read(&path)?;
         let source = self
@@ -343,7 +343,10 @@ impl SkillLibrary {
                 .list()?
                 .into_iter()
                 .find(|skill| skill.record.storage_name == storage_name)
-                .with_context(|| format!("没有找到技能：{selector}"));
+                .with_context(|| {
+                    crate::user_error!("errors.skill_missing_notice")
+                        .detail(t!("errors.skill_not_found", name = selector).to_string())
+                });
         }
         validate_name(selector)?;
         let skills = self.list()?;
@@ -353,8 +356,11 @@ impl SkillLibrary {
             .collect::<Vec<_>>();
         match matches.as_slice() {
             [skill] => Ok(skill.clone()),
-            [] => bail!("没有找到技能：{selector}"),
-            _ => bail!("存在多个同名技能，请使用 id:<值> 明确选择"),
+            [] => bail!(
+                crate::user_error!("errors.skill_missing_notice")
+                    .detail(t!("errors.skill_not_found", name = selector).to_string())
+            ),
+            _ => bail!(t!("errors.skill_id_required").to_string()),
         }
     }
 
@@ -362,7 +368,10 @@ impl SkillLibrary {
         validate_name(storage_name)?;
         let path = self.config.library_dir.join(storage_name);
         if !path.join("SKILL.md").is_file() {
-            bail!("没有找到技能：{storage_name}");
+            bail!(
+                crate::user_error!("errors.skill_missing_notice")
+                    .detail(t!("errors.skill_not_found", name = storage_name).to_string())
+            );
         }
         Ok(path)
     }
@@ -402,14 +411,14 @@ impl SkillLibrary {
     fn read_file_in(&self, root: &Path, relative: &Path) -> Result<String> {
         let path = root.join(relative).canonicalize()?;
         if !path.starts_with(&root) {
-            bail!("文件不在技能目录内");
+            crate::user_bail!("errors.file_outside_skill");
         }
-        fs::read_to_string(path).context("该文件不是可预览的文本文件")
+        fs::read_to_string(path).context(crate::user_error!("errors.file_preview_unavailable"))
     }
 
     pub fn import(&mut self, source: &Path, mut record: SkillRecord) -> Result<()> {
         if !source.join("SKILL.md").is_file() {
-            bail!("所选目录中没有 SKILL.md");
+            crate::user_bail!("errors.skill_marker_missing");
         }
         validate_name(&record.name)?;
         let local_source = if matches!(record.origin, SkillOrigin::Local { .. }) {
@@ -428,7 +437,10 @@ impl SkillLibrary {
             .values()
             .any(|existing| existing.identity_key() == identity)
         {
-            bail!("这个来源中的技能已添加：{}", record.name);
+            bail!(
+                crate::user_error!("errors.skill_added_notice")
+                    .detail(t!("errors.skill_added_detail", name = record.name).to_string())
+            );
         }
         let storage_name = self.storage_name_for(&record.name, &identity);
         let destination = self.config.library_dir.join(&storage_name);
@@ -486,7 +498,7 @@ impl SkillLibrary {
         use crate::{adoption, directory_link};
         candidate.verify()?;
         if let Some(issue) = &candidate.issue {
-            bail!("{issue}");
+            bail!(issue.clone());
         }
         validate_name(&candidate.name)?;
         let mut seen = HashSet::new();
@@ -511,7 +523,7 @@ impl SkillLibrary {
             .map(|r| r.storage_name.clone())
             .unwrap_or_else(|| self.storage_name_for(&candidate.name, &identity));
         if self.registry.trigger_overrides.contains_key(&storage) {
-            bail!("先将技能的触发时机设为跟随技能");
+            crate::user_bail!("errors.trigger_follow_required");
         }
         let destination = self.config.library_dir.join(&storage);
         let already_points_here =
@@ -529,17 +541,33 @@ impl SkillLibrary {
                 if crate::project::installation_key(&reference.path) == candidate.source {
                     continue;
                 }
-                let current =
-                    directory_link::inspect(&reference.path)?.context("引用已变化，请重新扫描")?;
+                let current = directory_link::inspect(&reference.path)?
+                    .context(crate::user_error!("errors.reference_changed_notice"))?;
                 if Some(&current.target) != reference.original_target.as_ref() {
-                    bail!("引用已变化，请重新扫描：{}", reference.path.display());
+                    bail!(
+                        crate::user_error!("errors.skill_changed_notice").detail(
+                            t!(
+                                "errors.reference_changed_detail",
+                                path = reference.path.display()
+                            )
+                            .to_string()
+                        )
+                    );
                 }
                 if reference.original_target.as_ref() != Some(&candidate.source) {
                     adoption::replace_link(&reference.path, &candidate.source)?;
                     changed.push(reference.clone());
                 }
                 if reference.path.canonicalize()? != candidate.source {
-                    bail!("引用验证失败：{}", reference.path.display());
+                    bail!(
+                        crate::user_error!("errors.skill_changed_notice").detail(
+                            t!(
+                                "errors.reference_verify_failed",
+                                path = reference.path.display()
+                            )
+                            .to_string()
+                        )
+                    );
                 }
             }
             if !already_points_here {
@@ -634,7 +662,14 @@ impl SkillLibrary {
             if failures.is_empty() {
                 return Err(error);
             }
-            bail!("{error}；回滚未完成：{}", failures.join("；"));
+            bail!(
+                t!(
+                    "errors.rollback_incomplete",
+                    error = error,
+                    failures = failures.join(t!("errors.separator").as_ref())
+                )
+                .to_string()
+            );
         }
         Ok(storage)
     }
@@ -662,7 +697,7 @@ impl SkillLibrary {
         mut record: SkillRecord,
     ) -> Result<()> {
         if self.is_linked_source(&storage_name) {
-            bail!("此技能链接到原始目录，请在来源中更新");
+            crate::user_bail!("errors.linked_update_required");
         }
         let affected_projects = self
             .config
@@ -721,7 +756,7 @@ impl SkillLibrary {
     pub fn remove_by_storage(&mut self, storage_name: &str) -> Result<()> {
         let record = self.record_by_storage(storage_name)?;
         if record.origin.is_builtin() {
-            bail!("Kitter 内置 Skill 不能删除");
+            crate::user_bail!("errors.builtin_delete_protected");
         }
         let source_key = record.origin.source().key();
         let path = self.skill_path_by_storage(storage_name)?;
@@ -859,7 +894,7 @@ impl SkillLibrary {
             .iter()
             .any(|group| group.name.eq_ignore_ascii_case(&name))
         {
-            bail!("已经存在同名分组");
+            crate::user_bail!("errors.group_duplicate");
         }
         let group = SkillGroup {
             id: self.new_group_id(),
@@ -879,14 +914,14 @@ impl SkillLibrary {
             .iter()
             .any(|group| group.id != id && group.name.eq_ignore_ascii_case(&name))
         {
-            bail!("已经存在同名分组");
+            crate::user_bail!("errors.group_duplicate");
         }
         let group = self
             .registry
             .groups
             .iter_mut()
             .find(|group| group.id == id)
-            .context("分组不存在")?;
+            .context(crate::user_error!("errors.group_missing"))?;
         group.name = name;
         self.save()
     }
@@ -950,7 +985,7 @@ impl SkillLibrary {
             .into_iter()
             .find(|skill| skill.record.storage_name == storage_name)
             .map(|skill| skill.record)
-            .context("技能不存在")
+            .context(crate::user_error!("errors.skill_missing"))
     }
 
     pub fn set_update_available(&mut self, name: &str, available: bool) -> Result<()> {
@@ -967,7 +1002,7 @@ impl SkillLibrary {
             .registry
             .skills
             .get_mut(storage_name)
-            .context("技能不存在")?;
+            .context(crate::user_error!("errors.skill_missing"))?;
         record.update_available = available;
         self.save()
     }
@@ -983,7 +1018,7 @@ impl SkillLibrary {
             .get(storage_name)
             .is_some_and(|record| record.origin.is_builtin())
         {
-            bail!("Kitter 内置 Skill 固定显示在列表顶部");
+            crate::user_bail!("errors.builtin_position_fixed");
         }
         if let Some(group_id) = group_id
             && !self
@@ -992,13 +1027,13 @@ impl SkillLibrary {
                 .iter()
                 .any(|group| group.id == group_id)
         {
-            bail!("分组不存在");
+            crate::user_bail!("errors.group_missing");
         }
         let record = self
             .registry
             .skills
             .get_mut(storage_name)
-            .context("技能不存在")?;
+            .context(crate::user_error!("errors.skill_missing"))?;
         record.group_id = group_id.map(str::to_string);
         record.last_operated_at = operation_stamp();
         self.save()
@@ -1054,7 +1089,7 @@ fn operation_stamp() -> u64 {
 fn normalize_group_name(name: &str) -> Result<String> {
     let name = name.trim();
     if name.is_empty() {
-        bail!("请输入分组名称");
+        crate::user_bail!("errors.group_name_required");
     }
     Ok(name.to_string())
 }
@@ -1128,7 +1163,7 @@ fn unquote(value: &str) -> String {
 
 pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name == "." || name == ".." {
-        bail!("技能名称无效");
+        crate::user_bail!("errors.skill_name_invalid");
     }
     Ok(())
 }

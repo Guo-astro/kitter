@@ -89,7 +89,7 @@ impl SkillScan {
         group_name: Option<&str>,
     ) -> Result<ImportSummary> {
         if selected.is_empty() {
-            bail!("请至少选择一个技能");
+            crate::user_bail!("errors.skill_selection_required");
         }
         let SkillScan {
             origin,
@@ -106,7 +106,7 @@ impl SkillScan {
             npx_lock_hashes(
                 scan_temp
                     .as_ref()
-                    .context("Npx 扫描结果不可用，请重新扫描")?
+                    .context(crate::user_error!("errors.scan_required"))?
                     .path(),
             )?
         } else {
@@ -203,7 +203,7 @@ impl SkillScan {
 /// every depth so repository metadata and tool caches never appear as candidates.
 pub fn scan_local(root: &Path) -> Result<SkillScan> {
     if !root.is_dir() {
-        bail!("请选择一个文件夹");
+        crate::user_bail!("errors.folder_required");
     }
     let root = root.canonicalize()?;
 
@@ -215,7 +215,8 @@ pub fn scan_local(root: &Path) -> Result<SkillScan> {
             entry.depth() == 0 || !entry.file_name().to_string_lossy().starts_with('.')
         })
     {
-        let entry = entry.with_context(|| format!("无法读取文件夹：{}", root.display()))?;
+        let entry = entry
+            .with_context(|| t!("errors.folder_read_failed", path = root.display()).to_string())?;
         if entry.file_type().is_file() && entry.file_name() == "SKILL.md" {
             if let Some(parent) = entry.path().parent() {
                 skill_dirs.insert(parent.to_path_buf());
@@ -232,9 +233,12 @@ pub fn scan_local(root: &Path) -> Result<SkillScan> {
                 path.file_name()
                     .map(|value| value.to_string_lossy().into_owned())
             })
-            .context("无法确定技能名称")?;
+            .context(crate::user_error!("errors.skill_name_unreadable"))?;
         if !names.insert(name.clone()) {
-            bail!("发现多个名为 {name} 的技能，请调整名称后重试");
+            bail!(
+                crate::user_error!("errors.skill_name_conflict_notice")
+                    .detail(t!("errors.skill_name_conflict", name = name).to_string())
+            );
         }
         skills.push(ScannedSkill {
             name,
@@ -244,7 +248,7 @@ pub fn scan_local(root: &Path) -> Result<SkillScan> {
     }
 
     if skills.is_empty() {
-        bail!("这个文件夹中没有找到可用的技能");
+        crate::user_bail!("errors.folder_empty");
     }
     skills.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(SkillScan {
@@ -263,9 +267,10 @@ pub fn scan_npx(input: &str) -> Result<SkillScan> {
     npx_add(temp.path(), &repository, "*")?;
     let root = temp.path().join(".agents/skills");
     let mut skills = Vec::new();
-    for entry in
-        fs::read_dir(&root).with_context(|| format!("没有从来源中找到技能：{}", repository))?
-    {
+    for entry in fs::read_dir(&root).with_context(|| {
+        crate::user_error!("errors.source_empty")
+            .detail(t!("errors.source_empty_detail", source = repository).to_string())
+    })? {
         let path = entry?.path();
         if !path.is_dir() || !path.join("SKILL.md").is_file() {
             continue;
@@ -276,7 +281,7 @@ pub fn scan_npx(input: &str) -> Result<SkillScan> {
                 path.file_name()
                     .map(|value| value.to_string_lossy().into_owned())
             })
-            .context("无法确定技能名称")?;
+            .context(crate::user_error!("errors.skill_name_unreadable"))?;
         skills.push(ScannedSkill {
             name: skill,
             description: description.unwrap_or_default(),
@@ -284,7 +289,7 @@ pub fn scan_npx(input: &str) -> Result<SkillScan> {
         });
     }
     if skills.is_empty() {
-        bail!("这个地址中没有找到可用的技能");
+        crate::user_bail!("errors.source_address_empty");
     }
     skills.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(SkillScan {
@@ -305,7 +310,7 @@ pub fn scan_claude(input: &str) -> Result<SkillScan> {
                 path.file_name()
                     .map(|value| value.to_string_lossy().into_owned())
             })
-            .context("无法确定技能名称")?;
+            .context(crate::user_error!("errors.skill_name_unreadable"))?;
         skills.push(ScannedSkill {
             name: skill,
             description: description.unwrap_or_default(),
@@ -313,7 +318,7 @@ pub fn scan_claude(input: &str) -> Result<SkillScan> {
         });
     }
     if skills.is_empty() {
-        bail!("这个插件中没有找到可用的技能");
+        crate::user_bail!("errors.plugin_empty");
     }
     skills.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(SkillScan {
@@ -326,7 +331,7 @@ pub fn scan_claude(input: &str) -> Result<SkillScan> {
 fn normalize_npx_source(input: &str) -> Result<String> {
     let value = input.trim();
     if value.is_empty() {
-        bail!("请输入 skills.sh 或 GitHub 地址");
+        crate::user_bail!("errors.source_address_required");
     }
     if value.starts_with("http://") || value.starts_with("https://") || value.starts_with("git@") {
         return Ok(normalize_repository_url(value));
@@ -342,7 +347,7 @@ fn normalize_npx_source(input: &str) -> Result<String> {
                 .map(|part| (*part).to_string())
         })
         .map(|value| normalize_repository_url(&value))
-        .context("没有识别到 skills.sh 或 GitHub 地址")
+        .context(crate::user_error!("errors.source_address_invalid"))
 }
 
 fn normalize_repository_url(value: &str) -> String {
@@ -355,7 +360,7 @@ fn normalize_repository_url(value: &str) -> String {
 fn normalize_claude_plugin(input: &str) -> Result<String> {
     let value = input.trim();
     if value.is_empty() {
-        bail!("请输入 Claude 插件名称");
+        crate::user_bail!("errors.plugin_name_required");
     }
     let parts = value.split_whitespace().collect::<Vec<_>>();
     if parts.len() == 1 {
@@ -364,7 +369,7 @@ fn normalize_claude_plugin(input: &str) -> Result<String> {
     parts
         .windows(2)
         .find_map(|pair| (pair[0] == "install").then(|| pair[1].to_string()))
-        .context("没有识别到 Claude 插件名称")
+        .context(crate::user_error!("errors.plugin_name_invalid"))
 }
 
 pub fn update(library: &mut SkillLibrary, name: &str) -> Result<()> {
@@ -380,7 +385,7 @@ pub fn update_by_storage(library: &mut SkillLibrary, storage_name: &str) -> Resu
 fn update_record(library: &mut SkillLibrary, mut record: SkillRecord) -> Result<()> {
     let storage_name = record.storage_name.clone();
     if library.is_linked_source(&storage_name) {
-        bail!("此技能链接到原始目录，请在来源中更新");
+        crate::user_bail!("errors.linked_update_required");
     }
     if matches!(record.origin, SkillOrigin::Local { .. }) {
         let candidate = crate::adoption::AdoptionCandidate::from_local_record(&record)?;
@@ -390,7 +395,7 @@ fn update_record(library: &mut SkillLibrary, mut record: SkillRecord) -> Result<
     let temp = TempDir::new()?;
     let mut updated_origin = None;
     let source = match record.origin.clone() {
-        SkillOrigin::Builtin => bail!("Kitter 内置 Skill 会随 Kitter 自动更新"),
+        SkillOrigin::Builtin => crate::user_bail!("errors.builtin_update_managed"),
         SkillOrigin::Npx {
             repository, skill, ..
         } => {
@@ -421,7 +426,7 @@ fn update_record(library: &mut SkillLibrary, mut record: SkillRecord) -> Result<
             )?
         }
         SkillOrigin::Local { path, .. } => path.clone(),
-        SkillOrigin::Unknown => bail!("这个技能没有可用的更新来源"),
+        SkillOrigin::Unknown => crate::user_bail!("errors.update_source_missing"),
     };
     if let Some(origin) = updated_origin {
         record.origin = origin;
@@ -506,7 +511,13 @@ pub fn check_updates_with_progress(
         let hashes = match result {
             Ok(hashes) => hashes,
             Err(error) => {
-                failures.push(format!("Npx 来源检查失败：{error:#}"));
+                failures.push(
+                    t!(
+                        "errors.npx_check_failed",
+                        error = crate::i18n::error_diagnostic(&error)
+                    )
+                    .to_string(),
+                );
                 HashMap::new()
             }
         };
@@ -541,7 +552,11 @@ pub fn check_updates_with_progress(
                 library.set_update_available_by_storage(&record.storage_name, available)?;
                 count += usize::from(available);
             }
-            Err(error) => failures.push(format!("{}: {error:#}", record.name)),
+            Err(error) => failures.push(format!(
+                "{}: {}",
+                record.name,
+                crate::i18n::error_diagnostic(&error)
+            )),
         }
         scanned += 1;
     }
@@ -551,7 +566,15 @@ pub fn check_updates_with_progress(
         current: None,
     });
     if !failures.is_empty() {
-        bail!("部分技能检查失败：{}", failures.join("；"));
+        bail!(
+            crate::user_error!("errors.update_check_failed").detail(
+                t!(
+                    "errors.update_check_detail",
+                    failures = failures.join(t!("errors.separator").as_ref())
+                )
+                .to_string()
+            )
+        );
     }
     Ok(count)
 }
@@ -669,10 +692,11 @@ fn npx_lock_hashes(workspace: &Path) -> Result<HashMap<String, String>> {
         if !path.is_file() {
             continue;
         }
-        let bytes = fs::read(&path)
-            .with_context(|| format!("读取 Npx lock 文件失败：{}", path.display()))?;
+        let bytes = fs::read(&path).with_context(|| {
+            t!("errors.npx_lock_read_failed", path = path.display()).to_string()
+        })?;
         let lock: NpxLockFile = serde_json::from_slice(&bytes)
-            .with_context(|| format!("Npx lock 文件格式无效：{}", path.display()))?;
+            .with_context(|| t!("errors.npx_lock_invalid", path = path.display()).to_string())?;
         for (name, entry) in lock.skills {
             if let Some(hash) = entry.hash() {
                 hashes.insert(name, hash);
@@ -708,9 +732,10 @@ fn same_tree(left: &Path, right: &Path) -> Result<bool> {
 
 fn run(command: &mut Command) -> Result<()> {
     let program = command.get_program().to_string_lossy().into_owned();
-    let output = command
-        .output()
-        .with_context(|| format!("无法启动 {program}，请确认已经安装并可在终端中使用"))?;
+    let output = command.output().with_context(|| {
+        crate::user_error!("errors.tool_unavailable")
+            .detail(t!("errors.tool_start_failed", program = program).to_string())
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -719,7 +744,10 @@ fn run(command: &mut Command) -> Result<()> {
         } else {
             stderr.trim()
         };
-        bail!("命令执行失败：{}", detail);
+        bail!(
+            crate::user_error!("errors.fetch_failed")
+                .detail(t!("errors.command_failed", detail = detail).to_string())
+        );
     }
     Ok(())
 }
@@ -828,7 +856,7 @@ fn find_skill_dir(root: &Path) -> Result<PathBuf> {
         .filter_map(Result::ok)
         .find(|e| e.file_name() == "SKILL.md")
         .and_then(|e| e.path().parent().map(Path::to_path_buf))
-        .context("仓库中没有找到 SKILL.md")
+        .context(crate::user_error!("errors.repository_skill_missing"))
 }
 
 fn find_claude_skill(plugin: &str, skill: &str) -> Result<PathBuf> {
@@ -837,12 +865,14 @@ fn find_claude_skill(plugin: &str, skill: &str) -> Result<PathBuf> {
         .filter(|path| path.file_name().is_some_and(|name| name == skill))
         .collect::<Vec<_>>();
     candidates.sort_by_key(|path| fs::metadata(path).and_then(|m| m.modified()).ok());
-    candidates.pop().context("Claude 插件中没有找到指定技能")
+    candidates
+        .pop()
+        .context(crate::user_error!("errors.plugin_skill_missing"))
 }
 
 fn find_claude_skills(plugin: &str) -> Result<Vec<PathBuf>> {
     let root = dirs::home_dir()
-        .context("无法确定用户目录")?
+        .context(crate::user_error!("errors.home_unavailable"))?
         .join(".claude/plugins/cache");
     let mut candidates = WalkDir::new(root)
         .max_depth(7)
@@ -867,7 +897,7 @@ fn find_claude_skills(plugin: &str) -> Result<Vec<PathBuf>> {
         .collect::<Vec<_>>();
     candidates.sort_by_key(|path| fs::metadata(path).and_then(|m| m.modified()).ok());
     if candidates.is_empty() {
-        bail!("Claude 插件中没有找到技能");
+        crate::user_bail!("errors.claude_plugin_empty");
     }
     Ok(candidates)
 }

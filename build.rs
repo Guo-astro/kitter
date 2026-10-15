@@ -1,5 +1,6 @@
 fn main() {
     println!("cargo:rerun-if-changed=assets/app-icon.ico");
+    println!("cargo:rerun-if-changed=locales");
 
     #[cfg(target_os = "windows")]
     winresource::WindowsResource::new()

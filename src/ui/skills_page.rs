@@ -44,46 +44,30 @@ impl KitterApp {
                             .contains(skill_storage_name(skill))
                 }));
         let install_label = if multi_selection {
-            if self.uses_english() {
-                format!("Install {selection_count} skills")
-            } else {
-                format!("安装 {} 个技能", selection_count)
-            }
+            t!("skills.install_selection_count", count = selection_count).to_string()
         } else {
-            self.tr("安装技能", "Install Skill").to_string()
+            t!("skills.install_skill").to_string()
         };
         let set_tags_label = if multi_selection {
-            if self.uses_english() {
-                format!("Set tags ({selection_count})")
-            } else {
-                format!("设置标签（{}）", selection_count)
-            }
+            t!("skills.set_tags", count = selection_count).to_string()
         } else {
-            self.tr("设置标签", "Set tags").to_string()
+            t!("common.set_tags").to_string()
         };
         let reveal_label = if cfg!(target_os = "macos") {
-            self.tr("在访达中显示", "Show in Finder")
+            t!("common.show_in_finder").to_string()
         } else {
-            self.tr("在文件夹中显示", "Show in folder")
+            t!("common.show_in_folder").to_string()
         }
         .to_string();
         let delete_label = if multi_selection {
-            if self.uses_english() {
-                format!("Delete {selection_count} skills")
-            } else {
-                format!("删除 {} 个技能", selection_count)
-            }
+            t!("skills.delete_skills", count = selection_count).to_string()
         } else {
-            self.tr("删除技能", "Delete Skill").to_string()
+            t!("skills.delete_skill").to_string()
         };
         let move_group_label = if multi_selection {
-            if self.uses_english() {
-                format!("Move {selection_count} skills to group")
-            } else {
-                format!("移动 {} 个技能到分组", selection_count)
-            }
+            t!("skills.move_skills_to_group", count = selection_count).to_string()
         } else {
-            self.tr("移动分组", "Move to group").to_string()
+            t!("common.move_to_group").to_string()
         };
         let delete_menu_color = p.danger;
         let selection_mode = self.skills_view.selection.is_multiple();
@@ -93,19 +77,16 @@ impl KitterApp {
         let reveal_path = skill.path.clone();
         let checkbox_name = storage_name.clone();
         let trigger_mode = self.model.library.trigger_mode_by_storage(&storage_name);
-        let trigger_label = self.tr("触发时机", "Trigger timing").to_string();
+        let trigger_label = t!("skills.trigger_timing").to_string();
         let trigger_choices = [
             (
                 TriggerMode::FollowSkill,
-                self.tr("跟随技能", "Follow skill").to_string(),
+                t!("skills.follow_skill").to_string(),
             ),
-            (
-                TriggerMode::Manual,
-                self.tr("手动触发", "Manual trigger").to_string(),
-            ),
+            (TriggerMode::Manual, t!("skills.manual_trigger").to_string()),
             (
                 TriggerMode::Automatic,
-                self.tr("自动触发", "Automatic trigger").to_string(),
+                t!("skills.automatic_trigger").to_string(),
             ),
         ];
         let checkbox = div()
@@ -173,24 +154,22 @@ impl KitterApp {
                                 .is_some_and(|home| self.skill_installed_at(skill, &home, cx))
                             {
                                 if skill.installed_projects == 0 {
-                                    self.tr("已全局安装", "Installed globally").into()
-                                } else if self.uses_english() {
-                                    format!(
-                                        "Global · {}",
-                                        counted(skill.installed_projects, "project", "projects")
-                                    )
+                                    t!("skills.installed_globally").to_string().into()
                                 } else {
-                                    format!("全局 · {} 个项目", skill.installed_projects)
+                                    crate::i18n::tn(
+                                        "skills.global_projects",
+                                        skill.installed_projects,
+                                        &[("count", (skill.installed_projects).to_string())],
+                                    )
                                 }
                             } else if skill.installed_projects == 0 {
-                                self.tr("尚未安装", "Not installed").into()
-                            } else if self.uses_english() {
-                                format!(
-                                    "Installed in {}",
-                                    counted(skill.installed_projects, "project", "projects")
-                                )
+                                t!("skills.uninstalled").to_string().into()
                             } else {
-                                format!("已安装到 {} 个项目", skill.installed_projects)
+                                crate::i18n::tn(
+                                    "skills.project_count",
+                                    skill.installed_projects,
+                                    &[("count", (skill.installed_projects).to_string())],
+                                )
                             },
                         ),
                     ),
@@ -515,7 +494,7 @@ impl KitterApp {
                                     .flex_1()
                                     .text_size(px(16.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .child(self.tr("删除分组", "Delete group")),
+                                    .child(t!("skills.delete_group").to_string()),
                             )
                             .child(
                                 self.bordered_icon_button(
@@ -532,21 +511,16 @@ impl KitterApp {
                             .mt(px(12.))
                             .text_size(px(14.))
                             .line_height(relative(1.55))
-                            .child(if self.uses_english() {
-                                format!("Delete “{}”?", group.name)
-                            } else {
-                                format!("确定删除「{}」吗？", group.name)
-                            }),
+                            .child(
+                                t!("skills.delete_group_confirm", name = group.name).to_string(),
+                            ),
                     )
                     .child(
                         div()
                             .mt(px(6.))
                             .text_size(px(13.))
                             .text_color(p.secondary)
-                            .child(self.tr(
-                                "分组中的技能会保留并移到未分组。",
-                                "Skills will be kept and moved to ungrouped.",
-                            )),
+                            .child(t!("skills.delete_group_hint").to_string()),
                     )
                     .when(count > 0, |body| {
                         body.child(
@@ -561,14 +535,11 @@ impl KitterApp {
                                     Checkbox::new("delete-group-skills-checkbox")
                                         .checked(delete_skills),
                                 )
-                                .child(div().text_size(px(13.)).child(if self.uses_english() {
-                                    format!(
-                                        "Also delete the {} in this group",
-                                        counted(count, "skill", "skills")
-                                    )
-                                } else {
-                                    format!("同时删除分组中的 {} 个技能", count)
-                                }))
+                                .child(div().text_size(px(13.)).child(crate::i18n::tn(
+                                    "skills.delete_group_skills",
+                                    count,
+                                    &[("count", (count).to_string())],
+                                )))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.groups_flow.delete_skills =
                                         !this.groups_flow.delete_skills;
@@ -582,10 +553,7 @@ impl KitterApp {
                                 .mt(px(8.))
                                 .text_size(px(12.))
                                 .text_color(p.danger)
-                                .child(self.tr(
-                                    "技能删除后无法撤销。",
-                                    "Deleting skills cannot be undone.",
-                                )),
+                                .child(t!("skills.delete_warning").to_string()),
                         )
                     })
                     .when_some(self.tags_flow.error.clone(), |body, error| {
@@ -619,7 +587,7 @@ impl KitterApp {
                             .cursor_pointer()
                             .text_size(px(14.))
                             .hover(move |button| button.bg(p.hover))
-                            .child(self.tr("取消", "Cancel"))
+                            .child(t!("common.cancel").to_string())
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| this.close_dialog(cx)),
@@ -641,9 +609,9 @@ impl KitterApp {
                             .text_color(p.on_accent)
                             .hover(move |button| button.opacity(0.82))
                             .child(if delete_skills {
-                                self.tr("删除分组及技能", "Delete group and skills")
+                                t!("skills.delete_group_and_skills").to_string()
                             } else {
-                                self.tr("删除分组", "Delete group")
+                                t!("skills.delete_group").to_string()
                             })
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -675,7 +643,7 @@ impl KitterApp {
                     .justify_center()
                     .text_size(px(13.))
                     .text_color(p.muted)
-                    .child(self.tr("还没有分组", "No groups yet")),
+                    .child(t!("skills.no_groups_yet").to_string()),
             );
         }
         for group in groups {
@@ -696,7 +664,7 @@ impl KitterApp {
                 .text_color(p.secondary)
                 .hover(move |row| row.bg(p.hover))
                 .child(Self::icon("icons/plus.svg", 15., p.secondary))
-                .child(self.tr("新建分组", "New group"))
+                .child(t!("skills.new_group").to_string())
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.start_group_edit(GroupEdit::Create, window, cx);
                 })),
@@ -732,7 +700,7 @@ impl KitterApp {
                                 div()
                                     .text_size(px(16.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .child(self.tr("分组管理", "Manage groups")),
+                                    .child(t!("common.manage_groups").to_string()),
                             )
                             .child(div().flex_1())
                             .child(div().w(px(6.)))
@@ -766,7 +734,6 @@ impl KitterApp {
 
     pub(super) fn tag_filter_control(&self, scope: TagScope, cx: &mut Context<Self>) -> Popover {
         let p = self.palette();
-        let english = self.uses_english();
         let selected = self.tag_filter_for(scope);
         let tag_state = self.tags_for(scope);
         let tags = tag_state
@@ -785,11 +752,9 @@ impl KitterApp {
             TagScope::Skills => "skill",
             TagScope::Projects => "project",
         };
-        let all_label = match (scope, english) {
-            (TagScope::Skills, true) => "All skills",
-            (TagScope::Projects, true) => "All projects",
-            (TagScope::Skills, false) => "全部技能",
-            (TagScope::Projects, false) => "全部项目",
+        let all_label = match scope {
+            TagScope::Skills => t!("common.all_skills").to_string(),
+            TagScope::Projects => t!("common.all_projects").to_string(),
         };
         let app = cx.entity().downgrade();
         Popover::new(ElementId::Name(
@@ -856,7 +821,7 @@ impl KitterApp {
                     })
                     .hover(move |row| row.bg(p.hover))
                     .text_size(px(13.))
-                    .child(all_label)
+                    .child(all_label.clone())
                     .on_click(popover_cx.listener(move |_, _, _, cx| {
                         let _ = all_app.update(cx, |this, cx| {
                             this.set_tag_filter(scope, None);
@@ -1068,7 +1033,7 @@ impl KitterApp {
             .child(
                 self.panel_header(
                     "skills-panel-window-drag",
-                    self.tr("技能", "Skills"),
+                    t!("common.skills").to_string(),
                     self.model.skills.len(),
                     cx,
                 )
@@ -1079,7 +1044,7 @@ impl KitterApp {
                         "add-skill",
                         "icons/plus.svg",
                         p.text,
-                        self.tr("添加技能", "Add Skill"),
+                        t!("common.add_skill").to_string(),
                         cx,
                     )
                     .on_mouse_down(
@@ -1117,7 +1082,7 @@ impl KitterApp {
                             .and_then(|tag| self.tags_flow.skills.path(tag))
                             .map(|path| format!("#{path}  {visible_count}"))
                             .unwrap_or_else(|| {
-                                format!("{}  {}", self.tr("全部", "All"), visible_count)
+                                format!("{}  {}", t!("skills.all").to_string(), visible_count)
                             }),
                     )
                     .child(div().flex_1())
@@ -1133,11 +1098,11 @@ impl KitterApp {
                         .items_center()
                         .text_size(px(12.))
                         .text_color(p.secondary)
-                        .child(if self.uses_english() {
-                            format!("{} selected", counted(selection_count, "skill", "skills"))
-                        } else {
-                            format!("已选 {} 个技能", selection_count)
-                        })
+                        .child(crate::i18n::tn(
+                            "skills.selection_count",
+                            selection_count,
+                            &[("count", (selection_count).to_string())],
+                        ))
                         .child(div().flex_1())
                         .child(
                             div()
@@ -1145,7 +1110,7 @@ impl KitterApp {
                                 .px(px(5.))
                                 .cursor_pointer()
                                 .hover(move |button| button.text_color(p.text))
-                                .child(self.tr("全选", "All"))
+                                .child(t!("skills.select_all_short").to_string())
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.select_all_visible_skills(
                                         visible_selection_order.as_ref(),
@@ -1159,7 +1124,7 @@ impl KitterApp {
                                 .px(px(5.))
                                 .cursor_pointer()
                                 .hover(move |button| button.text_color(p.text))
-                                .child(self.tr("清除", "Clear"))
+                                .child(t!("skills.clear").to_string())
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.clear_skill_selection(cx);
                                 })),
@@ -1187,8 +1152,8 @@ impl KitterApp {
             let toggle_key = group_id.clone();
             let drop_group_id = group_id.clone();
             let context_app = cx.entity().downgrade();
-            let rename_group_label = self.tr("重命名", "Rename");
-            let delete_group_label = self.tr("删除分组", "Delete group");
+            let rename_group_label = t!("common.rename").to_string();
+            let delete_group_label = t!("skills.delete_group").to_string();
             let rename_group_id = group_id.clone();
             let delete_group_id = group_id.clone();
             let delete_group_menu_color = p.danger;
@@ -1196,14 +1161,11 @@ impl KitterApp {
                 .remove(&group_id)
                 .unwrap_or_default();
             let install_group_count = install_group_skills.len();
-            let install_group_label = if self.uses_english() {
-                format!(
-                    "Install {}",
-                    counted(install_group_count, "skill", "skills")
-                )
-            } else {
-                format!("安装分组内 {install_group_count} 个技能")
-            };
+            let install_group_label = crate::i18n::tn(
+                "skills.install_group_count",
+                install_group_count,
+                &[("count", (install_group_count).to_string())],
+            );
             rows = rows.child(
                 div()
                     .id(ElementId::Name(format!("skill-group-{group_id}").into()))
@@ -1270,13 +1232,15 @@ impl KitterApp {
                         let install_group_skills = install_group_skills.clone();
                         let rename_group_id = rename_group_id.clone();
                         let delete_group_id = delete_group_id.clone();
-                        let delete_menu_item =
-                            Self::danger_menu_item(delete_group_label, delete_group_menu_color)
-                                .on_click(move |_, _, cx| {
-                                    let _ = delete_app.update(cx, |this, cx| {
-                                        this.open_group_delete_dialog(delete_group_id.clone(), cx);
-                                    });
-                                });
+                        let delete_menu_item = Self::danger_menu_item(
+                            delete_group_label.clone(),
+                            delete_group_menu_color,
+                        )
+                        .on_click(move |_, _, cx| {
+                            let _ = delete_app.update(cx, |this, cx| {
+                                this.open_group_delete_dialog(delete_group_id.clone(), cx);
+                            });
+                        });
                         menu.min_w(px(190.))
                             .when(!install_group_skills.is_empty(), |menu| {
                                 menu.item(
@@ -1295,7 +1259,7 @@ impl KitterApp {
                                 )
                             })
                             .item(
-                                PopupMenuItem::new(rename_group_label)
+                                PopupMenuItem::new(rename_group_label.clone())
                                     .icon(Icon::default().path("icons/pencil.svg"))
                                     .on_click(move |_, window, cx| {
                                         let _ = rename_app.update(cx, |this, cx| {
@@ -1333,7 +1297,6 @@ impl KitterApp {
 
     pub(super) fn skill_tag_controls(&self, skill_name: &str, cx: &mut Context<Self>) -> Div {
         let p = self.palette();
-        let english = self.uses_english();
         let app = cx.entity().downgrade();
         let assigned = self
             .tags_flow
@@ -1408,9 +1371,9 @@ impl KitterApp {
             .px(px(6.))
             .rounded(px(RADIUS_CONTROL))
             .child(if has_assigned {
-                self.tr("编辑", "Edit")
+                t!("skills.edit").to_string()
             } else {
-                self.tr("＋ 添加标签", "+ Add tag")
+                t!("skills.add_tag").to_string()
             }),
         )
         .content(move |_, _, popover_cx| {
@@ -1429,11 +1392,7 @@ impl KitterApp {
                         .py(px(10.))
                         .text_size(px(13.))
                         .text_color(p.muted)
-                        .child(if english {
-                            "No tags yet"
-                        } else {
-                            "还没有标签"
-                        }),
+                        .child(t!("common.no_tags_yet").to_string()),
                 );
             }
             for (id, name, parent, checked) in &tag_rows {
@@ -1491,11 +1450,7 @@ impl KitterApp {
                             .text_size(px(13.))
                             .text_color(p.secondary)
                             .hover(move |row| row.bg(p.hover))
-                            .child(if english {
-                                "+ New tag"
-                            } else {
-                                "＋ 新建标签"
-                            })
+                            .child(t!("common.add_tag").to_string())
                             .on_click(popover_cx.listener(move |_, _, _, cx| {
                                 let _ = new_tag_app.update(cx, |this, cx| {
                                     this.open_tag_dialog(TagScope::Skills, cx)
@@ -1551,11 +1506,9 @@ impl KitterApp {
                     .mt(px(4.))
                     .text_size(px(12.))
                     .text_color(p.muted)
-                    .child(if self.uses_english() {
-                        format!("and {} more", selection_count - preview_count)
-                    } else {
-                        format!("还有 {} 个", selection_count - preview_count)
-                    }),
+                    .child(
+                        t!("skills.and_more", count = selection_count - preview_count).to_string(),
+                    ),
             );
         }
         div()
@@ -1589,24 +1542,18 @@ impl KitterApp {
                                 div()
                                     .text_size(px(18.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .child(if self.uses_english() {
-                                        format!(
-                                            "{} selected",
-                                            counted(selection_count, "skill", "skills")
-                                        )
-                                    } else {
-                                        format!("已选 {} 个技能", selection_count)
-                                    }),
+                                    .child(crate::i18n::tn(
+                                        "skills.selection_count",
+                                        selection_count,
+                                        &[("count", (selection_count).to_string())],
+                                    )),
                             )
                             .child(
                                 div()
                                     .mt(px(4.))
                                     .text_size(px(12.))
                                     .text_color(p.muted)
-                                    .child(self.tr(
-                                        "批量操作将应用到全部选中项",
-                                        "Batch actions apply to all selected skills",
-                                    )),
+                                    .child(t!("skills.selection_hint").to_string()),
                             ),
                     )
                     .child(div().flex_1())
@@ -1615,7 +1562,7 @@ impl KitterApp {
                             "install-selected-skills",
                             "icons/download.svg",
                             p.text,
-                            self.tr("安装技能", "Install Skills"),
+                            t!("skills.install_selection").to_string(),
                             cx,
                         )
                         .on_mouse_down(
@@ -1643,10 +1590,7 @@ impl KitterApp {
                 .items_center()
                 .justify_center()
                 .text_color(p.muted)
-                .child(self.tr(
-                    "添加第一个技能开始使用 Kitter",
-                    "Add your first skill to get started",
-                ))
+                .child(t!("skills.empty_hint").to_string())
                 .child(self.window_drag_strip("empty-skill-detail-window-drag", 24., cx));
         };
         let storage_name = skill_storage_name(skill).to_string();
@@ -1659,7 +1603,7 @@ impl KitterApp {
                     "update-skill",
                     "icons/rotate-cw.svg",
                     p.secondary,
-                    self.tr("更新", "Update"),
+                    t!("skills.update").to_string(),
                     cx,
                 )
                 .on_mouse_down(
@@ -1690,7 +1634,7 @@ impl KitterApp {
                 self.primary_icon_button(
                     "install-skill",
                     "icons/download.svg",
-                    self.tr("安装技能", "Install Skill"),
+                    t!("skills.install_skill").to_string(),
                     cx,
                 )
                 .on_mouse_down(
@@ -1705,11 +1649,7 @@ impl KitterApp {
                 ),
             );
         let description = if skill.record.description.is_empty() {
-            self.tr(
-                "这个技能暂时没有描述。",
-                "This skill does not have a description yet.",
-            )
-            .to_string()
+            t!("skills.description_empty").to_string()
         } else {
             skill.record.description.clone()
         };
@@ -1782,9 +1722,9 @@ impl KitterApp {
         if can_expand_description {
             let description_name = skill.record.name.clone();
             let toggle_label = if description_expanded {
-                self.tr("收起", "Less")
+                t!("skills.less").to_string()
             } else {
-                self.tr("展开", "More")
+                t!("skills.more").to_string()
             };
             description_section = description_section.child(
                 div().w_full().mt(px(4.)).flex().items_center().child(
@@ -1898,13 +1838,13 @@ impl KitterApp {
             .border_color(p.border)
             .child(self.tab_button(
                 "tab-installs",
-                self.tr("安装情况", "Installs"),
+                t!("skills.installs").to_string(),
                 DetailTab::Installs,
                 cx,
             ))
             .child(self.tab_button(
                 "tab-content",
-                self.tr("内容", "Content"),
+                t!("skills.content").to_string(),
                 DetailTab::Content,
                 cx,
             ));
@@ -1928,10 +1868,11 @@ impl KitterApp {
     pub(super) fn tab_button(
         &self,
         id: &'static str,
-        label: &'static str,
+        label: impl Into<SharedString>,
         tab: DetailTab,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let label: SharedString = label.into();
         let p = self.palette();
         let active = self.skills_view.tab == tab;
         div()
@@ -2028,7 +1969,7 @@ impl KitterApp {
                         div()
                             .mt(px(10.))
                             .text_size(px(12.))
-                            .child(self.tr("尚未安装", "Not installed yet")),
+                            .child(t!("skills.installation_empty").to_string()),
                     ),
             );
         } else {
@@ -2037,19 +1978,16 @@ impl KitterApp {
                     .mb(px(10.))
                     .text_size(px(12.))
                     .text_color(p.muted)
-                    .child(if self.uses_english() {
-                        format!(
-                            "Installed in {}",
-                            counted(projects.len(), "location", "locations")
-                        )
-                    } else {
-                        format!("已安装到 {} 个位置", projects.len())
-                    }),
+                    .child(crate::i18n::tn(
+                        "skills.location_count",
+                        projects.len(),
+                        &[("count", (projects.len()).to_string())],
+                    )),
             );
             for (index, path) in projects.into_iter().enumerate() {
                 let popover_id = format!("agents:{}:{}", skill.record.name, path.display());
                 let project_name = if home.as_ref() == Some(&path) {
-                    self.tr("全局", "Global").to_string()
+                    t!("common.global").to_string()
                 } else {
                     path.file_name()
                         .unwrap_or_default()

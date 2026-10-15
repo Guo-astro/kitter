@@ -14,14 +14,11 @@ impl KitterApp {
         {
             Ok(()) => {
                 self.refresh(cx);
-                self.show_notice(self.tr("触发时机已更新", "Trigger timing updated"), cx);
+                self.show_notice(t!("skills.trigger_timing_updated").to_string(), cx);
             }
             Err(error) => {
                 eprintln!("Kitter: {error:#}");
-                self.show_notice(
-                    self.tr("无法更改触发时机", "Could not change trigger timing"),
-                    cx,
-                );
+                self.show_notice(t!("skills.trigger_change_failed").to_string(), cx);
             }
         }
     }

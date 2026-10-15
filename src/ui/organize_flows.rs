@@ -132,7 +132,7 @@ impl KitterApp {
     pub(super) fn small_choice<F>(
         &self,
         id: &'static str,
-        label: &'static str,
+        label: impl Into<SharedString>,
         active: bool,
         cx: &mut Context<Self>,
         apply: F,
@@ -140,6 +140,7 @@ impl KitterApp {
     where
         F: Fn(&mut Self) + 'static,
     {
+        let label: SharedString = label.into();
         let p = self.palette();
         div()
             .id(id)
@@ -489,7 +490,7 @@ impl KitterApp {
                         .justify_center()
                         .text_color(p.muted)
                         .text_size(px(13.))
-                        .child(self.tr("还没有标签", "No tags yet")),
+                        .child(t!("common.no_tags_yet").to_string()),
                 )
             });
         }
@@ -525,7 +526,7 @@ impl KitterApp {
                 .text_color(p.secondary)
                 .hover(move |row| row.bg(p.hover))
                 .child(Self::icon("icons/plus.svg", 13., p.secondary))
-                .child(self.tr("新建标签", "New tag"))
+                .child(t!("organize.new_tag").to_string())
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.start_tag_edit(TagEdit::CreateRoot, window, cx);
                 })),
@@ -534,29 +535,34 @@ impl KitterApp {
             tags.tag(id).map(|tag| {
                 let count = tags.count(id);
                 let has_children = tags.children(id).next().is_some();
-                let message = if self.uses_english() && has_children {
-                    format!(
-                        "Delete #{}? Child tags and {} will also be removed.",
-                        tag.name,
-                        counted(count, "assignment", "assignments")
-                    )
-                } else if self.uses_english() {
-                    let target = match scope {
-                        TagScope::Skills => counted(count, "skill", "skills"),
-                        TagScope::Projects => counted(count, "project", "projects"),
-                    };
-                    format!("Delete #{}? {target} will lose this tag.", tag.name)
-                } else if has_children {
-                    format!(
-                        "删除 #{}？它的子标签和 {} 个关联也会一并移除。",
-                        tag.name, count
+                let message = if has_children {
+                    crate::i18n::tn(
+                        "tags.delete_children_confirm",
+                        count,
+                        &[
+                            ("name", (tag.name).to_string()),
+                            ("count", (count).to_string()),
+                        ],
                     )
                 } else {
-                    let target = match scope {
-                        TagScope::Skills => "技能",
-                        TagScope::Projects => "项目",
-                    };
-                    format!("删除 #{}？{} 个{}将失去这个标签。", tag.name, count, target)
+                    match scope {
+                        TagScope::Skills => crate::i18n::tn(
+                            "tags.delete_skills_confirm",
+                            count,
+                            &[
+                                ("name", (tag.name).to_string()),
+                                ("count", (count).to_string()),
+                            ],
+                        ),
+                        TagScope::Projects => crate::i18n::tn(
+                            "tags.delete_projects_confirm",
+                            count,
+                            &[
+                                ("name", (tag.name).to_string()),
+                                ("count", (count).to_string()),
+                            ],
+                        ),
+                    }
                 };
                 div()
                     .mt(px(12.))
@@ -581,7 +587,7 @@ impl KitterApp {
                                     .flex()
                                     .items_center()
                                     .hover(move |button| button.bg(p.hover))
-                                    .child(self.tr("取消", "Cancel"))
+                                    .child(t!("common.cancel").to_string())
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.tags_flow.delete_pending = None;
                                         this.notify_dialog(cx);
@@ -599,7 +605,7 @@ impl KitterApp {
                                     .flex()
                                     .items_center()
                                     .hover(move |button| button.opacity(0.82))
-                                    .child(self.tr("删除", "Delete"))
+                                    .child(t!("common.delete").to_string())
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.tags_for_mut(scope).delete(id);
                                         this.persist_tags();
@@ -651,8 +657,10 @@ impl KitterApp {
                                     .text_size(px(16.))
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(match scope {
-                                        TagScope::Skills => self.tr("技能标签", "Skill tags"),
-                                        TagScope::Projects => self.tr("项目标签", "Project tags"),
+                                        TagScope::Skills => t!("organize.skill_tags").to_string(),
+                                        TagScope::Projects => {
+                                            t!("organize.project_tags").to_string()
+                                        }
                                     }),
                             )
                             .child(div().flex_1())
@@ -781,7 +789,7 @@ impl KitterApp {
                     .justify_center()
                     .text_size(px(13.))
                     .text_color(p.muted)
-                    .child(self.tr("还没有标签", "No tags yet")),
+                    .child(t!("common.no_tags_yet").to_string()),
             );
         }
         for (id, name, parent) in tag_rows {
@@ -811,7 +819,7 @@ impl KitterApp {
                                         div()
                                             .text_size(px(16.))
                                             .font_weight(FontWeight::SEMIBOLD)
-                                            .child(self.tr("设置标签", "Set tags")),
+                                            .child(t!("common.set_tags").to_string()),
                                     )
                                     .child(
                                         div()
@@ -853,7 +861,7 @@ impl KitterApp {
                             .text_size(px(13.))
                             .text_color(p.muted)
                             .hover(move |button| button.bg(p.hover).text_color(p.text))
-                            .child(self.tr("＋ 新建标签", "+ New tag"))
+                            .child(t!("common.add_tag").to_string())
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.open_tag_creation_from_assignment(cx)
                             })),
@@ -892,10 +900,12 @@ impl KitterApp {
                         .map(|skill| skill.record.name.clone())
                 })
                 .unwrap_or_else(|| storage_names.first().cloned().unwrap_or_default())
-        } else if self.uses_english() {
-            counted(storage_names.len(), "skill", "skills")
         } else {
-            format!("{} 个技能", storage_names.len())
+            crate::i18n::tn(
+                "common.skill_count",
+                storage_names.len(),
+                &[("count", (storage_names.len()).to_string())],
+            )
         };
         let groups = self.model.library.groups();
         let mut rows = div().mt(px(12.)).flex().flex_col().gap(px(2.));
@@ -916,7 +926,7 @@ impl KitterApp {
                     rgba(0x00000000)
                 })
                 .hover(move |row| row.bg(p.hover))
-                .child(self.tr("不使用分组", "No group"))
+                .child(t!("organize.no_group").to_string())
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.move_selected_skill_to_group(None, cx);
                 })),
@@ -966,7 +976,7 @@ impl KitterApp {
                                 div()
                                     .text_size(px(16.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .child(self.tr("移动分组", "Move to group")),
+                                    .child(t!("common.move_to_group").to_string()),
                             )
                             .child(div().flex_1())
                             .child(
@@ -999,7 +1009,7 @@ impl KitterApp {
                                 .mt(px(3.))
                                 .text_size(px(12.))
                                 .text_color(p.muted)
-                                .child(self.tr("当前分组不一致", "Current groups differ")),
+                                .child(t!("organize.current_groups_differ").to_string()),
                         )
                     })
                     .child(rows),
@@ -1018,7 +1028,7 @@ impl KitterApp {
                     div()
                         .text_size(px(13.))
                         .text_color(p.secondary)
-                        .child(self.tr("分组", "Group")),
+                        .child(t!("common.group").to_string()),
                 )
                 .child(self.group_inline_editor("add-group-editor", cx))
                 .when_some(self.tags_flow.error.clone(), |view, error| {
@@ -1026,16 +1036,15 @@ impl KitterApp {
                 })
                 .into_any_element();
         }
-        let english = self.uses_english();
         let app = cx.entity().downgrade();
         let groups = self.model.library.groups();
         let current = if self.add_flow.group_enabled {
             self.add_flow
                 .group_name
                 .clone()
-                .unwrap_or_else(|| self.tr("选择分组", "Choose group").to_string())
+                .unwrap_or_else(|| t!("organize.choose_group").to_string())
         } else {
-            self.tr("不使用分组", "No group").to_string()
+            t!("organize.no_group").to_string()
         };
         let selected_group = self
             .add_flow
@@ -1053,11 +1062,7 @@ impl KitterApp {
         {
             group_options.push(default_group);
         }
-        let create_group_label = if english {
-            "+ New group"
-        } else {
-            "＋ 新建分组"
-        };
+        let create_group_label = t!("organize.new_group").to_string();
         let group_menu = Popover::new("add-group-menu")
             .appearance(false)
             .anchor(Anchor::TopRight)
@@ -1097,11 +1102,7 @@ impl KitterApp {
                             rgba(0x00000000)
                         })
                         .hover(move |row| row.bg(p.hover))
-                        .child(if english {
-                            "No group"
-                        } else {
-                            "不使用分组"
-                        })
+                        .child(t!("organize.no_group").to_string())
                         .on_click(popover_cx.listener(move |_, _, _, cx| {
                             let _ = clear_app.update(cx, |this, cx| {
                                 if this.add_flow.task.is_some() {
@@ -1162,7 +1163,7 @@ impl KitterApp {
                             .text_size(px(13.))
                             .text_color(p.secondary)
                             .hover(move |row| row.bg(p.hover))
-                            .child(create_group_label)
+                            .child(create_group_label.clone())
                             .on_click(popover_cx.listener(move |_, _, window, cx| {
                                 let _ = create_app.update(cx, |this, cx| {
                                     if this.add_flow.task.is_some() {
@@ -1185,7 +1186,7 @@ impl KitterApp {
                 div()
                     .text_size(px(13.))
                     .text_color(p.secondary)
-                    .child(self.tr("分组", "Group")),
+                    .child(t!("common.group").to_string()),
             )
             .child(group_menu)
             .into_any_element()

@@ -64,7 +64,6 @@ mod state;
 mod tags_groups_actions;
 mod theme;
 
-use crate::text::counted;
 use effective_view::{EffectivePluginGroup, EffectiveSkillRow, same_file};
 use gpui_component::resizable::ResizableState;
 use skill_selection::SkillSelection;
@@ -488,8 +487,12 @@ impl KitterApp {
     }
 
     fn new_in(data_dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let library = SkillLibrary::open_in(&data_dir)
-            .unwrap_or_else(|error| panic!("无法打开 Kitter：{error:#}"));
+        let library = SkillLibrary::open_in(&data_dir).unwrap_or_else(|error| {
+            panic!(
+                "{}",
+                t!("errors.startup_failed", error = format!("{error:#}")).to_string()
+            )
+        });
         let system_dark = matches!(
             cx.window_appearance(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark
@@ -510,79 +513,38 @@ impl KitterApp {
         let selected = skills
             .first()
             .map(|skill| skill_storage_name(skill).to_string());
-        let english = match library.config.language {
-            Language::En => true,
-            Language::ZhCn => false,
-            Language::System => Language::system() == Language::En,
-        };
+        crate::i18n::apply_language(library.config.language);
         let skill_search = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if english {
-                "Search skills"
-            } else {
-                "搜索技能"
-            })
+            InputState::new(window, cx).placeholder(t!("common.search_skills").to_string())
         });
         let project_search = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if english {
-                "Search projects"
-            } else {
-                "搜索项目"
-            })
+            InputState::new(window, cx).placeholder(t!("common.search_projects").to_string())
         });
-        let tag_name_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if english {
-                "Tag name"
-            } else {
-                "标签名称"
-            })
-        });
-        let group_name_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if english {
-                "Group name"
-            } else {
-                "分组名称"
-            })
-        });
+        let tag_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("common.tag_name").to_string()));
+        let group_name_input = cx
+            .new(|cx| InputState::new(window, cx).placeholder(t!("common.group_name").to_string()));
         let add_primary_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder(if english {
-                "Paste a skills.sh/GitHub URL or npx skills add command"
-            } else {
-                "粘贴 skills.sh、GitHub 地址或 npx skills add 命令"
-            })
+            InputState::new(window, cx).placeholder(t!("add.source_placeholder").to_string())
         });
         let add_source_select = cx.new(|cx| {
             SelectState::new(
                 vec![
                     SourceChoice {
                         kind: AddKind::Npx,
-                        label: "skills.sh / github".into(),
+                        label: "skills.sh / github".to_string().into(),
                     },
                     SourceChoice {
                         kind: AddKind::Claude,
-                        label: if english {
-                            "Claude plugin"
-                        } else {
-                            "Claude 插件"
-                        }
-                        .into(),
+                        label: t!("common.claude_plugin").to_string().into(),
                     },
                     SourceChoice {
                         kind: AddKind::Local,
-                        label: if english {
-                            "Local folder"
-                        } else {
-                            "本地文件夹"
-                        }
-                        .into(),
+                        label: t!("common.local_folder").to_string().into(),
                     },
                     SourceChoice {
                         kind: AddKind::Existing,
-                        label: if english {
-                            "Existing installations"
-                        } else {
-                            "已有安装"
-                        }
-                        .into(),
+                        label: t!("common.existing_installations").to_string().into(),
                     },
                 ],
                 Some(IndexPath::default()),
@@ -718,23 +680,10 @@ impl KitterApp {
                     return;
                 }
                 this.add_flow.kind = *kind;
-                let english = this.uses_english();
                 let placeholder = match this.add_flow.kind {
-                    AddKind::Claude => {
-                        if english {
-                            "Plugin name or claude plugin install command"
-                        } else {
-                            "插件名称或 claude plugin install 命令"
-                        }
-                    }
-                    AddKind::Npx => {
-                        if english {
-                            "Paste a skills.sh/GitHub URL or npx skills add command"
-                        } else {
-                            "粘贴 skills.sh、GitHub 地址或 npx skills add 命令"
-                        }
-                    }
-                    AddKind::Local | AddKind::Existing => "",
+                    AddKind::Claude => t!("add.plugin_placeholder").to_string(),
+                    AddKind::Npx => t!("add.source_placeholder").to_string(),
+                    AddKind::Local | AddKind::Existing => String::new(),
                 };
                 this.add_flow.primary_input.update(cx, |input, cx| {
                     input.set_value("", window, cx);
@@ -888,10 +837,6 @@ impl KitterApp {
         f32::from(window.bounds().size.width) - f32::from(sidebar).clamp(160., 260.)
     }
 
-    fn tr(&self, zh: &'static str, en: &'static str) -> &'static str {
-        if self.uses_english() { en } else { zh }
-    }
-
     fn selectable_text(
         &self,
         id: impl Into<String>,
@@ -922,14 +867,6 @@ impl KitterApp {
         };
         selection.set_fallback_copy_text(text.to_string(), cx);
         selectable_text::SelectableText::new(selection, document_order, text)
-    }
-
-    fn uses_english(&self) -> bool {
-        match self.model.library.config.language {
-            Language::En => true,
-            Language::ZhCn => false,
-            Language::System => Language::system() == Language::En,
-        }
     }
 
     fn tags_for(&self, scope: TagScope) -> &TagState {
@@ -1230,53 +1167,23 @@ impl KitterApp {
 
     fn set_language(&mut self, language: Language, window: &mut Window, cx: &mut Context<Self>) {
         self.model.library.config.language = language;
-        let english = self.uses_english();
+        crate::i18n::apply_language(language);
         self.skills_view.skill_search.update(cx, |input, cx| {
-            input.set_placeholder(
-                if english {
-                    "Search skills"
-                } else {
-                    "搜索技能"
-                },
-                window,
-                cx,
-            )
+            input.set_placeholder(t!("common.search_skills").to_string(), window, cx)
         });
         self.projects_view.project_search.update(cx, |input, cx| {
-            input.set_placeholder(
-                if english {
-                    "Search projects"
-                } else {
-                    "搜索项目"
-                },
-                window,
-                cx,
-            )
+            input.set_placeholder(t!("common.search_projects").to_string(), window, cx)
         });
         self.tags_flow.name_input.update(cx, |input, cx| {
-            input.set_placeholder(if english { "Tag name" } else { "标签名称" }, window, cx)
+            input.set_placeholder(t!("common.tag_name").to_string(), window, cx)
         });
         self.groups_flow.name_input.update(cx, |input, cx| {
-            input.set_placeholder(
-                if english {
-                    "Group name"
-                } else {
-                    "分组名称"
-                },
-                window,
-                cx,
-            )
+            input.set_placeholder(t!("common.group_name").to_string(), window, cx)
         });
         let placeholder = match self.add_flow.kind {
-            AddKind::Npx => self.tr(
-                "粘贴 skills.sh、GitHub 地址或 npx skills add 命令",
-                "Paste a skills.sh/GitHub URL or npx skills add command",
-            ),
-            AddKind::Claude => self.tr(
-                "插件名称或 claude plugin install 命令",
-                "Plugin name or claude plugin install command",
-            ),
-            AddKind::Local | AddKind::Existing => "",
+            AddKind::Npx => t!("add.source_placeholder").to_string(),
+            AddKind::Claude => t!("add.plugin_placeholder").to_string(),
+            AddKind::Local | AddKind::Existing => String::new(),
         };
         self.add_flow.primary_input.update(cx, |input, cx| {
             input.set_placeholder(placeholder, window, cx)
@@ -1286,34 +1193,19 @@ impl KitterApp {
                 vec![
                     SourceChoice {
                         kind: AddKind::Npx,
-                        label: "skills.sh / github".into(),
+                        label: "skills.sh / github".to_string().into(),
                     },
                     SourceChoice {
                         kind: AddKind::Claude,
-                        label: if english {
-                            "Claude plugin"
-                        } else {
-                            "Claude 插件"
-                        }
-                        .into(),
+                        label: t!("common.claude_plugin").to_string().into(),
                     },
                     SourceChoice {
                         kind: AddKind::Local,
-                        label: if english {
-                            "Local folder"
-                        } else {
-                            "本地文件夹"
-                        }
-                        .into(),
+                        label: t!("common.local_folder").to_string().into(),
                     },
                     SourceChoice {
                         kind: AddKind::Existing,
-                        label: if english {
-                            "Existing installations"
-                        } else {
-                            "已有安装"
-                        }
-                        .into(),
+                        label: t!("common.existing_installations").to_string().into(),
                     },
                 ],
                 window,
@@ -1554,12 +1446,17 @@ mod e2e_tests {
     use gpui::{AppContext, Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, point, px};
     use std::fs;
 
+    static LOCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn init(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
     }
 
     #[test]
     fn injected_data_directory_is_the_only_library_source() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
@@ -1585,6 +1482,9 @@ mod e2e_tests {
 
     #[test]
     fn collapsed_skill_groups_are_restored_from_config() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
@@ -1640,6 +1540,9 @@ mod e2e_tests {
 
     #[test]
     fn sidebar_navigation_switches_the_rendered_page() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
@@ -1666,6 +1569,9 @@ mod e2e_tests {
 
     #[test]
     fn project_details_are_loaded_off_the_ui_thread() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
@@ -1719,6 +1625,9 @@ mod e2e_tests {
 
     #[test]
     fn large_project_renders_and_scrolls_with_virtual_rows() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
@@ -1791,6 +1700,9 @@ mod e2e_tests {
 
     #[test]
     fn groups_drag_in_both_views_and_keep_the_saved_order() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         use gpui::MouseButton;
         let mut cx = TestAppContext::single();
         init(&mut cx);
@@ -1882,6 +1794,9 @@ mod e2e_tests {
 
     #[test]
     fn creating_group_inside_add_keeps_selection_and_dialog() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         use super::{DialogKind, GroupEdit};
         let mut cx = TestAppContext::single();
         init(&mut cx);
@@ -1928,6 +1843,9 @@ mod e2e_tests {
 
     #[test]
     fn busy_add_dialog_blocks_changes_and_recovers_when_idle() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         use super::{AddTask, Language};
         use gpui::Focusable;
         let mut cx = TestAppContext::single();
@@ -1988,6 +1906,9 @@ mod e2e_tests {
 
     #[test]
     fn local_folder_picker_scans_inside_the_isolated_window() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
@@ -2056,8 +1977,10 @@ mod e2e_tests {
 
     #[test]
     fn check_updates_shows_scan_progress_notice() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         use super::Language;
-        use std::collections::HashSet;
         use std::time::Duration;
 
         let mut cx = TestAppContext::single();
@@ -2080,14 +2003,25 @@ mod e2e_tests {
         });
         app.update_in(cx, |app, window, cx| {
             app.set_language(Language::ZhCn, window, cx);
-            crate::source::scan_local(&source)
-                .unwrap()
-                .import_selected(
-                    &mut app.model.library,
-                    &HashSet::from(["alpha".into(), "beta".into()]),
-                    None,
-                )
-                .unwrap();
+            for name in ["alpha", "beta"] {
+                // Linked local sources are skipped by update checks. Use copied
+                // fixtures so this test still covers a two-item progress notice.
+                app.model
+                    .library
+                    .import(
+                        &source.join(name),
+                        crate::SkillRecord {
+                            name: name.into(),
+                            storage_name: String::new(),
+                            description: "Fixture".into(),
+                            origin: crate::SkillOrigin::Unknown,
+                            update_available: false,
+                            group_id: None,
+                            last_operated_at: 0,
+                        },
+                    )
+                    .unwrap();
+            }
             app.refresh(cx);
             app.check_all_updates(cx);
             let progress = app
@@ -2101,7 +2035,7 @@ mod e2e_tests {
                 app.shell
                     .notice
                     .as_deref()
-                    .is_some_and(|notice| notice.contains("正在检查更新"))
+                    .is_some_and(|notice| notice == app.update_check_notice())
             );
         });
         cx.refresh().unwrap();
@@ -2112,7 +2046,10 @@ mod e2e_tests {
         cx.refresh().unwrap();
         app.update(cx, |app, _| {
             assert!(app.model.update_check.is_none());
-            assert_eq!(app.shell.notice.as_deref(), Some("所有技能都是最新版本"));
+            assert_eq!(
+                app.shell.notice.as_deref(),
+                Some(t!("common.updates_current").as_ref())
+            );
         });
         assert!(cx.debug_bounds("app-notice").is_some());
     }

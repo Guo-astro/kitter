@@ -12,17 +12,17 @@ impl KitterApp {
         let selected_keys = self.selected_skill_keys();
         let selected_count = selected_keys.len();
         let selected_label = if selected_count > 1 {
-            if self.uses_english() {
-                counted(selected_count, "skill", "skills")
-            } else {
-                format!("{} 个技能", selected_count)
-            }
+            crate::i18n::tn(
+                "common.skill_count",
+                selected_count,
+                &[("count", (selected_count).to_string())],
+            )
         } else {
             self.selected_skill()
                 .map(|skill| skill.record.name.clone())
-                .unwrap_or_else(|| self.tr("技能", "Skill").to_string())
+                .unwrap_or_else(|| t!("install.skill").to_string())
         };
-        let global_label = self.tr("全局", "Global").to_string();
+        let global_label = t!("common.global").to_string();
         let project_label = if self.install_flow.global {
             global_label.clone()
         } else {
@@ -31,7 +31,7 @@ impl KitterApp {
                 .as_ref()
                 .and_then(|path| path.file_name())
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| self.tr("选择一个项目", "Choose a project").to_string())
+                .unwrap_or_else(|| t!("install.project_placeholder").to_string())
         };
         let selected_global = self.install_flow.global;
         let selected_project = self.projects_view.open_project.clone();
@@ -163,7 +163,7 @@ impl KitterApp {
                     .mb(px(7.))
                     .text_size(px(14.))
                     .text_color(p.muted)
-                    .child(self.tr("安装到", "Install to")),
+                    .child(t!("install.install_to").to_string()),
             )
             .child(
                 div()
@@ -185,7 +185,7 @@ impl KitterApp {
                     .mb(px(7.))
                     .text_size(px(13.))
                     .text_color(p.secondary)
-                    .child(self.tr("安装位置", "Install location")),
+                    .child(t!("install.install_location").to_string()),
             )
             .child(self.target_group(cx));
         let panel = div()
@@ -210,11 +210,10 @@ impl KitterApp {
                                     .font_family(FONT_UI)
                                     .text_size(px(16.))
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .child(if self.uses_english() {
-                                        format!("Install {}", selected_label.clone())
-                                    } else {
-                                        format!("安装 {}", selected_label.clone())
-                                    }),
+                                    .child(
+                                        t!("install.title", name = selected_label.clone())
+                                            .to_string(),
+                                    ),
                             )
                             .child(div().flex_1())
                             .child(close_button),
@@ -245,7 +244,7 @@ impl KitterApp {
                             .cursor_pointer()
                             .text_size(px(14.))
                             .hover(move |button| button.bg(p.hover))
-                            .child(self.tr("取消", "Cancel"))
+                            .child(t!("common.cancel").to_string())
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -268,7 +267,7 @@ impl KitterApp {
                             .items_center()
                             .cursor_pointer()
                             .text_size(px(14.))
-                            .child(self.tr("安装", "Install"))
+                            .child(t!("common.install").to_string())
                             .when(has_target, |el| {
                                 el.hover(move |button| button.opacity(0.82)).on_mouse_down(
                                     MouseButton::Left,
@@ -373,7 +372,7 @@ impl KitterApp {
                             .ml(px(9.))
                             .text_size(px(14.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(self.tr("通用", "Universal")),
+                            .child(t!("install.universal").to_string()),
                     )
                     .child(div().flex_1())
                     .child(
@@ -412,7 +411,7 @@ impl KitterApp {
                     .items_center()
                     .text_size(px(14.))
                     .font_weight(FontWeight::MEDIUM)
-                    .child(self.tr("独立安装", "Agent-specific")),
+                    .child(t!("install.agent_specific").to_string()),
             )
             .child(independent_rows);
         div().child(universal_box).child(independent_box)
@@ -523,24 +522,17 @@ impl KitterApp {
                 let label = labels.join(", ");
                 (
                     if labels.len() == 1 {
-                        if self.uses_english() {
-                            format!("Delete “{label}”?")
-                        } else {
-                            format!("删除「{label}」？")
-                        }
-                    } else if self.uses_english() {
-                        format!("Delete {} skills?", labels.len())
+                        t!("install.delete_confirm", name = label).to_string()
                     } else {
-                        format!("删除 {} 个技能？", labels.len())
+                        t!("install.delete_batch_confirm", count = labels.len()).to_string()
                     },
                     (if linked_count == skills.len() {
-                        self.tr("仅移除 Kitter 托管与安装链接，原始源目录保留。", "Remove Kitter entries and installation links. Original source folders are kept.")
+                        t!("install.unlink_hint").to_string()
                     } else if linked_count > 0 {
-                        self.tr("托管副本与安装将被删除；链接来源的原始目录保留。", "Managed copies and installations will be removed. Linked source folders are kept.")
-                    } else { self.tr(
-                        "这会从 Kitter 中删除这些技能，同时移除它们在项目中的安装。以下位置的文件也会被删除，且无法恢复：",
-                        "This removes these skills from Kitter and from projects where they are installed. Files at these locations will also be deleted and cannot be restored:",
-                    ) })
+                        t!("install.delete_copies_hint").to_string()
+                    } else {
+                        t!("install.delete_files_warning").to_string()
+                    })
                     .to_string(),
                     Some(
                         skills
@@ -549,8 +541,8 @@ impl KitterApp {
                             .collect::<Vec<_>>()
                             .join("\n"),
                     ),
-                    self.tr("删除", "Delete"),
-                    self.tr("技能已删除", "Skills deleted"),
+                    t!("common.delete").to_string(),
+                    t!("install.skills_deleted").to_string(),
                 )
             }
             DeleteConfirmation::ProjectSkills {
@@ -572,87 +564,51 @@ impl KitterApp {
                     .any(|kind| matches!(kind, project::RemovalKind::SourceFiles));
                 let external_sources = unique_external_sources(&kinds);
                 let message = if *batch && global_scope {
-                    self.tr(
-                        "直接保存在用户级目录中的技能文件会被删除；通过链接安装的技能只会移除链接，原始文件会保留。",
-                        "Skill files stored directly in user-level locations will be deleted. For linked skills, only the links will be removed; the original files will remain.",
-                    )
+                    t!("install.global_delete_hint").to_string()
                 } else if *batch {
-                    self.tr(
-                        "直接保存在此项目中的技能文件会被删除；通过链接安装的技能只会移除链接，原始文件会保留。",
-                        "Skill files stored directly in this project will be deleted. For linked skills, only the links will be removed; the original files will remain.",
-                    )
+                    t!("install.project_delete_hint").to_string()
                 } else if deletes_files {
                     if global_scope {
-                        self.tr(
-                            "所选用户级安装中包含直接保存的技能，确认后这些文件会被删除，且无法恢复。",
-                            "Some selected user-level installations are stored directly there. Their files will be deleted and cannot be restored.",
-                        )
+                        t!("install.global_delete_warning").to_string()
                     } else {
-                        self.tr(
-                            "所选位置中包含直接保存在项目里的技能，确认后这些文件会被删除，且无法恢复。",
-                            "Some selected installations are stored directly in the project. Their files will be deleted and cannot be restored.",
-                        )
+                        t!("install.project_delete_warning").to_string()
                     }
                 } else if !external_sources.is_empty() {
                     if global_scope {
-                        self.tr(
-                            "只会移除选中的用户级安装，原始技能文件不会受到影响。",
-                            "Only the selected user-level installations will be removed. The original skill files will not be affected.",
-                        )
+                        t!("install.global_source_kept").to_string()
                     } else {
-                        self.tr(
-                            "只会移除这个项目中的安装，原始技能文件不会受到影响。",
-                            "Only the project installations will be removed. The original skill files will not be affected.",
-                        )
+                        t!("install.project_source_kept").to_string()
                     }
                 } else {
                     if global_scope {
-                        self.tr(
-                            "只会移除选中的用户级安装。Kitter 中保存的技能不会被删除，你之后仍可以再次安装。",
-                            "Only the selected user-level installations will be removed. The skill saved in Kitter will remain available to install again.",
-                        )
+                        t!("install.global_library_kept").to_string()
                     } else {
-                        self.tr(
-                            "只会移除这个项目中的安装。Kitter 中保存的技能不会被删除，你之后仍可以再次安装。",
-                            "Only the project installations will be removed. The skill saved in Kitter will remain available to install again.",
-                        )
+                        t!("install.project_library_kept").to_string()
                     }
                 };
                 (
                     if *batch && global_scope {
-                        self.tr(
-                            "从用户级目录移除所选技能？",
-                            "Remove selected skills from user-level locations?",
-                        )
-                        .to_string()
+                        t!("install.global_batch_remove_confirm").to_string()
                     } else if *batch {
-                        self.tr(
-                            "从此项目移除所选技能？",
-                            "Remove selected skills from this project?",
-                        )
-                        .to_string()
-                    } else if global_scope && self.uses_english() {
-                        format!("Remove “{}” from user-level locations?", skills[0].name)
+                        t!("install.project_batch_remove_confirm").to_string()
                     } else if global_scope {
-                        format!("从用户级目录中移除「{}」？", skills[0].name)
-                    } else if self.uses_english() {
-                        format!("Remove “{}” from this project?", skills[0].name)
+                        t!("install.global_remove_confirm", name = skills[0].name).to_string()
                     } else {
-                        format!("从这个项目中移除「{}」？", skills[0].name)
+                        t!("install.project_remove_confirm", name = skills[0].name).to_string()
                     },
                     message.to_string(),
                     (!*batch && !external_sources.is_empty()).then(|| external_sources.join("\n")),
                     if *batch {
-                        self.tr("移除", "Remove")
+                        t!("common.remove").to_string()
                     } else if deletes_files {
-                        self.tr("删除", "Delete")
+                        t!("common.delete").to_string()
                     } else {
-                        self.tr("移除", "Remove")
+                        t!("common.remove").to_string()
                     },
                     if global_scope {
-                        self.tr("已从用户级目录中移除", "Removed from user-level locations")
+                        t!("install.global_removed").to_string()
                     } else {
-                        self.tr("已从项目中移除", "Removed from project")
+                        t!("install.project_removed").to_string()
                     },
                 )
             }
@@ -724,7 +680,7 @@ impl KitterApp {
                     .mb(px(6.))
                     .text_size(px(13.))
                     .text_color(p.secondary)
-                    .child(self.tr("选择要移除的位置", "Choose installations to remove")),
+                    .child(t!("install.removal_title").to_string()),
             );
             for skill in skills {
                 if *batch || skills.len() > 1 {
@@ -791,7 +747,9 @@ impl KitterApp {
                                                     div()
                                                         .text_size(px(11.))
                                                         .text_color(p.danger)
-                                                        .child(self.tr("删除文件", "Delete files")),
+                                                        .child(
+                                                            t!("install.delete_files").to_string(),
+                                                        ),
                                                 )
                                             }),
                                     )
@@ -811,11 +769,10 @@ impl KitterApp {
                                                 .font_family(MONO)
                                                 .text_size(px(11.))
                                                 .text_color(p.muted)
-                                                .child(if self.uses_english() {
-                                                    format!("Original: {source}")
-                                                } else {
-                                                    format!("原始目录：{source}")
-                                                }),
+                                                .child(
+                                                    t!("install.original_path", path = source)
+                                                        .to_string(),
+                                                ),
                                         )
                                     }),
                             )
@@ -862,7 +819,7 @@ impl KitterApp {
                             .cursor_pointer()
                             .text_size(px(14.))
                             .hover(move |button| button.bg(p.hover))
-                            .child(self.tr("取消", "Cancel"))
+                            .child(t!("common.cancel").to_string())
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _, _, cx| {
@@ -891,102 +848,110 @@ impl KitterApp {
                             .text_color(if can_confirm { p.on_accent } else { p.muted })
                             .child(action)
                             .when(can_confirm, |button| {
-                                button.on_mouse_down(MouseButton::Left, cx.listener(move |this, _, _, cx| {
-                                    if this.delete_flow.busy {
-                                        return;
-                                    }
-                                    this.delete_flow.busy = true;
-                                    match &confirmation {
-                                        DeleteConfirmation::LibrarySkills { skills } => {
-                                            let mut removed = 0usize;
-                                            let mut failures = Vec::new();
-                                            for (name, _) in skills {
-                                                match this.model.library.remove_by_storage(name) {
-                                                    Ok(()) => removed += 1,
-                                                    Err(error) => failures.push(error.to_string()),
+                                button.on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        if this.delete_flow.busy {
+                                            return;
+                                        }
+                                        this.delete_flow.busy = true;
+                                        match &confirmation {
+                                            DeleteConfirmation::LibrarySkills { skills } => {
+                                                let mut removed = 0usize;
+                                                let mut failures = Vec::new();
+                                                for (name, _) in skills {
+                                                    match this.model.library.remove_by_storage(name)
+                                                    {
+                                                        Ok(()) => removed += 1,
+                                                        Err(error) => {
+                                                            failures.push(this.error_message(error))
+                                                        }
+                                                    }
+                                                }
+                                                this.delete_flow.confirmation = None;
+                                                this.close_dialog(cx);
+                                                this.refresh(cx);
+                                                if failures.is_empty() {
+                                                    this.show_notice(success.clone(), cx);
+                                                } else {
+                                                    this.show_notice(
+                                                        t!(
+                                                            "install.deleted_failed",
+                                                            count = removed,
+                                                            failed = failures.len()
+                                                        )
+                                                        .to_string(),
+                                                        cx,
+                                                    );
                                                 }
                                             }
-                                            this.delete_flow.confirmation = None;
-                                            this.close_dialog(cx);
-                                            this.refresh(cx);
-                                            if failures.is_empty() {
-                                                this.show_notice(success, cx);
-                                            } else if this.uses_english() {
-                                                this.show_notice(
-                                                    format!(
-                                                        "Deleted {removed}; {} failed",
-                                                        failures.len()
-                                                    ),
-                                                    cx,
+                                            DeleteConfirmation::ProjectSkills {
+                                                project,
+                                                skills,
+                                                ..
+                                            } => {
+                                                let report = project::remove_project_skills(
+                                                    skills
+                                                        .iter()
+                                                        .flat_map(|skill| &skill.installations)
+                                                        .filter(|installation| {
+                                                            this.delete_flow
+                                                                .selected
+                                                                .contains(&installation.path)
+                                                        }),
                                                 );
-                                            } else {
-                                                this.show_notice(
-                                                    format!(
-                                                        "已删除 {} 个，{} 个失败",
-                                                        removed,
-                                                        failures.len()
-                                                    ),
-                                                    cx,
-                                                );
-                                            }
-                                        }
-                                        DeleteConfirmation::ProjectSkills { project, skills, .. } => {
-                                            let report = project::remove_project_skills(
-                                                skills.iter().flat_map(|skill| &skill.installations).filter(|installation| {
-                                                    this.delete_flow.selected
-                                                        .contains(&installation.path)
-                                                }),
-                                            );
-                                            let message = if report.failures.is_empty() {
-                                                success.to_string()
-                                            } else if report.removed > 0 {
-                                                if this.uses_english() {
-                                                    format!(
-                                                        "Removed {}; {} could not be removed",
-                                                        counted(report.removed, "location", "locations"),
-                                                        report.failures.len()
+                                                let message = if report.failures.is_empty() {
+                                                    success.to_string()
+                                                } else if report.removed > 0 {
+                                                    crate::i18n::tn(
+                                                        "install.removal_partial",
+                                                        report.removed,
+                                                        &[
+                                                            ("count", (report.removed).to_string()),
+                                                            (
+                                                                "failed",
+                                                                (report.failures.len()).to_string(),
+                                                            ),
+                                                        ],
                                                     )
                                                 } else {
-                                                    format!(
-                                                        "已移除 {} 个位置，另有 {} 个位置未能移除",
-                                                        report.removed,
-                                                        report.failures.len()
+                                                    crate::i18n::tn(
+                                                        "install.removal_failed",
+                                                        report.failures.len(),
+                                                        &[(
+                                                            "count",
+                                                            (report.failures.len()).to_string(),
+                                                        )],
                                                     )
+                                                };
+                                                if report.removed > 0 {
+                                                    this.projects_view
+                                                        .context_estimates
+                                                        .borrow_mut()
+                                                        .remove(project);
+                                                    if !dirs::home_dir()
+                                                        .as_ref()
+                                                        .is_some_and(|home| home == project)
+                                                    {
+                                                        this.model
+                                                            .library
+                                                            .config
+                                                            .touch_project(&project);
+                                                        let _ = this.model.library.save();
+                                                    }
                                                 }
-                                            } else if this.uses_english() {
-                                                format!(
-                                                    "{} could not be removed. Check access and try again",
-                                                    counted(report.failures.len(), "location", "locations")
-                                                )
-                                            } else {
-                                                format!(
-                                                    "{} 个位置未能移除，请检查访问权限后重试",
-                                                    report.failures.len()
-                                                )
-                                            };
-                                            if report.removed > 0 {
-                                                this.projects_view.context_estimates
-                                                    .borrow_mut()
-                                                    .remove(project);
-                                                if !dirs::home_dir()
-                                                    .as_ref()
-                                                    .is_some_and(|home| home == project)
-                                                {
-                                                    this.model.library.config.touch_project(&project);
-                                                    let _ = this.model.library.save();
-                                                }
+                                                this.delete_flow.confirmation = None;
+                                                this.delete_flow.selected.clear();
+                                                this.projects_view.batch_project = None;
+                                                this.projects_view.batch_selected.clear();
+                                                this.projects_view.batch_filter = None;
+                                                this.close_dialog(cx);
+                                                this.show_notice(message, cx);
+                                                this.refresh(cx);
                                             }
-                                            this.delete_flow.confirmation = None;
-                                            this.delete_flow.selected.clear();
-                                            this.projects_view.batch_project = None;
-                                            this.projects_view.batch_selected.clear();
-                                            this.projects_view.batch_filter = None;
-                                            this.close_dialog(cx);
-                                            this.show_notice(message, cx);
-                                            this.refresh(cx);
                                         }
-                                    }
-                                }))
+                                    }),
+                                )
                             }),
                     ),
             )

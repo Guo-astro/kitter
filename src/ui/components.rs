@@ -117,7 +117,7 @@ impl KitterApp {
             .text_size(px(11.))
             .text_color(p.muted)
             .child(Self::icon("icons/hand.svg", 11., p.muted))
-            .child(self.tr("手动", "Manual"))
+            .child(t!("common.manual").to_string())
     }
 
     pub(super) fn managed_skill_badge(&self) -> Div {
@@ -134,7 +134,7 @@ impl KitterApp {
             .text_size(px(11.))
             .text_color(p.warning)
             .child(Self::icon("icons/crown.svg", 11., p.warning))
-            .child(self.tr("托管", "Managed"))
+            .child(t!("common.managed").to_string())
     }
 
     pub(super) fn context_estimate_panel(
@@ -150,7 +150,7 @@ impl KitterApp {
                 ElementId::Name(format!("refresh-context-{}", path.display()).into()),
                 "icons/rotate-cw.svg",
                 p.secondary,
-                self.tr("刷新 token 扫描", "Refresh token scan"),
+                t!("projects.refresh_context").to_string(),
                 cx,
             )
             .on_mouse_down(
@@ -202,27 +202,19 @@ impl KitterApp {
             } else {
                 p.success
             };
-            let automatic = if self.uses_english() {
-                format!("{} automatic", automatic_count)
-            } else {
-                format!("{} 自动", automatic_count)
-            };
-            let detail = if self.uses_english() {
-                let mut value = format!(" · {} manual", estimate.manual_only_count);
+            let automatic = t!("context.automatic", count = automatic_count).to_string();
+            let detail = {
+                let mut value =
+                    t!("context.manual", count = estimate.manual_only_count).to_string();
                 if estimate.conditional_count > 0 {
-                    value.push_str(&format!(" · {} conditional", estimate.conditional_count));
+                    value.push_str(
+                        &t!("context.conditional", count = estimate.conditional_count).to_string(),
+                    );
                 }
                 if estimate.name_only_count > 0 {
-                    value.push_str(&format!(" · {} name-only", estimate.name_only_count));
-                }
-                value
-            } else {
-                let mut value = format!(" · {} 手动", estimate.manual_only_count);
-                if estimate.conditional_count > 0 {
-                    value.push_str(&format!(" · {} 条件", estimate.conditional_count));
-                }
-                if estimate.name_only_count > 0 {
-                    value.push_str(&format!(" · {} 仅名称", estimate.name_only_count));
+                    value.push_str(
+                        &t!("context.name_only", count = estimate.name_only_count).to_string(),
+                    );
                 }
                 value
             };
@@ -363,12 +355,12 @@ impl KitterApp {
         for (tab, label, count) in [
             (
                 ProjectSkillsTab::Skills,
-                self.tr("技能", "Skills"),
+                t!("common.skills").to_string(),
                 skill_count,
             ),
             (
                 ProjectSkillsTab::Plugins,
-                self.tr("插件", "Plugins"),
+                t!("common.plugins").to_string(),
                 plugin_skill_count,
             ),
         ] {
@@ -442,10 +434,12 @@ impl KitterApp {
                     .items_center()
                     .text_color(p.muted)
                     .child(Self::icon("icons/package.svg", 28., p.muted))
-                    .child(div().mt(px(10.)).text_size(px(14.)).child(self.tr(
-                        "没有检测到插件加载的技能",
-                        "No plugin-provided skills detected",
-                    ))),
+                    .child(
+                        div()
+                            .mt(px(10.))
+                            .text_size(px(14.))
+                            .child(t!("projects.plugins_empty").to_string()),
+                    ),
             );
         }
         for group in groups {
@@ -463,11 +457,11 @@ impl KitterApp {
             let agent_icon = agent
                 .map(|agent| agent.icon_path)
                 .unwrap_or("icons/package.svg");
-            let count = if self.uses_english() {
-                counted(group.skills.len(), "skill", "skills")
-            } else {
-                format!("{} 个技能", group.skills.len())
-            };
+            let count = crate::i18n::tn(
+                "common.skill_count",
+                group.skills.len(),
+                &[("count", (group.skills.len()).to_string())],
+            );
             let mut plugin = div().border_b_1().border_color(p.border).child(
                 div()
                     .id(ElementId::Name(format!("plugin-{}", group.key).into()))
@@ -638,20 +632,22 @@ impl KitterApp {
         id: impl Into<ElementId>,
         path: &'static str,
         color: impl Into<Hsla>,
-        label: &'static str,
+        label: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let label: SharedString = label.into();
         self.icon_button(id, path, color, cx)
-            .tooltip(move |window, cx| Tooltip::new(label).build(window, cx))
+            .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
     }
 
     pub(super) fn primary_icon_button(
         &self,
         id: impl Into<ElementId>,
         path: &'static str,
-        label: &'static str,
+        label: impl Into<SharedString>,
         _cx: &mut Context<Self>,
     ) -> Stateful<Div> {
+        let label: SharedString = label.into();
         let p = self.palette();
         div()
             .id(id)
@@ -664,7 +660,7 @@ impl KitterApp {
             .cursor_pointer()
             .hover(move |button| button.bg(p.hover))
             .child(Self::icon(path, 16., p.secondary))
-            .tooltip(move |window, cx| Tooltip::new(label).build(window, cx))
+            .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
     }
 
     pub(super) fn window_drag_region(
@@ -722,7 +718,7 @@ impl KitterApp {
     pub(super) fn sidebar(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette();
         let nav = |id: &'static str,
-                   label: &'static str,
+                   label: String,
                    icon_path: &'static str,
                    page: Page,
                    current: Page| {
@@ -785,7 +781,7 @@ impl KitterApp {
                     .child(
                         nav(
                             "nav-skills",
-                            self.tr("技能", "Skills"),
+                            t!("common.skills").to_string(),
                             "icons/package.svg",
                             Page::Skills,
                             self.shell.page,
@@ -798,7 +794,7 @@ impl KitterApp {
                     .child(
                         nav(
                             "nav-projects",
-                            self.tr("项目", "Projects"),
+                            t!("common.projects").to_string(),
                             "icons/folder.svg",
                             Page::Projects,
                             self.shell.page,
@@ -820,7 +816,7 @@ impl KitterApp {
                     .child(
                         nav(
                             "nav-settings",
-                            self.tr("设置", "Settings"),
+                            t!("common.settings").to_string(),
                             "icons/settings.svg",
                             Page::Settings,
                             self.shell.page,
@@ -837,7 +833,7 @@ impl KitterApp {
     pub(super) fn panel_header(
         &self,
         drag_id: &'static str,
-        title: &'static str,
+        title: impl Into<SharedString>,
         count: usize,
         cx: &mut Context<Self>,
     ) -> Div {
@@ -864,7 +860,7 @@ impl KitterApp {
                         div()
                             .text_size(px(14.))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(title),
+                            .child(Into::<SharedString>::into(title)),
                     )
                     .child(
                         div()
@@ -925,9 +921,9 @@ impl KitterApp {
         let p = self.palette();
         let app = cx.entity().downgrade();
         let labels = [
-            self.tr("检查更新", "Check for updates"),
-            self.tr("标签管理", "Manage tags"),
-            self.tr("分组管理", "Manage groups"),
+            t!("common.check_updates").to_string(),
+            t!("common.manage_tags").to_string(),
+            t!("common.manage_groups").to_string(),
         ];
         Popover::new("skills-manage-menu")
             .appearance(false)
@@ -962,7 +958,7 @@ impl KitterApp {
                     .border_color(p.border_strong)
                     .bg(p.elevated)
                     .shadow_lg();
-                for (index, label) in labels.into_iter().enumerate() {
+                for (index, label) in labels.clone().into_iter().enumerate() {
                     let item_app = app.clone();
                     menu = menu.child(
                         div()

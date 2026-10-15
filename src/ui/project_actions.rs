@@ -6,7 +6,7 @@ impl KitterApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some(self.tr("选择", "Choose").into()),
+            prompt: Some(t!("common.choose").to_string().into()),
         });
         cx.spawn_in(window, async move |this, cx| {
             if let Ok(Ok(Some(paths))) = receiver.await

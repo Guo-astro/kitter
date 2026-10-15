@@ -3,7 +3,7 @@ use super::*;
 impl KitterApp {
     pub(super) fn settings_page(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = self.palette();
-        let row = |title: &'static str, description: &'static str| {
+        let row = |title: String, description: String| {
             div()
                 .min_h(px(60.))
                 .px(px(16.))
@@ -31,13 +31,12 @@ impl KitterApp {
                 )
         };
         let language_label = match self.model.library.config.language {
-            Language::System => self.tr("跟随系统", "System"),
-            Language::ZhCn => "简体中文",
-            Language::En => "English",
+            Language::System => t!("settings.system").to_string(),
+            Language::ZhCn => t!("settings.simplified_chinese").to_string(),
+            Language::En => t!("settings.english").to_string(),
         };
         let app = cx.entity().downgrade();
         let selected_language = self.model.library.config.language;
-        let english = self.uses_english();
         let language_control = Popover::new("language-menu")
             .appearance(false)
             .anchor(Anchor::TopRight)
@@ -55,12 +54,12 @@ impl KitterApp {
                     .bg(p.elevated)
                     .shadow_lg();
                 for (index, (language, label)) in [
+                    (Language::System, t!("settings.system").to_string()),
                     (
-                        Language::System,
-                        if english { "System" } else { "跟随系统" },
+                        Language::ZhCn,
+                        t!("settings.simplified_chinese").to_string(),
                     ),
-                    (Language::ZhCn, "简体中文"),
-                    (Language::En, "English"),
+                    (Language::En, t!("settings.english").to_string()),
                 ]
                 .into_iter()
                 .enumerate()
@@ -100,11 +99,8 @@ impl KitterApp {
             .overflow_hidden()
             .child(
                 row(
-                    self.tr("语言", "Language"),
-                    self.tr(
-                        "选择 Kitter 界面的显示语言。",
-                        "Choose the language used by Kitter.",
-                    ),
+                    t!("settings.language").to_string(),
+                    t!("settings.language_hint").to_string(),
                 )
                 .child(language_control),
             );
@@ -117,11 +113,8 @@ impl KitterApp {
             .overflow_hidden()
             .child(
                 row(
-                    self.tr("主题", "Theme"),
-                    self.tr(
-                        "跟随系统，或固定使用浅色与深色外观。",
-                        "Follow the system or use a fixed light or dark appearance.",
-                    ),
+                    t!("settings.theme").to_string(),
+                    t!("settings.appearance_hint").to_string(),
                 )
                 .child(
                     div()
@@ -130,21 +123,21 @@ impl KitterApp {
                         .gap(px(2.))
                         .child(self.small_choice(
                             "theme-system",
-                            self.tr("跟随系统", "System"),
+                            t!("settings.system").to_string(),
                             self.model.library.config.theme == Theme::System,
                             cx,
                             |this| this.model.library.config.theme = Theme::System,
                         ))
                         .child(self.small_choice(
                             "theme-light",
-                            self.tr("浅色", "Light"),
+                            t!("settings.light").to_string(),
                             self.model.library.config.theme == Theme::Light,
                             cx,
                             |this| this.model.library.config.theme = Theme::Light,
                         ))
                         .child(self.small_choice(
                             "theme-dark",
-                            self.tr("深色", "Dark"),
+                            t!("settings.dark").to_string(),
                             self.model.library.config.theme == Theme::Dark,
                             cx,
                             |this| this.model.library.config.theme = Theme::Dark,
@@ -160,11 +153,8 @@ impl KitterApp {
             .overflow_hidden()
             .child(
                 row(
-                    self.tr("技能存放位置", "Skills location"),
-                    self.tr(
-                        "Kitter 用来保存所有技能的文件夹。",
-                        "The folder where Kitter keeps all skills.",
-                    ),
+                    t!("settings.skills_location").to_string(),
+                    t!("settings.library_hint").to_string(),
                 )
                 .child(
                     div()
@@ -220,7 +210,7 @@ impl KitterApp {
                             .mb(px(10.))
                             .text_size(px(14.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(self.tr("偏好设置", "Preferences")),
+                            .child(t!("settings.preferences").to_string()),
                     )
                     .child(preferences_group)
                     .child(
@@ -229,7 +219,7 @@ impl KitterApp {
                             .mb(px(10.))
                             .text_size(px(14.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(self.tr("外观", "Appearance")),
+                            .child(t!("settings.appearance").to_string()),
                     )
                     .child(appearance_group)
                     .child(
@@ -238,7 +228,7 @@ impl KitterApp {
                             .mb(px(10.))
                             .text_size(px(14.))
                             .font_weight(FontWeight::MEDIUM)
-                            .child(self.tr("技能库", "Skill library")),
+                            .child(t!("settings.skill_library").to_string()),
                     )
                     .child(library_group),
             )

@@ -33,12 +33,12 @@ pub fn install(
 ) -> Result<()> {
     crate::library::validate_name(name)?;
     if !project.is_dir() {
-        bail!("项目文件夹不存在：{}", project.display());
+        bail!(t!("errors.project_missing", path = project.display()).to_string());
     }
     let source = library_dir
         .join(name)
         .canonicalize()
-        .context("技能不存在")?;
+        .context(crate::user_error!("errors.skill_missing"))?;
     install_from_path(project, &source, name, targets)
 }
 
@@ -50,7 +50,7 @@ pub fn install_from_path(
 ) -> Result<()> {
     crate::library::validate_name(name)?;
     if !project.is_dir() {
-        bail!("项目文件夹不存在：{}", project.display());
+        bail!(t!("errors.project_missing", path = project.display()).to_string());
     }
     install_to_roots(
         source,
@@ -67,7 +67,9 @@ fn install_to_roots(
     roots: impl IntoIterator<Item = PathBuf>,
 ) -> Result<()> {
     crate::library::validate_name(name)?;
-    let source = source.canonicalize().context("技能不存在")?;
+    let source = source
+        .canonicalize()
+        .context(crate::user_error!("errors.skill_missing"))?;
     let mut pending = Vec::<(PathBuf, PathBuf)>::new();
     for parent in roots {
         let link = parent.join(name);
@@ -76,11 +78,13 @@ fn install_to_roots(
                 if link.canonicalize().ok().as_ref() == Some(&source) {
                     continue;
                 }
-                bail!("安装位置已被占用：{}", link.display());
+                bail!(t!("errors.location_occupied", path = link.display()).to_string());
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => {
-                return Err(error).context(format!("无法检查安装位置：{}", link.display()));
+                return Err(error).context(
+                    t!("errors.location_check_failed", path = link.display()).to_string(),
+                );
             }
         }
         if !pending
@@ -100,13 +104,20 @@ fn install_to_roots(
             let rollback = if rollback_failures.is_empty() {
                 String::new()
             } else {
-                format!("；回滚失败：{}", rollback_failures.join("；"))
+                t!(
+                    "errors.rollback_failed",
+                    failures = rollback_failures.join(t!("errors.separator").as_ref())
+                )
+                .to_string()
             };
             bail!(
-                "创建安装链接失败：{}：{}{}",
-                link.display(),
-                error,
-                rollback
+                t!(
+                    "errors.link_create_failed",
+                    path = link.display(),
+                    error = error,
+                    rollback = rollback
+                )
+                .to_string()
             );
         }
         created.push(link);
@@ -130,17 +141,19 @@ pub fn uninstall(
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => {
-                return Err(error).context(format!("无法检查安装位置：{}", link.display()));
+                return Err(error).context(
+                    t!("errors.location_check_failed", path = link.display()).to_string(),
+                );
             }
         }
         let Some(directory_link) = directory_link::inspect(&link)? else {
-            bail!("不会删除非 Kitter 管理的目录：{}", link.display());
+            bail!(t!("errors.unmanaged_delete_protected", path = link.display()).to_string());
         };
         let Some(source) = &source else {
-            bail!("技能不存在，无法安全验证安装链接：{}", link.display());
+            bail!(t!("errors.link_skill_missing", path = link.display()).to_string());
         };
         if link.canonicalize().ok().as_ref() != Some(source) {
-            bail!("不会删除指向其他位置的链接：{}", link.display());
+            bail!(t!("errors.link_target_mismatch", path = link.display()).to_string());
         }
         if removable_keys.insert(installation_key(&link)) {
             removable.push((link, directory_link));
@@ -208,14 +221,17 @@ fn is_supported_installation_path(installation: &ProjectSkillInstallation) -> bo
 pub fn remove_project_skill(installation: &ProjectSkillInstallation) -> Result<()> {
     if !is_supported_installation_path(installation) {
         bail!(
-            "不会删除 skills 目标目录之外的技能：{}",
-            installation.path.display()
+            t!(
+                "errors.skill_path_outside_target",
+                path = installation.path.display()
+            )
+            .to_string()
         );
     }
     let metadata = installation
         .path
         .symlink_metadata()
-        .with_context(|| format!("找不到：{}", installation.path.display()))?;
+        .with_context(|| t!("errors.not_found", path = installation.path.display()).to_string())?;
     if let Some(directory_link) = directory_link::inspect(&installation.path)? {
         directory_link::remove(&installation.path, directory_link)?;
     } else if metadata.is_file() {
@@ -223,7 +239,7 @@ pub fn remove_project_skill(installation: &ProjectSkillInstallation) -> Result<(
     } else if metadata.is_dir() {
         fs::remove_dir_all(&installation.path)?;
     } else {
-        bail!("无法删除这个技能");
+        bail!(t!("errors.skill_delete_failed").to_string());
     }
     Ok(())
 }
@@ -247,11 +263,17 @@ fn rollback_links(links: &[PathBuf]) -> Vec<String> {
         .iter()
         .rev()
         .filter_map(|link| match directory_link::inspect(link) {
-            Ok(Some(directory_link)) => directory_link::remove(link, directory_link)
-                .err()
-                .map(|error| format!("{}：{error}", link.display())),
+            Ok(Some(directory_link)) => {
+                directory_link::remove(link, directory_link)
+                    .err()
+                    .map(|error| {
+                        t!("errors.item_detail", item = link.display(), error = error).to_string()
+                    })
+            }
             Ok(None) => None,
-            Err(error) => Some(format!("{}：{error}", link.display())),
+            Err(error) => {
+                Some(t!("errors.item_detail", item = link.display(), error = error).to_string())
+            }
         })
         .collect()
 }
@@ -269,18 +291,26 @@ pub fn remove_project_skills<'a>(
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 report
                     .failures
-                    .push(format!("找不到：{}", installation.path.display()));
+                    .push(t!("errors.not_found", path = installation.path.display()).to_string());
             }
-            Err(error) => {
-                report
-                    .failures
-                    .push(format!("{}：{}", installation.path.display(), error))
-            }
+            Err(error) => report.failures.push(
+                t!(
+                    "errors.item_detail",
+                    item = installation.path.display(),
+                    error = error
+                )
+                .to_string(),
+            ),
             Ok(_) => match remove_project_skill(installation) {
                 Ok(()) => report.removed += 1,
-                Err(error) => report
-                    .failures
-                    .push(format!("{}：{error}", installation.path.display())),
+                Err(error) => report.failures.push(
+                    t!(
+                        "errors.item_detail",
+                        item = installation.path.display(),
+                        error = error
+                    )
+                    .to_string(),
+                ),
             },
         }
     }
@@ -495,7 +525,11 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("安装位置已被占用"));
+        assert!(["en", "zh-CN"].iter().any(|locale| {
+            error
+                .to_string()
+                .contains(t!("errors.location_occupied", locale = locale, path = "").trim())
+        }));
         assert!(
             fixture
                 .installation(InstallTarget::Universal)
@@ -526,7 +560,11 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("不会删除指向其他位置的链接"));
+        assert!(["en", "zh-CN"].iter().any(|locale| {
+            error
+                .to_string()
+                .contains(t!("errors.link_target_mismatch", locale = locale, path = "").trim())
+        }));
         assert_eq!(link.canonicalize().unwrap(), other.canonicalize().unwrap());
     }
 
@@ -551,7 +589,11 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("无法安全验证安装链接"));
+        assert!(["en", "zh-CN"].iter().any(|locale| {
+            error
+                .to_string()
+                .contains(t!("errors.link_skill_missing", locale = locale, path = "").trim())
+        }));
         assert!(link.symlink_metadata().is_ok());
     }
 
@@ -641,6 +683,6 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("技能名称无效"));
+        assert!(error.downcast_ref::<crate::i18n::UserError>().is_some());
     }
 }

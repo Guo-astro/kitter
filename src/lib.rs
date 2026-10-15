@@ -1,14 +1,17 @@
+#[macro_use]
+extern crate rust_i18n;
+rust_i18n::i18n!("locales", fallback = "en");
 pub mod adoption;
 pub mod agents;
 pub mod config;
 mod directory_link;
 pub mod effective_skills;
+pub mod i18n;
 pub mod library;
 pub mod model;
 pub mod project;
 pub mod source;
 pub mod tags;
-pub mod text;
 mod trigger;
 
 #[cfg(feature = "desktop")]

@@ -1,5 +1,9 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
-
+#[cfg(any(target_os = "windows", test))]
+// Reuse the library backend; do not embed a second translation catalogue.
+use kitter::_rust_i18n_try_translate;
+#[cfg(any(target_os = "windows", test))]
+use rust_i18n::_tr as t;
 fn main() {
     let _ = fix_path_env::fix();
     #[cfg(target_os = "windows")]
@@ -21,21 +25,17 @@ fn install_windows_panic_reporter() {
         let language = kitter::config::AppConfig::load()
             .map(|config| config.language)
             .unwrap_or_default();
-        show_windows_error(crash_dialog_message(language));
+        show_windows_error(&crash_dialog_message(language));
     }));
 }
 
 #[cfg(any(target_os = "windows", test))]
-fn crash_dialog_message(language: kitter::config::Language) -> &'static str {
-    use kitter::config::Language;
-
-    let uses_chinese = language == Language::ZhCn
-        || (language == Language::System && Language::system() == Language::ZhCn);
-    if uses_chinese {
-        "Kitter 遇到问题。请重新打开后再试。"
-    } else {
-        "Kitter encountered a problem. Please reopen it and try again."
-    }
+fn crash_dialog_message(language: kitter::config::Language) -> String {
+    t!(
+        "errors.crash_message",
+        locale = kitter::i18n::locale_for(language)
+    )
+    .to_string()
 }
 
 #[cfg(target_os = "windows")]
