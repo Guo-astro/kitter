@@ -230,6 +230,14 @@ pub(super) fn inspect_agent(agent: AgentKind, context: &DiscoveryContext) -> Age
 }
 
 #[cfg(test)]
+pub(super) fn inspect_dimagent(
+    context: &DiscoveryContext,
+    home: std::path::PathBuf,
+) -> AgentContextEstimate {
+    DimAgentAdapter { home }.inspect(context)
+}
+
+#[cfg(test)]
 pub(super) fn render_catalog(agent: AgentKind, skills: &[EffectiveSkill]) -> String {
     let policy: &dyn super::AgentSkillPolicy = match agent {
         AgentKind::Codex => &CodexAdapter,

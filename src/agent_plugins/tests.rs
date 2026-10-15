@@ -204,7 +204,7 @@ fn ctx_reads_formats_and_returns_null_for_missing_or_invalid_files() {
     );
     assert_eq!(
         result["missingCanonical"],
-        json!(dir.path().join("missing"))
+        json!(format!("{}/missing", dir.path().display()))
     );
     assert_eq!(
         result["native"],
