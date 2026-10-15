@@ -14,72 +14,15 @@ use serde::{Deserialize, Serialize};
 mod adapters;
 mod additional_agents;
 mod catalog;
+#[allow(dead_code)] // Used when plugin dispatch is connected after the registry migration.
+mod engine;
 #[cfg(test)]
 mod golden;
 mod scanner;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentKind {
-    Codex,
-    ClaudeCode,
-    Cursor,
-    OpenCode,
-    Copilot,
-    Antigravity,
-    Amp,
-    Droid,
-    Pi,
-    Omp,
-    DimAgent,
-    Grok,
-    OpenClaw,
-    Hermes,
-}
-
-impl AgentKind {
-    pub fn id(self) -> &'static str {
-        match self {
-            Self::Codex => "codex",
-            Self::ClaudeCode => "claude-code",
-            Self::Cursor => "cursor",
-            Self::OpenCode => "opencode",
-            Self::Copilot => "copilot",
-            Self::Antigravity => "antigravity",
-            Self::Amp => "amp",
-            Self::Droid => "droid",
-            Self::Pi => "pi",
-            Self::Omp => "omp",
-            Self::DimAgent => "dimagent",
-            Self::Grok => "grok",
-            Self::OpenClaw => "openclaw",
-            Self::Hermes => "hermes",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Codex => "Codex",
-            Self::ClaudeCode => "Claude Code",
-            Self::Cursor => "Cursor",
-            Self::OpenCode => "OpenCode",
-            Self::Copilot => "GitHub Copilot",
-            Self::Antigravity => "Antigravity",
-            Self::Amp => "Amp",
-            Self::Droid => "Droid",
-            Self::Pi => "Pi",
-            Self::Omp => "omp",
-            Self::DimAgent => "DimAgent",
-            Self::Grok => "Grok",
-            Self::OpenClaw => "OpenClaw",
-            Self::Hermes => "Hermes",
-        }
-    }
-
-    pub fn is_global_only(self) -> bool {
-        matches!(self, Self::OpenClaw | Self::Hermes)
-    }
-}
+pub use crate::agent_plugins::AgentId;
+#[cfg(test)]
+use crate::agent_plugins::AgentRegistry;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -135,7 +78,7 @@ impl SkillSource {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct EffectiveSkill {
     /// Provider registration ID. Most providers use the frontmatter name;
     /// OpenCode V2 derives it from the source path.
@@ -162,9 +105,9 @@ impl EffectiveSkill {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AgentContextEstimate {
-    pub agent: AgentKind,
+    pub agent: AgentId,
     pub discovered_count: usize,
     pub model_visible_count: usize,
     pub manual_only_count: usize,
@@ -184,7 +127,7 @@ impl AgentContextEstimate {
 }
 
 pub struct EffectiveSkillGroup<'a> {
-    entries: Vec<(AgentKind, &'a EffectiveSkill)>,
+    entries: Vec<(AgentId, &'a EffectiveSkill)>,
 }
 
 impl<'a> EffectiveSkillGroup<'a> {
@@ -192,7 +135,7 @@ impl<'a> EffectiveSkillGroup<'a> {
         &self.entries[0].1.name
     }
 
-    pub fn entries(&self) -> &[(AgentKind, &'a EffectiveSkill)] {
+    pub fn entries(&self) -> &[(AgentId, &'a EffectiveSkill)] {
         &self.entries
     }
 }
@@ -203,10 +146,10 @@ impl<'a> EffectiveSkillGroup<'a> {
 /// Claude's `build_from_zero` and Grok's normalized `build-from-zero`). A
 /// matching name or canonical filesystem path joins entries into one group.
 pub fn group_effective_skills<'a>(
-    entries: impl IntoIterator<Item = (AgentKind, &'a EffectiveSkill)>,
+    entries: impl IntoIterator<Item = (AgentId, &'a EffectiveSkill)>,
 ) -> Vec<EffectiveSkillGroup<'a>> {
     struct Candidate<'a> {
-        agent: AgentKind,
+        agent: AgentId,
         skill: &'a EffectiveSkill,
         filesystem_path: Option<PathBuf>,
     }
@@ -270,7 +213,7 @@ pub fn group_effective_skills<'a>(
 }
 
 #[derive(Clone, Debug)]
-struct DiscoveryContext {
+pub(crate) struct DiscoveryContext {
     pub cwd: PathBuf,
     pub home: PathBuf,
     pub repository_root: Option<PathBuf>,
@@ -377,7 +320,7 @@ enum NameCollision {
 
 /// Internal entry rules composed by the Agent adapters.
 trait AgentSkillPolicy {
-    fn agent(&self) -> AgentKind;
+    fn agent(&self) -> AgentId;
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot>;
     fn builtins(&self, _context: &DiscoveryContext) -> Vec<EffectiveSkill> {
         Vec::new()
@@ -645,8 +588,8 @@ fn discover(
 }
 
 impl AgentSkillPolicy for CodexAdapter {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Codex
+    fn agent(&self) -> AgentId {
+        AgentId::from("codex")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -750,8 +693,8 @@ impl AgentSkillPolicy for CodexAdapter {
 }
 
 impl AgentSkillPolicy for ClaudeCodeAdapter {
-    fn agent(&self) -> AgentKind {
-        AgentKind::ClaudeCode
+    fn agent(&self) -> AgentId {
+        AgentId::from("claude-code")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -904,8 +847,8 @@ impl AgentSkillPolicy for ClaudeCodeAdapter {
 }
 
 impl AgentSkillPolicy for CursorPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Cursor
+    fn agent(&self) -> AgentId {
+        AgentId::from("cursor")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -959,8 +902,8 @@ impl AgentSkillPolicy for CursorPolicy {
 }
 
 impl AgentSkillPolicy for OpenCodePolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::OpenCode
+    fn agent(&self) -> AgentId {
+        AgentId::from("opencode")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1126,8 +1069,8 @@ impl AgentSkillPolicy for OpenCodePolicy {
 }
 
 impl AgentSkillPolicy for CopilotPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Copilot
+    fn agent(&self) -> AgentId {
+        AgentId::from("copilot")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1171,8 +1114,8 @@ impl AgentSkillPolicy for CopilotPolicy {
 }
 
 impl AgentSkillPolicy for AntigravityPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Antigravity
+    fn agent(&self) -> AgentId {
+        AgentId::from("antigravity")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1218,8 +1161,8 @@ impl AgentSkillPolicy for AntigravityPolicy {
 }
 
 impl AgentSkillPolicy for AmpPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Amp
+    fn agent(&self) -> AgentId {
+        AgentId::from("amp")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1286,8 +1229,8 @@ impl AgentSkillPolicy for AmpPolicy {
 }
 
 impl AgentSkillPolicy for DroidPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Droid
+    fn agent(&self) -> AgentId {
+        AgentId::from("droid")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1331,8 +1274,8 @@ impl AgentSkillPolicy for DroidPolicy {
 }
 
 impl AgentSkillPolicy for PiAdapter {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Pi
+    fn agent(&self) -> AgentId {
+        AgentId::from("pi")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1459,8 +1402,8 @@ impl AgentSkillPolicy for PiAdapter {
 }
 
 impl AgentSkillPolicy for GrokAdapter {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Grok
+    fn agent(&self) -> AgentId {
+        AgentId::from("grok")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1561,8 +1504,8 @@ impl AgentSkillPolicy for GrokAdapter {
 }
 
 impl AgentSkillPolicy for OpenClawPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::OpenClaw
+    fn agent(&self) -> AgentId {
+        AgentId::from("openclaw")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -1642,8 +1585,8 @@ impl AgentSkillPolicy for OpenClawPolicy {
 }
 
 impl AgentSkillPolicy for HermesPolicy {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Hermes
+    fn agent(&self) -> AgentId {
+        AgentId::from("hermes")
     }
 
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
@@ -3276,7 +3219,7 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: Some(temp.path().join("repo")),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("pi"), &context).unwrap();
         assert_eq!(estimate.discovered_count, 2);
         assert_eq!(estimate.model_visible_count, 1);
         assert_eq!(estimate.manual_only_count, 1);
@@ -3319,17 +3262,18 @@ mod tests {
         };
 
         for agent in [
-            AgentKind::ClaudeCode,
-            AgentKind::Cursor,
-            AgentKind::OpenCode,
-            AgentKind::Copilot,
-            AgentKind::Droid,
-            AgentKind::Pi,
-            AgentKind::Grok,
-            AgentKind::OpenClaw,
+            AgentId::from("claude-code"),
+            AgentId::from("cursor"),
+            AgentId::from("opencode"),
+            AgentId::from("copilot"),
+            AgentId::from("droid"),
+            AgentId::from("pi"),
+            AgentId::from("grok"),
+            AgentId::from("openclaw"),
         ] {
             assert_eq!(
-                adapters::inspect_agent(agent, &context)
+                adapters::inspect_agent(&agent, &context)
+                    .unwrap()
                     .skills
                     .iter()
                     .find(|skill| skill.name == "manual")
@@ -3337,13 +3281,22 @@ mod tests {
                     .visibility,
                 SkillVisibility::ManualOnly,
                 "{} should honor its manual invocation metadata",
-                agent.label()
+                crate::agent_plugins::AgentRegistry::global()
+                    .agent(agent.as_str())
+                    .unwrap()
+                    .name
+                    .as_str()
             );
         }
 
-        for agent in [AgentKind::Antigravity, AgentKind::Amp, AgentKind::Hermes] {
+        for agent in [
+            AgentId::from("antigravity"),
+            AgentId::from("amp"),
+            AgentId::from("hermes"),
+        ] {
             assert_eq!(
-                adapters::inspect_agent(agent, &context)
+                adapters::inspect_agent(&agent, &context)
+                    .unwrap()
                     .skills
                     .iter()
                     .find(|skill| skill.name == "manual")
@@ -3351,7 +3304,11 @@ mod tests {
                     .visibility,
                 SkillVisibility::Automatic,
                 "{} must not honor unsupported invocation metadata",
-                agent.label()
+                crate::agent_plugins::AgentRegistry::global()
+                    .agent(agent.as_str())
+                    .unwrap()
+                    .name
+                    .as_str()
             );
         }
     }
@@ -3369,8 +3326,8 @@ mod tests {
             home,
             repository_root: None,
         };
-        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
-        let rendered = adapters::render_catalog(AgentKind::Codex, &estimate.skills);
+        let estimate = adapters::inspect_agent(&AgentId::from("codex"), &context).unwrap();
+        let rendered = adapters::render_catalog(&AgentId::from("codex"), &estimate.skills);
         // Fill the catalog to the original 8,001-byte input without hitting
         // the per-description limit or the listing budget.
         let mut remaining = 8_001 - rendered.len();
@@ -3388,9 +3345,9 @@ mod tests {
             .unwrap();
         }
         assert_eq!(remaining, 0);
-        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("codex"), &context).unwrap();
         assert_eq!(
-            adapters::render_catalog(AgentKind::Codex, &estimate.skills).len(),
+            adapters::render_catalog(&AgentId::from("codex"), &estimate.skills).len(),
             8_001
         );
         assert_eq!(estimate.estimated_tokens, 2_001);
@@ -3409,7 +3366,7 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("pi"), &context).unwrap();
         assert_eq!(estimate.discovered_count, 1);
         assert!(estimate.skills[0].path.starts_with(cwd));
     }
@@ -3447,7 +3404,7 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("pi"), &context).unwrap();
         assert_eq!(estimate.discovered_count, 2);
         assert!(estimate.skills.iter().any(|skill| skill.name == "direct"));
         assert!(estimate.skills.iter().any(|skill| skill.name == "second"));
@@ -3486,7 +3443,7 @@ mod tests {
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("pi"), &context).unwrap();
         for name in ["user-claude", "user-codex", "project-claude", "shared"] {
             assert!(
                 estimate.skills.iter().any(|skill| skill.name == name),
@@ -3521,7 +3478,7 @@ mod tests {
 
         let estimate = estimate_project_with_home(&project, &home)
             .into_iter()
-            .find(|estimate| estimate.agent == AgentKind::Pi)
+            .find(|estimate| estimate.agent == AgentId::from("pi"))
             .unwrap();
         assert!(
             estimate
@@ -3548,14 +3505,14 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: None,
         };
-        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("pi"), &context).unwrap();
         assert!(
             estimate
                 .skills
                 .iter()
                 .all(|skill| skill.name != "no-description")
         );
-        let rendered = adapters::render_catalog(AgentKind::Pi, &estimate.skills);
+        let rendered = adapters::render_catalog(&AgentId::from("pi"), &estimate.skills);
         assert!(rendered.starts_with("\n\nThe following skills provide specialized instructions"));
         assert!(rendered.contains("<location>"));
         assert_eq!(estimate.estimated_tokens, approx_token_count(&rendered));
@@ -3626,7 +3583,7 @@ path = 'D:\skills\active\SKILL.md'
 
         let estimate = estimate_project_with_home(&project, &home)
             .into_iter()
-            .find(|estimate| estimate.agent == AgentKind::Codex)
+            .find(|estimate| estimate.agent == AgentId::from("codex"))
             .unwrap();
         assert!(
             !estimate
@@ -3657,7 +3614,7 @@ path = 'D:\skills\active\SKILL.md'
 
         let estimate = estimate_project_with_home(&project, &home)
             .into_iter()
-            .find(|estimate| estimate.agent == AgentKind::ClaudeCode)
+            .find(|estimate| estimate.agent == AgentId::from("claude-code"))
             .unwrap();
         assert_eq!(
             estimate
@@ -3695,14 +3652,15 @@ path = 'D:\skills\active\SKILL.md'
 
         let estimate = estimate_project_with_home(&project, &home)
             .into_iter()
-            .find(|estimate| estimate.agent == AgentKind::Grok)
+            .find(|estimate| estimate.agent == AgentId::from("grok"))
             .unwrap();
         let command = estimate
             .skills
             .iter()
             .find(|skill| skill.name == "release-notes")
             .unwrap();
-        let rendered = adapters::render_catalog(AgentKind::Grok, std::slice::from_ref(command));
+        let rendered =
+            adapters::render_catalog(&AgentId::from("grok"), std::slice::from_ref(command));
         assert!(rendered.starts_with("<system-reminder>"));
         assert!(rendered.contains("The following skills are available for use:"));
         assert!(rendered.contains("Absolute path:"));
@@ -3727,11 +3685,12 @@ path = 'D:\skills\active\SKILL.md'
         fs::write(&command, "Build from zero").unwrap();
 
         let estimates = estimate_project_with_home(&project, &home);
-        let groups = group_effective_skills(
-            estimates
+        let groups = group_effective_skills(estimates.iter().flat_map(|estimate| {
+            estimate
+                .skills
                 .iter()
-                .flat_map(|estimate| estimate.skills.iter().map(|skill| (estimate.agent, skill))),
-        );
+                .map(|skill| (estimate.agent.clone(), skill))
+        }));
         let group = groups
             .iter()
             .find(|group| {
@@ -3753,13 +3712,13 @@ path = 'D:\skills\active\SKILL.md'
             group
                 .entries()
                 .iter()
-                .any(|(agent, _)| *agent == AgentKind::ClaudeCode)
+                .any(|(agent, _)| *agent == AgentId::from("claude-code"))
         );
         assert!(
             group
                 .entries()
                 .iter()
-                .any(|(agent, _)| *agent == AgentKind::Grok)
+                .any(|(agent, _)| *agent == AgentId::from("grok"))
         );
     }
 
@@ -3781,7 +3740,7 @@ path = 'D:\skills\active\SKILL.md'
 
         let estimate = estimate_project_with_home(&project, &home)
             .into_iter()
-            .find(|estimate| estimate.agent == AgentKind::Grok)
+            .find(|estimate| estimate.agent == AgentId::from("grok"))
             .unwrap();
         let names = estimate
             .skills
@@ -3818,7 +3777,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("codex"), &context).unwrap();
         let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
         assert_eq!(plugin_skills.len(), 1);
         assert_eq!(plugin_skills[0].name, "release");
@@ -3978,7 +3937,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("codex"), &context).unwrap();
         let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
         let names = plugin_skills
             .iter()
@@ -4032,7 +3991,7 @@ path = 'D:\skills\active\SKILL.md'
             repository_root: Some(repo),
         };
 
-        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("codex"), &context).unwrap();
         assert!(
             estimate
                 .skills
@@ -4060,10 +4019,10 @@ path = 'D:\skills\active\SKILL.md'
         let selected = estimate_project_with_home(&project_with_skill, &home);
 
         for agent in [
-            AgentKind::Codex,
-            AgentKind::OpenCode,
-            AgentKind::Pi,
-            AgentKind::Grok,
+            AgentId::from("codex"),
+            AgentId::from("opencode"),
+            AgentId::from("pi"),
+            AgentId::from("grok"),
         ] {
             let empty_count = empty
                 .iter()
@@ -4082,12 +4041,16 @@ path = 'D:\skills\active\SKILL.md'
                     .any(|skill| skill.name == "selected-project-only")
             );
         }
-        assert!(!empty.iter().any(|estimate| estimate.agent.is_global_only()));
-        assert!(
-            !selected
-                .iter()
-                .any(|estimate| estimate.agent.is_global_only())
-        );
+        assert!(!empty.iter().any(|estimate| {
+            AgentRegistry::global()
+                .agent(estimate.agent.as_str())
+                .is_some_and(|agent| agent.global_only)
+        }));
+        assert!(!selected.iter().any(|estimate| {
+            AgentRegistry::global()
+                .agent(estimate.agent.as_str())
+                .is_some_and(|agent| agent.global_only)
+        }));
     }
 
     #[test]
@@ -4100,11 +4063,11 @@ path = 'D:\skills\active\SKILL.md'
 
         let estimates = estimate_project_with_home(&home, &home);
         for agent in [
-            AgentKind::Codex,
-            AgentKind::OpenCode,
-            AgentKind::Pi,
-            AgentKind::Omp,
-            AgentKind::DimAgent,
+            AgentId::from("codex"),
+            AgentId::from("opencode"),
+            AgentId::from("pi"),
+            AgentId::from("omp"),
+            AgentId::from("dimagent"),
         ] {
             let estimate = estimates.iter().find(|item| item.agent == agent).unwrap();
             assert!(
@@ -4123,7 +4086,9 @@ path = 'D:\skills\active\SKILL.md'
         assert_eq!(
             estimates
                 .iter()
-                .filter(|estimate| estimate.agent.is_global_only())
+                .filter(|estimate| AgentRegistry::global()
+                    .agent(estimate.agent.as_str())
+                    .is_some_and(|agent| agent.global_only))
                 .count(),
             2
         );
@@ -4143,8 +4108,12 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        for agent in [AgentKind::Cursor, AgentKind::Copilot, AgentKind::Amp] {
-            let estimate = adapters::inspect_agent(agent, &context);
+        for agent in [
+            AgentId::from("cursor"),
+            AgentId::from("copilot"),
+            AgentId::from("amp"),
+        ] {
+            let estimate = adapters::inspect_agent(&agent, &context).unwrap();
             assert!(
                 estimate
                     .skills
@@ -4175,7 +4144,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo.clone()),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Cursor, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("cursor"), &context).unwrap();
 
         assert_eq!(estimate.discovered_count, 1);
         assert_eq!(estimate.model_visible_count, 1);
@@ -4197,9 +4166,9 @@ path = 'D:\skills\active\SKILL.md'
                 crate::agent_plugins::AgentRegistry::global()
                     .agents()
                     .iter()
-                    .any(|agent| agent.id.as_str() == estimate.agent.id()),
+                    .any(|agent| agent.id.as_str() == estimate.agent.as_str()),
                 "missing badge for {}",
-                estimate.agent.id()
+                estimate.agent.as_str()
             );
         }
     }
@@ -4229,7 +4198,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("codex"), &context).unwrap();
         assert!(!estimate.plugin_skills().any(|skill| skill.name == "hidden"));
     }
 
@@ -4273,7 +4242,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::ClaudeCode, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("claude-code"), &context).unwrap();
         let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
         assert_eq!(plugin_skills.len(), 1);
         assert_eq!(plugin_skills[0].name, "Deployer UI:release");
@@ -4309,7 +4278,7 @@ path = 'D:\skills\active\SKILL.md'
             home: home.clone(),
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::ClaudeCode, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("claude-code"), &context).unwrap();
         assert_eq!(
             estimate
                 .skills
@@ -4367,7 +4336,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::OpenCode, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("opencode"), &context).unwrap();
         assert!(estimate.skills.iter().any(|skill| {
             skill.name == "still-visible" && skill.visibility == SkillVisibility::Automatic
         }));
@@ -4398,7 +4367,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::OpenCode, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("opencode"), &context).unwrap();
         let skill = estimate
             .skills
             .iter()
@@ -4408,7 +4377,8 @@ path = 'D:\skills\active\SKILL.md'
         assert_eq!(skill.scope, SkillScope::Repository);
         assert_eq!(skill.visibility, SkillVisibility::ManualOnly);
         assert!(
-            !adapters::render_catalog(AgentKind::OpenCode, &estimate.skills).contains("<location>")
+            !adapters::render_catalog(&AgentId::from("opencode"), &estimate.skills)
+                .contains("<location>")
         );
     }
 
@@ -4434,7 +4404,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = adapters::inspect_agent(AgentKind::OpenCode, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("opencode"), &context).unwrap();
         assert!(!estimate.skills.iter().any(|skill| skill.name == "keep"));
     }
 
@@ -4467,7 +4437,7 @@ path = 'D:\skills\active\SKILL.md'
             repository_root: None,
         };
 
-        let estimate = adapters::inspect_agent(AgentKind::OpenClaw, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("openclaw"), &context).unwrap();
         assert_eq!(
             estimate
                 .skills
@@ -4512,7 +4482,7 @@ path = 'D:\skills\active\SKILL.md'
             repository_root: None,
         };
 
-        let estimate = adapters::inspect_agent(AgentKind::Hermes, &context);
+        let estimate = adapters::inspect_agent(&AgentId::from("hermes"), &context).unwrap();
         assert!(estimate.skills.iter().any(|skill| skill.name == "local"));
         assert!(estimate.skills.iter().any(|skill| skill.name == "external"));
         assert!(
@@ -4522,7 +4492,8 @@ path = 'D:\skills\active\SKILL.md'
                 .any(|skill| skill.name == "not-implicit")
         );
         assert!(
-            !adapters::render_catalog(AgentKind::Hermes, &estimate.skills).contains("SKILL.md")
+            !adapters::render_catalog(&AgentId::from("hermes"), &estimate.skills)
+                .contains("SKILL.md")
         );
     }
 }

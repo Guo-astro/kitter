@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use super::additional_agents::{DimAgentAdapter, OmpAdapter};
 use super::scanner::ScanProfile;
 use super::{
-    AgentContextEstimate, AgentKind, AmpPolicy, AntigravityPolicy, ClaudeCodeAdapter, CodexAdapter,
+    AgentContextEstimate, AgentId, AmpPolicy, AntigravityPolicy, ClaudeCodeAdapter, CodexAdapter,
     CopilotPolicy, CursorPolicy, DiscoveryContext, DroidPolicy, EffectiveSkill, GrokAdapter,
     HermesPolicy, MetadataProfile, OpenClawPolicy, OpenCodePolicy, PiAdapter, SkillScope, discover,
     estimate_skills, estimate_with_policy, estimate_with_profile, normalize_grok_name,
@@ -181,52 +181,57 @@ pub(super) fn inspect_project(
     include_global_only: bool,
 ) -> Vec<AgentContextEstimate> {
     let agents = [
-        AgentKind::Codex,
-        AgentKind::ClaudeCode,
-        AgentKind::Cursor,
-        AgentKind::OpenCode,
-        AgentKind::Copilot,
-        AgentKind::Antigravity,
-        AgentKind::Amp,
-        AgentKind::Droid,
-        AgentKind::Pi,
-        AgentKind::Omp,
-        AgentKind::DimAgent,
-        AgentKind::Grok,
+        "codex",
+        "claude-code",
+        "cursor",
+        "opencode",
+        "copilot",
+        "antigravity",
+        "amp",
+        "droid",
+        "pi",
+        "omp",
+        "dimagent",
+        "grok",
     ];
     let mut estimates = agents
         .into_iter()
-        .map(|agent| inspect_agent(agent, context))
+        .filter_map(|agent| inspect_agent(&AgentId::from(agent), context))
         .collect::<Vec<_>>();
     if include_global_only {
-        estimates.extend([
-            inspect_agent(AgentKind::OpenClaw, context),
-            inspect_agent(AgentKind::Hermes, context),
-        ]);
+        estimates.extend(
+            ["openclaw", "hermes"]
+                .into_iter()
+                .filter_map(|agent| inspect_agent(&AgentId::from(agent), context)),
+        );
     }
     estimates
 }
 
-pub(super) fn inspect_agent(agent: AgentKind, context: &DiscoveryContext) -> AgentContextEstimate {
-    match agent {
-        AgentKind::Codex => CodexAdapter.inspect(context),
-        AgentKind::ClaudeCode => ClaudeCodeAdapter.inspect(context),
-        AgentKind::Cursor => CursorAdapter.inspect(context),
-        AgentKind::OpenCode => OpenCodeAdapter.inspect(context),
-        AgentKind::Copilot => CopilotAdapter.inspect(context),
-        AgentKind::Antigravity => AntigravityAdapter.inspect(context),
-        AgentKind::Amp => AmpAdapter.inspect(context),
-        AgentKind::Droid => DroidAdapter.inspect(context),
-        AgentKind::Pi => PiAdapter.inspect(context),
-        AgentKind::Omp => OmpAdapter.inspect(context),
-        AgentKind::Grok => GrokAdapter.inspect(context),
-        AgentKind::OpenClaw => OpenClawAdapter.inspect(context),
-        AgentKind::Hermes => HermesAdapter.inspect(context),
-        AgentKind::DimAgent => DimAgentAdapter {
+pub(super) fn inspect_agent(
+    agent: &AgentId,
+    context: &DiscoveryContext,
+) -> Option<AgentContextEstimate> {
+    Some(match agent.as_str() {
+        "codex" => CodexAdapter.inspect(context),
+        "claude-code" => ClaudeCodeAdapter.inspect(context),
+        "cursor" => CursorAdapter.inspect(context),
+        "opencode" => OpenCodeAdapter.inspect(context),
+        "copilot" => CopilotAdapter.inspect(context),
+        "antigravity" => AntigravityAdapter.inspect(context),
+        "amp" => AmpAdapter.inspect(context),
+        "droid" => DroidAdapter.inspect(context),
+        "pi" => PiAdapter.inspect(context),
+        "omp" => OmpAdapter.inspect(context),
+        "dimagent" => DimAgentAdapter {
             home: super::additional_agents::dim_home(context),
         }
         .inspect(context),
-    }
+        "grok" => GrokAdapter.inspect(context),
+        "openclaw" => OpenClawAdapter.inspect(context),
+        "hermes" => HermesAdapter.inspect(context),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -238,24 +243,25 @@ pub(super) fn inspect_dimagent(
 }
 
 #[cfg(test)]
-pub(super) fn render_catalog(agent: AgentKind, skills: &[EffectiveSkill]) -> String {
-    let policy: &dyn super::AgentSkillPolicy = match agent {
-        AgentKind::Codex => &CodexAdapter,
-        AgentKind::ClaudeCode => &ClaudeCodeAdapter,
-        AgentKind::Cursor => &CursorPolicy,
-        AgentKind::OpenCode => &OpenCodePolicy,
-        AgentKind::Copilot => &CopilotPolicy,
-        AgentKind::Antigravity => &AntigravityPolicy,
-        AgentKind::Amp => &AmpPolicy,
-        AgentKind::Droid => &DroidPolicy,
-        AgentKind::Pi => &PiAdapter,
-        AgentKind::Omp => &OmpAdapter,
-        AgentKind::Grok => &GrokAdapter,
-        AgentKind::OpenClaw => &OpenClawPolicy,
-        AgentKind::Hermes => &HermesPolicy,
-        AgentKind::DimAgent => &DimAgentAdapter {
+pub(super) fn render_catalog(agent: &AgentId, skills: &[EffectiveSkill]) -> String {
+    let policy: &dyn super::AgentSkillPolicy = match agent.as_str() {
+        "codex" => &CodexAdapter,
+        "claude-code" => &ClaudeCodeAdapter,
+        "cursor" => &CursorPolicy,
+        "opencode" => &OpenCodePolicy,
+        "copilot" => &CopilotPolicy,
+        "antigravity" => &AntigravityPolicy,
+        "amp" => &AmpPolicy,
+        "droid" => &DroidPolicy,
+        "pi" => &PiAdapter,
+        "omp" => &OmpAdapter,
+        "grok" => &GrokAdapter,
+        "openclaw" => &OpenClawPolicy,
+        "hermes" => &HermesPolicy,
+        "dimagent" => &DimAgentAdapter {
             home: Default::default(),
         },
+        _ => return String::new(),
     };
     policy.render_initial_catalog(skills).text
 }

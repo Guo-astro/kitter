@@ -17,7 +17,7 @@ fn skill(root: &Path, directory: &str, name: &str, extra: &str) {
 }
 
 #[cfg(test)]
-fn fixture(home: &Path, repo: &Path, project: &Path) {
+pub(super) fn fixture(home: &Path, repo: &Path, project: &Path) {
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::create_dir_all(project).unwrap();
     for base in [home, repo, project] {
@@ -211,7 +211,8 @@ fn snapshot(project: &Path, home: &Path, repo: &Path) -> serde_json::Value {
     let mut estimates = estimate_project_with_home(project, home);
     let mut snapshots = Vec::new();
     for estimate in &mut estimates {
-        let original_catalog = adapters::render_catalog(estimate.agent, &visible(&estimate.skills));
+        let original_catalog =
+            adapters::render_catalog(&estimate.agent, &visible(&estimate.skills));
         estimate.skills.retain(|skill| {
             let inside = skill.path.starts_with(home)
                 || skill.path.starts_with(repo)
@@ -233,10 +234,14 @@ fn snapshot(project: &Path, home: &Path, repo: &Path) -> serde_json::Value {
         assert!(
             estimate.skills.len() >= 2,
             "{} needs two skills",
-            estimate.agent.label()
+            crate::agent_plugins::AgentRegistry::global()
+                .agent(estimate.agent.as_str())
+                .unwrap()
+                .name
+                .as_str()
         );
         let normalized_catalog = normalize(&adapters::render_catalog(
-            estimate.agent,
+            &estimate.agent,
             &visible(&estimate.skills),
         ));
         for skill in &mut estimate.skills {

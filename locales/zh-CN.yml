@@ -147,6 +147,7 @@ context:
   manual: " · %{count} 手动"
   name_only: " · %{count} 仅名称"
 errors:
+  agent_invalid: "未知 Agent：%{agent}。可选值：%{values}"
   target_invalid: "未知安装目标：%{target}。可选值：%{values}"
   absolute_path_required: "请使用绝对路径"
   adopt_source_required: "没有可托管的 skill；冲突来源需要使用 --source 明确选择"

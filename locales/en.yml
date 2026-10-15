@@ -147,6 +147,7 @@ context:
   manual: " · %{count} manual"
   name_only: " · %{count} name-only"
 errors:
+  agent_invalid: "Unknown agent: %{agent}. Choose from: %{values}"
   target_invalid: "Unknown target: %{target}. Choose from: %{values}"
   absolute_path_required: "Use an absolute path"
   adopt_source_required: "No skills can be adopted; use --source to select conflicting sources"

@@ -6,7 +6,7 @@ use std::{
 use crate::{
     ProjectSkill, ProjectSkillInstallation,
     effective_skills::{
-        AgentContextEstimate, AgentKind, SkillSource, SkillVisibility, group_effective_skills,
+        AgentContextEstimate, AgentId, SkillSource, SkillVisibility, group_effective_skills,
     },
     project,
 };
@@ -14,31 +14,32 @@ use crate::{
 #[derive(Clone)]
 pub(super) struct EffectivePluginGroup {
     pub key: String,
-    pub agent: AgentKind,
+    pub agent: AgentId,
     pub display_name: String,
     pub skills: Vec<String>,
 }
 
 pub(super) fn plugin_groups(
     estimates: &[AgentContextEstimate],
-    selected_agent: Option<AgentKind>,
+    selected_agent: Option<AgentId>,
 ) -> Vec<EffectivePluginGroup> {
     let mut groups = BTreeMap::<String, EffectivePluginGroup>::new();
-    for estimate in estimates
-        .iter()
-        .filter(|estimate| selected_agent.is_none_or(|agent| agent == estimate.agent))
-    {
+    for estimate in estimates.iter().filter(|estimate| {
+        selected_agent
+            .as_ref()
+            .is_none_or(|agent| agent == &estimate.agent)
+    }) {
         for skill in estimate.plugin_skills() {
             let Some(id) = skill.source.plugin_id() else {
                 continue;
             };
             let display_name = skill.source.plugin_display_name().unwrap_or(id);
-            let key = format!("{}:{id}", estimate.agent.id());
+            let key = format!("{}:{id}", estimate.agent.as_str());
             let group = groups
                 .entry(key.clone())
                 .or_insert_with(|| EffectivePluginGroup {
                     key,
-                    agent: estimate.agent,
+                    agent: estimate.agent.clone(),
                     display_name: display_name.to_string(),
                     skills: Vec::new(),
                 });
@@ -59,7 +60,7 @@ pub(super) struct EffectiveSkillRow {
     pub description: String,
     pub locations: Vec<PathBuf>,
     pub built_in: bool,
-    pub agents: Vec<AgentKind>,
+    pub agents: Vec<AgentId>,
     pub manual_only: bool,
     pub direct_installations: Vec<ProjectSkillInstallation>,
 }
@@ -73,18 +74,22 @@ pub(super) fn same_file(left: &Path, right: &Path) -> bool {
 pub(super) fn skill_rows(
     estimates: &[AgentContextEstimate],
     project_skills: &[ProjectSkill],
-    selected_agent: Option<AgentKind>,
+    selected_agent: Option<AgentId>,
 ) -> Vec<EffectiveSkillRow> {
     let groups = group_effective_skills(
         estimates
             .iter()
-            .filter(|estimate| selected_agent.is_none_or(|agent| agent == estimate.agent))
+            .filter(|estimate| {
+                selected_agent
+                    .as_ref()
+                    .is_none_or(|agent| agent == &estimate.agent)
+            })
             .flat_map(|estimate| {
                 estimate
                     .skills
                     .iter()
                     .filter(|skill| !skill.is_plugin())
-                    .map(|skill| (estimate.agent, skill))
+                    .map(|skill| (estimate.agent.clone(), skill))
             }),
     );
     let mut rows = Vec::with_capacity(groups.len());
@@ -112,7 +117,7 @@ pub(super) fn skill_rows(
             }
             row.built_in |= matches!(skill.source, SkillSource::Builtin);
             if !row.agents.contains(agent) {
-                row.agents.push(*agent);
+                row.agents.push(agent.clone());
             }
             row.manual_only |= skill.visibility == SkillVisibility::ManualOnly;
 
@@ -133,11 +138,11 @@ pub(super) fn skill_rows(
         }
         rows.push(row);
     }
-    let agent_order = |agent: &AgentKind| {
+    let agent_order = |agent: &AgentId| {
         crate::agent_plugins::AgentRegistry::global()
             .agents()
             .iter()
-            .position(|item| item.id.as_str() == agent.id())
+            .position(|item| item.id.as_str() == agent.as_str())
             .unwrap_or(usize::MAX)
     };
     for row in &mut rows {

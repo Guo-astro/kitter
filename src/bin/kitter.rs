@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use kitter::{
     InstallTarget, ProjectSkill, ProjectSkillInstallation, SkillGroup, SkillLibrary, SkillSummary,
     adoption,
-    effective_skills::{self, AgentContextEstimate, AgentKind, group_effective_skills},
+    effective_skills::{self, AgentContextEstimate, AgentId, group_effective_skills},
     preset::{AgentsMdState, Preset, PresetStore, SkillFailure},
     project, source,
     tags::{TagId, TagState, load_tag_states, save_tag_states},
@@ -101,8 +101,8 @@ enum Command {
     Project {
         path: PathBuf,
         /// Limit effective discovery to one agent
-        #[arg(long, value_enum)]
-        agent: Option<AgentArg>,
+        #[arg(long)]
+        agent: Option<String>,
         /// Select filesystem skills, plugin skills, or both
         #[arg(long, value_enum, default_value_t = ProjectViewArg::All)]
         view: ProjectViewArg,
@@ -359,43 +359,21 @@ fn parse_target(input: &str) -> std::result::Result<InstallTarget, String> {
     .to_string())
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum AgentArg {
-    Dimagent,
-    Codex,
-    Claude,
-    Cursor,
-    Opencode,
-    Copilot,
-    Antigravity,
-    Amp,
-    Droid,
-    Pi,
-    Omp,
-    Grok,
-    Openclaw,
-    Hermes,
-}
-
-impl From<AgentArg> for AgentKind {
-    fn from(value: AgentArg) -> Self {
-        match value {
-            AgentArg::Codex => Self::Codex,
-            AgentArg::Claude => Self::ClaudeCode,
-            AgentArg::Cursor => Self::Cursor,
-            AgentArg::Opencode => Self::OpenCode,
-            AgentArg::Copilot => Self::Copilot,
-            AgentArg::Antigravity => Self::Antigravity,
-            AgentArg::Amp => Self::Amp,
-            AgentArg::Droid => Self::Droid,
-            AgentArg::Pi => Self::Pi,
-            AgentArg::Omp => Self::Omp,
-            AgentArg::Dimagent => Self::DimAgent,
-            AgentArg::Grok => Self::Grok,
-            AgentArg::Openclaw => Self::OpenClaw,
-            AgentArg::Hermes => Self::Hermes,
-        }
-    }
+fn parse_agent(input: &str) -> std::result::Result<AgentId, String> {
+    let registry = kitter::agent_plugins::AgentRegistry::global();
+    registry.resolve(input).ok_or_else(|| {
+        t!(
+            "errors.agent_invalid",
+            agent = input,
+            values = registry
+                .agents()
+                .iter()
+                .map(|agent| agent.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .to_string()
+    })
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
@@ -1010,16 +988,24 @@ fn uninstall_skills(
 fn inspect_project(
     library: &SkillLibrary,
     path: &Path,
-    agent: Option<AgentArg>,
+    agent: Option<String>,
     view: ProjectViewArg,
     json: bool,
 ) -> Result<()> {
     let path = canonical_project(path)?;
     let direct = project::list(&path, &library.config.library_dir)?;
-    let selected_agent = agent.map(AgentKind::from);
+    let selected_agent = agent
+        .as_deref()
+        .map(parse_agent)
+        .transpose()
+        .map_err(anyhow::Error::msg)?;
     let mut estimates = effective_skills::estimate_project(&path)
         .into_iter()
-        .filter(|estimate| selected_agent.is_none_or(|agent| estimate.agent == agent))
+        .filter(|estimate| {
+            selected_agent
+                .as_ref()
+                .is_none_or(|agent| &estimate.agent == agent)
+        })
         .collect::<Vec<_>>();
     for estimate in &mut estimates {
         estimate.skills.retain(|skill| match view {
@@ -1069,7 +1055,14 @@ fn inspect_project(
             "{}",
             t!(
                 "cli.agent_summary",
-                agent = format!("{:<18}", estimate.agent.label()),
+                agent = format!(
+                    "{:<18}",
+                    kitter::agent_plugins::AgentRegistry::global()
+                        .agent(estimate.agent.as_str())
+                        .unwrap()
+                        .name
+                        .as_str()
+                ),
                 discovered = format!("{:>3}", estimate.discovered_count),
                 visible = format!("{:>3}", estimate.model_visible_count),
                 tokens = estimate.estimated_tokens
@@ -1077,11 +1070,12 @@ fn inspect_project(
             .to_string()
         );
     }
-    let effective = group_effective_skills(
-        estimates
+    let effective = group_effective_skills(estimates.iter().flat_map(|estimate| {
+        estimate
+            .skills
             .iter()
-            .flat_map(|estimate| estimate.skills.iter().map(|skill| (estimate.agent, skill))),
-    );
+            .map(|skill| (estimate.agent.clone(), skill))
+    }));
     println!(
         "{}",
         t!("cli.effective_skills", count = effective.len()).to_string()
@@ -1090,7 +1084,13 @@ fn inspect_project(
         let agents = group
             .entries()
             .iter()
-            .map(|(agent, _)| agent.label())
+            .map(|(agent, _)| {
+                kitter::agent_plugins::AgentRegistry::global()
+                    .agent(agent.as_str())
+                    .unwrap()
+                    .name
+                    .as_str()
+            })
             .collect::<BTreeSet<_>>();
         let plugin = group
             .entries()
@@ -1715,6 +1715,25 @@ mod tests {
                 assert!(error.contains(target.as_str()));
             }
         }
+    }
+
+    #[test]
+    fn agent_parser_uses_registry_aliases() {
+        for (input, expected) in [
+            ("claude", "claude-code"),
+            ("claude_code", "claude-code"),
+            ("open_code", "opencode"),
+            ("dim_agent", "dimagent"),
+            ("open_claw", "openclaw"),
+            ("cursor", "cursor"),
+        ] {
+            assert_eq!(super::parse_agent(input).unwrap().as_str(), expected);
+        }
+        assert!(
+            super::parse_agent("missing-plugin")
+                .unwrap_err()
+                .contains("missing-plugin")
+        );
     }
 
     #[test]

@@ -27,7 +27,7 @@ use crate::{
     InstallTarget, ProjectSkill, ProjectSkillInstallation, SkillGroup, SkillLibrary, SkillSummary,
     TriggerMode, adoption,
     config::{Language, Theme},
-    effective_skills::{self, AgentContextEstimate, AgentKind},
+    effective_skills::{self, AgentContextEstimate, AgentId},
     project, source,
     tags::{TagId, TagState, load_tag_states_from, save_tag_states_to},
 };
@@ -118,7 +118,7 @@ fn unique_external_sources(kinds: &[project::RemovalKind]) -> Vec<String> {
 
 fn effective_plugin_groups(
     estimates: &[AgentContextEstimate],
-    selected_agent: Option<AgentKind>,
+    selected_agent: Option<AgentId>,
 ) -> Vec<EffectivePluginGroup> {
     effective_view::plugin_groups(estimates, selected_agent)
 }
@@ -126,7 +126,7 @@ fn effective_plugin_groups(
 fn effective_skill_rows(
     estimates: &[AgentContextEstimate],
     project_skills: &[ProjectSkill],
-    selected_agent: Option<AgentKind>,
+    selected_agent: Option<AgentId>,
 ) -> Vec<EffectiveSkillRow> {
     effective_view::skill_rows(estimates, project_skills, selected_agent)
 }

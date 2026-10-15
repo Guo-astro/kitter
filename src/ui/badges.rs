@@ -25,13 +25,13 @@ impl KitterApp {
     pub(super) fn effective_agent_badges(
         &self,
         popover_id: String,
-        kinds: &[AgentKind],
+        kinds: &[AgentId],
         cx: &mut Context<Self>,
     ) -> Div {
         let agents = crate::agent_plugins::AgentRegistry::global()
             .agents()
             .iter()
-            .filter(|agent| kinds.iter().any(|kind| kind.id() == agent.id.as_str()))
+            .filter(|agent| kinds.iter().any(|kind| kind.as_str() == agent.id.as_str()))
             .collect::<Vec<_>>();
         self.render_agent_badges(popover_id, agents, cx)
     }

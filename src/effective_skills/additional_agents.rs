@@ -73,8 +73,8 @@ fn project_dirs(context: &DiscoveryContext) -> Vec<PathBuf> {
 }
 
 impl AgentSkillPolicy for OmpAdapter {
-    fn agent(&self) -> AgentKind {
-        AgentKind::Omp
+    fn agent(&self) -> AgentId {
+        AgentId::from("omp")
     }
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
         let settings = omp_settings(context);
@@ -273,8 +273,8 @@ pub(super) fn dim_home(context: &DiscoveryContext) -> PathBuf {
 }
 
 impl AgentSkillPolicy for DimAgentAdapter {
-    fn agent(&self) -> AgentKind {
-        AgentKind::DimAgent
+    fn agent(&self) -> AgentId {
+        AgentId::from("dimagent")
     }
     fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
         // DimAgent scans host/user sources first; same-name workspace skills
@@ -454,11 +454,11 @@ mod tests {
             repository_root: Some(repo),
         }
     }
-    fn estimate(context: &DiscoveryContext, agent: AgentKind) -> AgentContextEstimate {
-        if agent == AgentKind::DimAgent {
+    fn estimate(context: &DiscoveryContext, agent: AgentId) -> AgentContextEstimate {
+        if agent.as_str() == "dimagent" {
             return adapters::inspect_dimagent(context, context.home.join(".dimcode/v2"));
         }
-        adapters::inspect_agent(agent, context)
+        adapters::inspect_agent(&agent, context).unwrap()
     }
 
     #[test]
@@ -480,7 +480,7 @@ mod tests {
         write_skill(&repo.join(".omp/skills/group"), "nested", "");
         write_skill(&repo.join(".omp/skills"), ".hidden", "");
         let context = context(home, cwd, repo.clone());
-        let result = estimate(&context, AgentKind::Omp);
+        let result = estimate(&context, AgentId::from("omp"));
         assert_eq!(
             result
                 .skills
@@ -529,7 +529,7 @@ mod tests {
             "skills:\n  customDirectories: [custom]\n  ignoredSkills: [shared]\n",
         )
         .unwrap();
-        let result = estimate(&context(home, repo.clone(), repo), AgentKind::Omp);
+        let result = estimate(&context(home, repo.clone(), repo), AgentId::from("omp"));
         assert!(result.skills.iter().any(|s| s.name == "custom"));
         assert!(
             result
@@ -558,7 +558,7 @@ mod tests {
             &repo.join(".agents/skills/linked"),
         )
         .unwrap();
-        let result = estimate(&context(home, repo.clone(), repo), AgentKind::Omp);
+        let result = estimate(&context(home, repo.clone(), repo), AgentId::from("omp"));
         assert!(result.skills.iter().any(|s| s.name == "same"));
         assert!(result.skills.iter().any(|s| s.name == "agents/same"));
         assert_eq!(
@@ -583,7 +583,7 @@ mod tests {
         write_skill(&repo.join(".agents/skills"), "parent", "");
         let result = estimate(
             &context(home.clone(), cwd.clone(), repo),
-            AgentKind::DimAgent,
+            AgentId::from("dimagent"),
         );
         assert_eq!(result.skills.iter().filter(|s| s.name == "same").count(), 1);
         assert_eq!(
@@ -619,7 +619,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            !estimate(&context, AgentKind::DimAgent)
+            !estimate(&context, AgentId::from("dimagent"))
                 .skills
                 .iter()
                 .any(|s| s.name == "same")
@@ -641,7 +641,7 @@ mod tests {
             .unwrap();
         }
         let context = context(home, repo.clone(), repo);
-        let omp = estimate(&context, AgentKind::Omp);
+        let omp = estimate(&context, AgentId::from("omp"));
         let skill = omp
             .skills
             .iter()
@@ -649,6 +649,10 @@ mod tests {
             .unwrap();
         assert!(skill.path.to_string_lossy().contains(".agents/skills"));
         assert!(skill.description.is_empty());
-        assert!(estimate(&context, AgentKind::DimAgent).skills.is_empty());
+        assert!(
+            estimate(&context, AgentId::from("dimagent"))
+                .skills
+                .is_empty()
+        );
     }
 }

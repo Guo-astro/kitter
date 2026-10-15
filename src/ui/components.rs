@@ -125,7 +125,7 @@ impl KitterApp {
                 let is_global_only = crate::agent_plugins::AgentRegistry::global()
                     .agents()
                     .iter()
-                    .find(|agent| agent.id.as_str() == estimate.agent.id())
+                    .find(|agent| agent.id.as_str() == estimate.agent.as_str())
                     .is_some_and(|agent| agent.global_only);
                 is_global_context || !is_global_only
             })
@@ -134,19 +134,19 @@ impl KitterApp {
             crate::agent_plugins::AgentRegistry::global()
                 .agents()
                 .iter()
-                .position(|agent| agent.id.as_str() == estimate.agent.id())
+                .position(|agent| agent.id.as_str() == estimate.agent.as_str())
                 .unwrap_or(usize::MAX)
         });
         let can_expand = ordered_estimates.len() > 8;
         let mut cards = div().w_full().flex().flex_wrap();
         for estimate in ordered_estimates {
-            let agent = estimate.agent;
-            let selected = self.projects_view.selected_project_agent == Some(agent);
+            let agent = estimate.agent.clone();
+            let selected = self.projects_view.selected_project_agent == Some(agent.clone());
             let automatic_count = estimate
                 .model_visible_count
                 .saturating_sub(estimate.name_only_count);
             let Some(definition) =
-                crate::agent_plugins::AgentRegistry::global().agent(estimate.agent.id())
+                crate::agent_plugins::AgentRegistry::global().agent(estimate.agent.as_str())
             else {
                 continue;
             };
@@ -180,7 +180,7 @@ impl KitterApp {
             cards = cards.child(
                 div()
                     .id(ElementId::Name(
-                        format!("project-agent-filter-{}", agent.id()).into(),
+                        format!("project-agent-filter-{}", agent.as_str()).into(),
                     ))
                     .w(px(176.))
                     .h(px(90.))
@@ -226,7 +226,7 @@ impl KitterApp {
                                             .into_any_element(),
                                     }),
                             )
-                            .child(estimate.agent.label()),
+                            .child(definition.name.as_str()),
                     )
                     .child(
                         div()
@@ -248,8 +248,8 @@ impl KitterApp {
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.projects_view.selected_project_agent =
-                            (this.projects_view.selected_project_agent != Some(agent))
-                                .then_some(agent);
+                            (this.projects_view.selected_project_agent != Some(agent.clone()))
+                                .then_some(agent.clone());
                         cx.notify();
                     })),
             );
@@ -372,10 +372,10 @@ impl KitterApp {
             let agent = crate::agent_plugins::AgentRegistry::global()
                 .agents()
                 .iter()
-                .find(|agent| agent.id.as_str() == group.agent.id());
+                .find(|agent| agent.id.as_str() == group.agent.as_str());
             let agent_name = agent
                 .map(|agent| agent.name.clone())
-                .unwrap_or_else(|| group.agent.label().to_string());
+                .unwrap_or_else(|| group.agent.to_string());
 
             card = card.child(
                 kit::card_row(p, index == 0)

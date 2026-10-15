@@ -727,7 +727,7 @@ impl KitterApp {
             let all_effective_rows = effective_skill_rows(
                 &estimates,
                 &project_skills,
-                self.projects_view.selected_project_agent,
+                self.projects_view.selected_project_agent.clone(),
             );
             let batch_mode = self.projects_view.batch_project.as_deref() == Some(open_project);
             let can_batch = batch_mode
@@ -758,7 +758,11 @@ impl KitterApp {
                 let selected_agent = self
                     .projects_view
                     .selected_project_agent
-                    .map(AgentKind::label)
+                    .as_ref()
+                    .and_then(|agent| {
+                        crate::agent_plugins::AgentRegistry::global().agent(agent.as_str())
+                    })
+                    .map(|agent| agent.name.as_str())
                     .unwrap_or_default();
                 skills = skills.child(
                     kit::empty_state(
@@ -793,8 +797,10 @@ impl KitterApp {
                     .min_h_0(),
                 );
             }
-            let plugin_groups =
-                effective_plugin_groups(&estimates, self.projects_view.selected_project_agent);
+            let plugin_groups = effective_plugin_groups(
+                &estimates,
+                self.projects_view.selected_project_agent.clone(),
+            );
             let mut tabs = self.project_skills_tabs(cx).child(div().flex_1());
             if can_batch && self.projects_view.project_skills_tab == ProjectSkillsTab::Skills {
                 if batch_mode {

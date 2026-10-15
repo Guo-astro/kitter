@@ -25,7 +25,7 @@ use super::{
     GroupDragScope, GroupEdit, Page, PageBody, PresetConfirmation, PresetEdit, PresetTab,
     ProjectChoice, ProjectSkillFilter, ProjectSkillsTab, SourceChoice, SpinnerView,
     TagAssignmentTarget, TagDropPosition, TagDropTarget, TagEdit, TagId, TagScope, adoption_list,
-    effective_skills::AgentKind, skill_selection::SkillSelection,
+    effective_skills::AgentId, skill_selection::SkillSelection,
 };
 
 pub(super) struct AppModel {
@@ -71,7 +71,7 @@ pub(super) struct ProjectsState {
     pub batch_selected: HashSet<String>,
     pub batch_filter: Option<ProjectSkillFilter>,
     pub project_skills_tab: ProjectSkillsTab,
-    pub selected_project_agent: Option<AgentKind>,
+    pub selected_project_agent: Option<AgentId>,
     pub project_agents_expanded: bool,
     pub expanded_project_plugins: HashSet<String>,
     pub project_search: Entity<InputState>,
