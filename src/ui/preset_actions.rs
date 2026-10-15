@@ -255,9 +255,9 @@ impl KitterApp {
             self.show_notice(t!("add.project_required").to_string(), cx);
             return;
         };
-        let targets = crate::agents::PROJECT_INSTALL_TARGETS
-            .iter()
-            .copied()
+        let targets = crate::agent_plugins::AgentRegistry::global()
+            .install_targets()
+            .into_iter()
             .filter(|target| self.install_flow.selected_targets.contains(target))
             .collect::<Vec<_>>();
         let result = self

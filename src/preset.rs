@@ -335,7 +335,7 @@ impl PresetStore {
             Some(installation) => {
                 for target in targets {
                     if !installation.targets.contains(target) {
-                        installation.targets.push(*target);
+                        installation.targets.push(target.clone());
                     }
                 }
             }
@@ -370,7 +370,8 @@ impl PresetStore {
             if !installation
                 .targets
                 .iter()
-                .all(|target| is_linked(project, *target, skill))
+                .filter(|target| target.project_dir().is_some())
+                .all(|target| is_linked(project, target, skill))
             {
                 status.missing_skills.push(storage_name.clone());
             }
@@ -414,8 +415,10 @@ impl PresetStore {
             let missing = installation
                 .targets
                 .iter()
-                .copied()
-                .filter(|target| !is_linked(project, *target, skill))
+                .filter(|target| {
+                    target.project_dir().is_some() && !is_linked(project, target, skill)
+                })
+                .cloned()
                 .collect::<Vec<_>>();
             if missing.is_empty() {
                 continue;
@@ -530,8 +533,12 @@ impl PresetStore {
         let Some(skill) = find_skill(skills, &link.skill) else {
             return false;
         };
-        match project::uninstall_from_path(project, &skill.path, &skill.record.name, &[link.target])
-        {
+        match project::uninstall_from_path(
+            project,
+            &skill.path,
+            &skill.record.name,
+            std::slice::from_ref(&link.target),
+        ) {
             Ok(()) => true,
             Err(error) => {
                 report.failures.push(SkillFailure {
@@ -646,8 +653,11 @@ fn find_skill<'a>(skills: &'a [SkillSummary], storage_name: &str) -> Option<&'a 
         .find(|skill| skill.record.storage_name == storage_name)
 }
 
-fn is_linked(project: &Path, target: InstallTarget, skill: &SkillSummary) -> bool {
-    let link = installation_root(project, target).join(&skill.record.name);
+fn is_linked(project: &Path, target: &InstallTarget, skill: &SkillSummary) -> bool {
+    let Some(root) = installation_root(project, target) else {
+        return false;
+    };
+    let link = root.join(&skill.record.name);
     match (link.canonicalize(), skill.path.canonicalize()) {
         (Ok(link), Ok(source)) => link == source,
         _ => false,
@@ -857,7 +867,9 @@ mod tests {
         values.iter().map(|value| value.to_string()).collect()
     }
 
-    const UNIVERSAL: &[InstallTarget] = &[InstallTarget::Universal];
+    fn universal() -> Vec<InstallTarget> {
+        vec![InstallTarget::universal()]
+    }
 
     #[test]
     fn ids_are_slugs_and_names_must_be_unique() {
@@ -884,7 +896,7 @@ mod tests {
         store.set_agents_md(&id, "Use pnpm.\n").unwrap();
 
         let report = store
-            .install(&id, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&id, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
         assert_eq!(report.installed, 2);
         assert!(report.failures.is_empty());
@@ -908,14 +920,14 @@ mod tests {
             &fixture.project,
             &fixture.skills[0].path,
             "alpha",
-            UNIVERSAL,
+            &universal(),
         )
         .unwrap();
         let mut store = fixture.store();
         let id = store.create("web").unwrap().id;
         store.add_skills(&id, &names(&["alpha", "beta"])).unwrap();
         store
-            .install(&id, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&id, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
 
         store
@@ -953,7 +965,7 @@ mod tests {
         let id = store.create("web").unwrap().id;
         store.set_agents_md(&id, "Original").unwrap();
         store
-            .install(&id, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&id, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
         let path = fixture.project.join(AGENTS_MD);
         let edited = fs::read_to_string(&path)
@@ -990,10 +1002,10 @@ mod tests {
         store.set_agents_md(&web, "Web").unwrap();
         store.set_agents_md(&rust, "Rust").unwrap();
         store
-            .install(&web, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&web, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
         store
-            .install(&rust, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&rust, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
 
         store
@@ -1021,15 +1033,19 @@ mod tests {
         let rust = store.create("rust").unwrap().id;
         store.add_skills(&web, &names(&["alpha"])).unwrap();
         store.add_skills(&rust, &names(&["alpha"])).unwrap();
-        let both = &[InstallTarget::Universal, InstallTarget::ClaudeCode];
+        let both = &[
+            InstallTarget::universal(),
+            InstallTarget::from("claude-code"),
+        ];
         store
             .install(&web, &fixture.project, both, &fixture.skills)
             .unwrap();
         store
-            .install(&rust, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&rust, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
         let claude_link =
-            crate::agents::installation_root(&fixture.project, InstallTarget::ClaudeCode)
+            crate::agents::installation_root(&fixture.project, &InstallTarget::from("claude-code"))
+                .unwrap()
                 .join("alpha");
         assert!(claude_link.exists());
 
@@ -1052,7 +1068,7 @@ mod tests {
         let id = store.create("web").unwrap().id;
         store.set_agents_md(&id, "Rules").unwrap();
         store
-            .install(&id, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&id, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
         assert!(fixture.agents_md().is_some());
 
@@ -1069,7 +1085,7 @@ mod tests {
         let id = store.create("web").unwrap().id;
         store.set_agents_md(&id, "Rules").unwrap();
         store
-            .install(&id, &fixture.project, UNIVERSAL, &fixture.skills)
+            .install(&id, &fixture.project, &universal(), &fixture.skills)
             .unwrap();
         fs::write(fixture.project.join(AGENTS_MD), "# Rewritten\n").unwrap();
 
@@ -1096,5 +1112,52 @@ mod tests {
         store.add_skills(&id, &names(&["alpha"])).unwrap();
         store.forget_skill("alpha").unwrap();
         assert!(fixture.store().preset(&id).unwrap().skills.is_empty());
+    }
+    #[test]
+    fn legacy_and_unknown_targets_round_trip_in_preset_state() {
+        let state = serde_json::json!({
+            "installations": [{
+                "preset": "example", "project": "/project",
+                "targets": ["claude_code", "open_code", "missing-plugin"],
+                "owned": [{ "skill": "example", "target": "claude_code" }]
+            }]
+        });
+        let document: PresetDocument = serde_json::from_value(state).unwrap();
+        let output = serde_json::to_value(&document).unwrap();
+        assert_eq!(
+            output["installations"][0]["targets"],
+            serde_json::json!(["claude-code", "opencode", "missing-plugin"])
+        );
+        assert_eq!(
+            output["installations"][0]["owned"][0]["target"],
+            "claude-code"
+        );
+        let restored: PresetDocument = serde_json::from_value(output).unwrap();
+        assert_eq!(document.installations, restored.installations);
+    }
+
+    #[test]
+    fn missing_plugin_targets_are_preserved_and_skipped_on_sync() {
+        let fixture = Fixture::new(&["example"]);
+        let mut store = fixture.store();
+        let id = store.create("Example").unwrap().id;
+        store.add_skills(&id, &names(&["example"])).unwrap();
+        let targets = vec![InstallTarget::from("missing-plugin")];
+        let report = store
+            .install(&id, &fixture.project, &targets, &fixture.skills)
+            .unwrap();
+        assert!(report.failures.is_empty());
+        assert_eq!(
+            store.installation(&id, &fixture.project).unwrap().targets,
+            targets
+        );
+        assert!(
+            store
+                .status(&id, &fixture.project, &fixture.skills)
+                .unwrap()
+                .missing_skills
+                .is_empty()
+        );
+        assert_eq!(fs::read_dir(&fixture.project).unwrap().count(), 0);
     }
 }

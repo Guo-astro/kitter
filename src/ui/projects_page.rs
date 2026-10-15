@@ -963,7 +963,7 @@ mod tests {
             direct_installations: paths
                 .iter()
                 .map(|path| ProjectSkillInstallation {
-                    target: InstallTarget::Universal,
+                    target: InstallTarget::universal(),
                     path: PathBuf::from(path),
                     managed: true,
                 })

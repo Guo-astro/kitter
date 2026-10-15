@@ -4174,9 +4174,10 @@ path = 'D:\skills\active\SKILL.md'
         let global_estimates = estimate_project_with_home(&home, &home);
         for estimate in project_estimates.into_iter().chain(global_estimates) {
             assert!(
-                crate::agents::AGENT_ICON_ORDER
+                crate::agent_plugins::AgentRegistry::global()
+                    .agents()
                     .iter()
-                    .any(|agent| agent.id == estimate.agent.id()),
+                    .any(|agent| agent.id.as_str() == estimate.agent.id()),
                 "missing badge for {}",
                 estimate.agent.id()
             );

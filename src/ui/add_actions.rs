@@ -63,9 +63,9 @@ impl KitterApp {
         if selected.is_empty() {
             return;
         }
-        let targets = crate::agents::PROJECT_INSTALL_TARGETS
-            .iter()
-            .copied()
+        let targets = crate::agent_plugins::AgentRegistry::global()
+            .install_targets()
+            .into_iter()
             .filter(|target| self.install_flow.selected_targets.contains(target))
             .collect::<Vec<_>>();
         let mut installed = 0usize;

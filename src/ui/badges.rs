@@ -8,16 +8,16 @@ impl KitterApp {
         include_global_only: bool,
         cx: &mut Context<Self>,
     ) -> Div {
-        let agents = crate::agents::AGENT_ICON_ORDER
+        let agents = crate::agent_plugins::AgentRegistry::global()
+            .agents()
             .iter()
             .filter(|agent| {
                 if agent.global_only {
                     include_global_only
                 } else {
-                    targets.iter().any(|target| agent.supports_target(*target))
+                    targets.iter().any(|target| agent.supports_target(target))
                 }
             })
-            .map(|agent| (agent.name, agent.icon_path))
             .collect::<Vec<_>>();
         self.render_agent_badges(popover_id, agents, cx)
     }
@@ -28,10 +28,10 @@ impl KitterApp {
         kinds: &[AgentKind],
         cx: &mut Context<Self>,
     ) -> Div {
-        let agents = crate::agents::AGENT_ICON_ORDER
+        let agents = crate::agent_plugins::AgentRegistry::global()
+            .agents()
             .iter()
-            .filter(|agent| kinds.iter().any(|kind| kind.id() == agent.id))
-            .map(|agent| (agent.name, agent.icon_path))
+            .filter(|agent| kinds.iter().any(|kind| kind.id() == agent.id.as_str()))
             .collect::<Vec<_>>();
         self.render_agent_badges(popover_id, agents, cx)
     }
@@ -39,7 +39,7 @@ impl KitterApp {
     pub(super) fn render_agent_badges(
         &self,
         popover_id: String,
-        agents: Vec<(&'static str, &'static str)>,
+        agents: Vec<&'static crate::agent_plugins::AgentDef>,
         _cx: &mut Context<Self>,
     ) -> Div {
         let p = self.palette();
@@ -59,8 +59,8 @@ impl KitterApp {
                 .border_color(p.surface)
         };
         let mut badges = div().flex().items_center();
-        for (index, (_, icon)) in agents.iter().take(5).enumerate() {
-            badges = badges.child(ring(kit::avatar(p, icon), index));
+        for (index, agent) in agents.iter().take(5).enumerate() {
+            badges = badges.child(ring(kit::agent_avatar(p, agent), index));
         }
         if hidden > 0 {
             badges = badges.child(
@@ -94,7 +94,7 @@ impl KitterApp {
                             .w(px(180.))
                             .max_h(px(246.))
                             .overflow_y_scroll();
-                        for (name, icon) in agents.clone() {
+                        for agent in agents.clone() {
                             menu = menu.child(
                                 div()
                                     .h(px(H_SM + 4.))
@@ -103,8 +103,8 @@ impl KitterApp {
                                     .items_center()
                                     .gap(px(8.))
                                     .text_size(px(FS_BODY))
-                                    .child(kit::avatar(p, icon))
-                                    .child(name),
+                                    .child(kit::agent_avatar(p, agent))
+                                    .child(agent.name.clone()),
                             );
                         }
                         menu

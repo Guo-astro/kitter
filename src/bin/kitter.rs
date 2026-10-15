@@ -79,8 +79,8 @@ enum Command {
         skills: Vec<String>,
         #[arg(long)]
         project: PathBuf,
-        #[arg(long, value_enum, required = true)]
-        target: Vec<TargetArg>,
+        #[arg(long, required = true)]
+        target: Vec<String>,
     },
     /// Remove selected skill installations from a project
     Uninstall {
@@ -91,8 +91,8 @@ enum Command {
         #[arg(long)]
         project: PathBuf,
         /// Limit removal to these targets; defaults to every installed target
-        #[arg(long, value_enum)]
-        target: Vec<TargetArg>,
+        #[arg(long)]
+        target: Vec<String>,
         /// Also remove external links or directly stored skill folders
         #[arg(long)]
         include_unmanaged: bool,
@@ -312,8 +312,8 @@ enum PresetAction {
         preset: String,
         #[arg(long)]
         project: PathBuf,
-        #[arg(long, value_enum, required = true)]
-        target: Vec<TargetArg>,
+        #[arg(long, required = true)]
+        target: Vec<String>,
     },
     /// Sync projects with the latest preset content
     Sync {
@@ -334,37 +334,29 @@ enum PresetAction {
     },
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum TargetArg {
-    Universal,
-    Codex,
-    Claude,
-    Cursor,
-    Opencode,
-    Pi,
-    Omp,
-    Grok,
-    Antigravity,
-    Droid,
-    Copilot,
-}
-
-impl From<TargetArg> for InstallTarget {
-    fn from(value: TargetArg) -> Self {
-        match value {
-            TargetArg::Universal => Self::Universal,
-            TargetArg::Codex => Self::Codex,
-            TargetArg::Claude => Self::ClaudeCode,
-            TargetArg::Cursor => Self::Cursor,
-            TargetArg::Opencode => Self::OpenCode,
-            TargetArg::Pi => Self::Pi,
-            TargetArg::Omp => Self::Omp,
-            TargetArg::Grok => Self::Grok,
-            TargetArg::Antigravity => Self::Antigravity,
-            TargetArg::Droid => Self::Droid,
-            TargetArg::Copilot => Self::Copilot,
-        }
+fn parse_target(input: &str) -> std::result::Result<InstallTarget, String> {
+    let registry = kitter::agent_plugins::AgentRegistry::global();
+    if input == "universal" {
+        return Ok(InstallTarget::universal());
     }
+    if let Some(id) = registry.resolve(input)
+        && registry
+            .agent(id.as_str())
+            .is_some_and(|agent| agent.install.is_some())
+    {
+        return Ok(InstallTarget::from(id.as_str()));
+    }
+    Err(t!(
+        "errors.target_invalid",
+        target = input,
+        values = registry
+            .install_targets()
+            .iter()
+            .map(|target| target.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+    .to_string())
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -905,11 +897,15 @@ fn install_skills(
     library: &SkillLibrary,
     selectors: &[String],
     project_path: &Path,
-    targets: Vec<TargetArg>,
+    targets: Vec<String>,
 ) -> Result<()> {
     let project_path = canonical_project(project_path)?;
     let skills = resolve_skills(library, selectors)?;
-    let targets = targets.into_iter().map(Into::into).collect::<Vec<_>>();
+    let targets = targets
+        .iter()
+        .map(|target| parse_target(target))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::msg)?;
     let mut installed = 0usize;
     let mut failures = Vec::new();
     for skill in skills {
@@ -933,7 +929,7 @@ fn uninstall_skills(
     selectors: &[String],
     paths: &[PathBuf],
     project_path: &Path,
-    targets: Vec<TargetArg>,
+    targets: Vec<String>,
     include_unmanaged: bool,
 ) -> Result<()> {
     if selectors.is_empty() && paths.is_empty() {
@@ -944,8 +940,9 @@ fn uninstall_skills(
     let library_skills = library.list()?;
     let targets = targets
         .into_iter()
-        .map(InstallTarget::from)
-        .collect::<HashSet<_>>();
+        .map(|target| parse_target(&target))
+        .collect::<std::result::Result<HashSet<_>, _>>()
+        .map_err(anyhow::Error::msg)?;
     let mut selected = Vec::<ProjectSkillInstallation>::new();
     for requested in paths {
         let requested = if requested.is_absolute() {
@@ -1052,7 +1049,7 @@ fn inspect_project(
         let targets = skill
             .installations
             .iter()
-            .map(|installation| format!("{:?}", installation.target))
+            .map(|installation| installation.target.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         let origin = if skill
@@ -1450,7 +1447,11 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
         } => {
             let id = presets.resolve(&preset)?.id.clone();
             let project = canonical_project(&project)?;
-            let targets = target.into_iter().map(Into::into).collect::<Vec<_>>();
+            let targets = target
+                .iter()
+                .map(|target| parse_target(target))
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)?;
             let report = presets.install(&id, &project, &targets, &library.list()?)?;
             finish_batch(
                 "common.installed_skills",
@@ -1695,6 +1696,25 @@ mod tests {
         };
         assert_eq!(skills, ["alpha", "beta"]);
         assert_eq!(target.len(), 2);
+    }
+
+    #[test]
+    fn target_parser_accepts_aliases_and_rejects_non_installable_agents() {
+        for (input, expected) in [
+            ("universal", "universal"),
+            ("claude", "claude-code"),
+            ("claude_code", "claude-code"),
+            ("open_code", "opencode"),
+        ] {
+            assert_eq!(super::parse_target(input).unwrap().as_str(), expected);
+        }
+        for input in ["missing-plugin", "dimagent", "open_claw"] {
+            let error = super::parse_target(input).unwrap_err();
+            assert!(error.contains(input));
+            for target in kitter::agent_plugins::AgentRegistry::global().install_targets() {
+                assert!(error.contains(target.as_str()));
+            }
+        }
     }
 
     #[test]

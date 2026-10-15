@@ -189,21 +189,7 @@ pub struct SkillSummary {
     pub manual_only: bool,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum InstallTarget {
-    Universal,
-    Codex,
-    ClaudeCode,
-    Cursor,
-    OpenCode,
-    Pi,
-    Omp,
-    Grok,
-    Antigravity,
-    Droid,
-    Copilot,
-}
+pub use crate::agent_plugins::InstallTarget;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProjectSkill {

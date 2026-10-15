@@ -1708,7 +1708,7 @@ impl KitterApp {
                 let installations = self.skill_installations_at(skill, &path, cx);
                 let targets = installations
                     .iter()
-                    .map(|installation| installation.target)
+                    .map(|installation| installation.target.clone())
                     .collect::<Vec<_>>();
                 let project_for_delete = path.clone();
                 let skill_for_delete = ProjectSkill {

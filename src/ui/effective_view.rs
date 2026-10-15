@@ -134,9 +134,10 @@ pub(super) fn skill_rows(
         rows.push(row);
     }
     let agent_order = |agent: &AgentKind| {
-        crate::agents::AGENT_ICON_ORDER
+        crate::agent_plugins::AgentRegistry::global()
+            .agents()
             .iter()
-            .position(|item| item.id == agent.id())
+            .position(|item| item.id.as_str() == agent.id())
             .unwrap_or(usize::MAX)
     };
     for row in &mut rows {

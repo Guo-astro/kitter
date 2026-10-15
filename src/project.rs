@@ -7,9 +7,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 
 use crate::{
-    InstallTarget, ProjectSkill, ProjectSkillInstallation,
-    agents::{PROJECT_INSTALL_TARGETS, installation_root, target_directory},
-    directory_link,
+    InstallTarget, ProjectSkill, ProjectSkillInstallation, agent_plugins::AgentRegistry,
+    agents::installation_root, directory_link,
 };
 
 #[derive(Clone, Debug)]
@@ -57,7 +56,7 @@ pub fn install_from_path(
         name,
         targets
             .iter()
-            .map(|target| installation_root(project, *target)),
+            .filter_map(|target| installation_root(project, target)),
     )
 }
 
@@ -156,7 +155,10 @@ fn uninstall_from_source(
     let mut removable = Vec::new();
     let mut removable_keys = HashSet::new();
     for target in targets {
-        let link = installation_root(project, *target).join(name);
+        let Some(root) = installation_root(project, target) else {
+            continue;
+        };
+        let link = root.join(name);
         match link.symlink_metadata() {
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
@@ -198,8 +200,11 @@ pub fn uninstall_all_from_path(project: &Path, name: &str, source: &Path) -> Res
 }
 
 fn uninstall_all_from_source(project: &Path, name: &str, source: Option<&Path>) -> Result<()> {
-    for target in PROJECT_INSTALL_TARGETS.iter().copied() {
-        let link = installation_root(project, target).join(name);
+    for target in AgentRegistry::global().install_targets() {
+        let Some(root) = installation_root(project, &target) else {
+            continue;
+        };
+        let link = root.join(name);
         let Some(directory_link) = directory_link::inspect(&link)? else {
             continue;
         };
@@ -231,9 +236,13 @@ pub fn removal_kind(installation: &ProjectSkillInstallation) -> RemovalKind {
 
 fn is_supported_installation_path(installation: &ProjectSkillInstallation) -> bool {
     installation.path.parent().is_some_and(|parent| {
-        parent.ends_with(target_directory(installation.target))
+        installation
+            .target
+            .project_dir()
+            .is_some_and(|dir| parent.ends_with(dir))
             || dirs::home_dir().is_some_and(|home| {
-                parent == crate::agents::global_target_root(&home, installation.target)
+                crate::agents::global_target_root(&home, &installation.target)
+                    .is_some_and(|root| parent == root)
             })
     })
 }
@@ -355,8 +364,10 @@ pub fn list(project: &Path, library_dir: &Path) -> Result<Vec<ProjectSkill>> {
                 .flatten()
         })
         .collect::<HashSet<_>>();
-    for target in PROJECT_INSTALL_TARGETS.iter().copied() {
-        let parent = installation_root(project, target);
+    for target in AgentRegistry::global().install_targets() {
+        let Some(parent) = installation_root(project, &target) else {
+            continue;
+        };
         let Ok(entries) = fs::read_dir(&parent) else {
             continue;
         };
@@ -379,7 +390,7 @@ pub fn list(project: &Path, library_dir: &Path) -> Result<Vec<ProjectSkill>> {
                 )
                 .or_default()
                 .push(ProjectSkillInstallation {
-                    target,
+                    target: target.clone(),
                     path,
                     managed,
                 });
@@ -403,18 +414,23 @@ pub fn is_installed_any_from_path(project: &Path, name: &str, source: &Path) -> 
     let Some(source) = source else {
         return false;
     };
-    PROJECT_INSTALL_TARGETS.iter().any(|target| {
-        let parent = installation_root(project, *target);
-        let path = parent.join(name);
-        path.canonicalize()
-            .ok()
-            .is_some_and(|resolved| resolved == source)
-            || fs::read_dir(parent)
-                .into_iter()
-                .flatten()
-                .flatten()
-                .any(|entry| entry.path().canonicalize().ok().as_ref() == Some(&source))
-    })
+    AgentRegistry::global()
+        .install_targets()
+        .iter()
+        .any(|target| {
+            let Some(parent) = installation_root(project, target) else {
+                return false;
+            };
+            let path = parent.join(name);
+            path.canonicalize()
+                .ok()
+                .is_some_and(|resolved| resolved == source)
+                || fs::read_dir(parent)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .any(|entry| entry.path().canonicalize().ok().as_ref() == Some(&source))
+        })
 }
 
 #[cfg(test)]
@@ -448,8 +464,10 @@ mod tests {
             }
         }
 
-        fn installation(&self, target: InstallTarget) -> PathBuf {
-            self.project.join(target_directory(target)).join("example")
+        fn installation(&self, target: &InstallTarget) -> PathBuf {
+            self.project
+                .join(target.project_dir().unwrap())
+                .join("example")
         }
     }
 
@@ -459,11 +477,12 @@ mod tests {
         let home = fixture._temp.path().join("home");
         // These targets have no environment overrides, so this test cannot write to real user roots.
         let targets = [
-            InstallTarget::Universal,
-            InstallTarget::Antigravity,
-            InstallTarget::Copilot,
+            InstallTarget::universal(),
+            InstallTarget::from("antigravity"),
+            InstallTarget::from("copilot"),
         ];
-        let roots = targets.map(|target| crate::agents::global_target_root(&home, target));
+        let roots =
+            targets.map(|target| crate::agents::global_target_root(&home, &target).unwrap());
         for _ in 0..2 {
             install_to_roots(&fixture.source, "example", roots.clone()).unwrap();
         }
@@ -481,12 +500,15 @@ mod tests {
     #[test]
     fn installs_idempotently_and_uninstalls_without_touching_the_source() {
         let fixture = Fixture::new();
-        let targets = [InstallTarget::Universal, InstallTarget::ClaudeCode];
+        let targets = [
+            InstallTarget::universal(),
+            InstallTarget::from("claude-code"),
+        ];
 
         install(&fixture.project, &fixture.library, "example", &targets).unwrap();
         install(&fixture.project, &fixture.library, "example", &targets).unwrap();
 
-        for target in targets {
+        for target in &targets {
             let path = fixture.installation(target);
             assert_eq!(
                 path.canonicalize().unwrap(),
@@ -496,7 +518,7 @@ mod tests {
         }
 
         uninstall(&fixture.project, &fixture.library, "example", &targets).unwrap();
-        for target in targets {
+        for target in &targets {
             assert!(fixture.installation(target).symlink_metadata().is_err());
         }
         assert_eq!(
@@ -508,24 +530,24 @@ mod tests {
     #[test]
     fn lists_and_removes_every_supported_project_install_target() {
         let fixture = Fixture::new();
-        let targets = PROJECT_INSTALL_TARGETS.to_vec();
+        let targets = AgentRegistry::global().install_targets();
 
         install(&fixture.project, &fixture.library, "example", &targets).unwrap();
 
         let listed = list(&fixture.project, &fixture.library).unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].installations.len(), targets.len());
-        for target in targets.iter().copied() {
+        for target in &targets {
             assert!(fixture.installation(target).symlink_metadata().is_ok());
             assert!(listed[0].installations.iter().any(|installation| {
-                installation.target == target
+                &installation.target == target
                     && installation.path == fixture.installation(target)
                     && installation.managed
             }));
         }
 
         uninstall(&fixture.project, &fixture.library, "example", &targets).unwrap();
-        for target in targets {
+        for target in &targets {
             assert!(fixture.installation(target).symlink_metadata().is_err());
         }
     }
@@ -533,7 +555,7 @@ mod tests {
     #[test]
     fn refuses_an_occupied_directory_before_creating_any_links() {
         let fixture = Fixture::new();
-        let occupied = fixture.installation(InstallTarget::ClaudeCode);
+        let occupied = fixture.installation(&InstallTarget::from("claude-code"));
         fs::create_dir_all(&occupied).unwrap();
         fs::write(occupied.join("keep"), "user data").unwrap();
 
@@ -541,7 +563,10 @@ mod tests {
             &fixture.project,
             &fixture.library,
             "example",
-            &[InstallTarget::Universal, InstallTarget::ClaudeCode],
+            &[
+                InstallTarget::universal(),
+                InstallTarget::from("claude-code"),
+            ],
         )
         .unwrap_err();
 
@@ -552,7 +577,7 @@ mod tests {
         }));
         assert!(
             fixture
-                .installation(InstallTarget::Universal)
+                .installation(&InstallTarget::universal())
                 .symlink_metadata()
                 .is_err()
         );
@@ -568,7 +593,7 @@ mod tests {
         let other = fixture.library.join("other");
         fs::create_dir_all(&other).unwrap();
         fs::write(other.join("SKILL.md"), "# Other").unwrap();
-        let link = fixture.installation(InstallTarget::Universal);
+        let link = fixture.installation(&InstallTarget::universal());
         fs::create_dir_all(link.parent().unwrap()).unwrap();
         directory_link::create(&other, &link).unwrap();
 
@@ -576,7 +601,7 @@ mod tests {
             &fixture.project,
             &fixture.library,
             "example",
-            &[InstallTarget::Universal],
+            &[InstallTarget::universal()],
         )
         .unwrap_err();
 
@@ -591,12 +616,12 @@ mod tests {
     #[test]
     fn refuses_to_uninstall_when_the_managed_source_is_missing() {
         let fixture = Fixture::new();
-        let link = fixture.installation(InstallTarget::Universal);
+        let link = fixture.installation(&InstallTarget::universal());
         install(
             &fixture.project,
             &fixture.library,
             "example",
-            &[InstallTarget::Universal],
+            &[InstallTarget::universal()],
         )
         .unwrap();
         fs::remove_dir_all(&fixture.source).unwrap();
@@ -605,7 +630,7 @@ mod tests {
             &fixture.project,
             &fixture.library,
             "example",
-            &[InstallTarget::Universal],
+            &[InstallTarget::universal()],
         )
         .unwrap_err();
 
@@ -625,7 +650,7 @@ mod tests {
             &fixture.project,
             &fixture.library,
             "example",
-            &[InstallTarget::Universal],
+            &[InstallTarget::universal()],
         )
         .unwrap();
         let claude_root = fixture.project.join(".claude");
@@ -648,7 +673,7 @@ mod tests {
         assert!(report.failures.is_empty());
         assert!(
             fixture
-                .installation(InstallTarget::Universal)
+                .installation(&InstallTarget::universal())
                 .symlink_metadata()
                 .is_err()
         );
@@ -657,11 +682,11 @@ mod tests {
     #[test]
     fn removes_a_direct_unmanaged_installation() {
         let fixture = Fixture::new();
-        let path = fixture.installation(InstallTarget::Universal);
+        let path = fixture.installation(&InstallTarget::universal());
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("SKILL.md"), "# External").unwrap();
         let installation = ProjectSkillInstallation {
-            target: InstallTarget::Universal,
+            target: InstallTarget::universal(),
             path: path.clone(),
             managed: false,
         };
@@ -680,7 +705,7 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
         fs::write(path.join("SKILL.md"), "# External").unwrap();
         let installation = ProjectSkillInstallation {
-            target: InstallTarget::Universal,
+            target: InstallTarget::universal(),
             path: path.clone(),
             managed: false,
         };
@@ -699,7 +724,7 @@ mod tests {
             &fixture.project,
             &fixture.library,
             "../example",
-            &[InstallTarget::Universal],
+            &[InstallTarget::universal()],
         )
         .unwrap_err();
 

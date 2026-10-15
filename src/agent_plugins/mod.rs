@@ -4,3 +4,9 @@
 mod template;
 
 pub use template::expand_path;
+
+mod id;
+mod registry;
+
+pub use id::{AgentId, InstallTarget};
+pub use registry::{AgentDef, AgentIcon, AgentRegistry, InstallDef, PathValue};

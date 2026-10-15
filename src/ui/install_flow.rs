@@ -200,8 +200,8 @@ impl KitterApp {
         let universal = self
             .install_flow
             .selected_targets
-            .contains(&InstallTarget::Universal);
-        let agent_cell = |name: &'static str, icon_path: &'static str, right_border: bool| {
+            .contains(&InstallTarget::universal());
+        let agent_cell = |agent: &crate::agent_plugins::AgentDef, right_border: bool| {
             div()
                 .h(px(48.))
                 // Keep the three-column grid stable when the final row has
@@ -217,23 +217,26 @@ impl KitterApp {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(kit::avatar(p, icon_path))
+                .child(kit::agent_avatar(p, agent))
                 .child(
                     div()
                         .text_size(px(FS_SMALL))
                         .text_color(p.secondary)
-                        .child(name),
+                        .child(agent.name.clone()),
                 )
         };
-        let universal_agents = crate::agents::AGENT_ICON_ORDER
+        let universal_agents = crate::agent_plugins::AgentRegistry::global()
+            .agents()
             .iter()
-            .filter(|agent| !agent.global_only && agent.supports_target(InstallTarget::Universal))
+            .filter(|agent| {
+                !agent.global_only && agent.supports_target(&InstallTarget::universal())
+            })
             .collect::<Vec<_>>();
         let mut universal_rows = div().flex().flex_col();
         for chunk in universal_agents.chunks(3) {
             let mut row = div().flex();
             for (index, agent) in chunk.iter().enumerate() {
-                row = row.child(agent_cell(agent.name, agent.icon_path, index % 3 < 2));
+                row = row.child(agent_cell(agent, index % 3 < 2));
             }
             for index in chunk.len()..3 {
                 row = row.child(
@@ -281,21 +284,21 @@ impl KitterApp {
                             }),
                     )
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.toggle_install_target(InstallTarget::Universal);
+                        this.toggle_install_target(InstallTarget::universal());
                         this.notify_dialog(cx);
                     })),
             )
             .child(universal_rows);
         let mut independent_rows = div().flex().flex_col();
-        let last = crate::agents::INDEPENDENT_INSTALL_TARGETS
-            .len()
-            .saturating_sub(1);
-        for (index, info) in crate::agents::INDEPENDENT_INSTALL_TARGETS
+        let independent = crate::agent_plugins::AgentRegistry::global()
+            .agents()
             .iter()
-            .enumerate()
-        {
+            .filter(|agent| agent.install.is_some())
+            .collect::<Vec<_>>();
+        let last = independent.len().saturating_sub(1);
+        for (index, agent) in independent.into_iter().enumerate() {
             independent_rows = independent_rows.child(
-                self.target_row(*info, cx)
+                self.target_row(agent, cx)
                     .when(index == last, |row| row.rounded_b(px(R_CARD_INNER))),
             );
         }
@@ -311,27 +314,19 @@ impl KitterApp {
 
     pub(super) fn target_row(
         &self,
-        info: crate::agents::InstallTargetInfo,
+        agent: &'static crate::agent_plugins::AgentDef,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let p = self.palette();
-        let id = match info.target {
-            InstallTarget::Codex => "target-codex",
-            InstallTarget::ClaudeCode => "target-claude",
-            InstallTarget::Cursor => "target-cursor",
-            InstallTarget::OpenCode => "target-opencode",
-            InstallTarget::Pi => "target-pi",
-            InstallTarget::Omp => "target-omp",
-            InstallTarget::Grok => "target-grok",
-            InstallTarget::Antigravity => "target-antigravity",
-            InstallTarget::Droid => "target-droid",
-            InstallTarget::Copilot => "target-copilot",
-            InstallTarget::Universal => "target-universal",
-        };
-        let active = self.install_flow.selected_targets.contains(&info.target);
+        let target = InstallTarget::from(agent.id.as_str());
+        let id: SharedString = format!("target-{target}").into();
+        let active = self.install_flow.selected_targets.contains(&target);
         div()
-            .id(id)
-            .debug_selector(|| id.into())
+            .id(id.clone())
+            .debug_selector({
+                let id = id.clone();
+                move || id.to_string()
+            })
             .h(px(ROW_2))
             .px(px(16.))
             .border_t_1()
@@ -341,8 +336,13 @@ impl KitterApp {
             .items_center()
             .cursor_pointer()
             .child(Checkbox::new(ElementId::Name(format!("{id}-checkbox").into())).checked(active))
-            .child(kit::avatar(p, info.icon_path).ml(px(10.)))
-            .child(div().ml(px(10.)).text_size(px(FS_BODY)).child(info.name))
+            .child(kit::agent_avatar(p, agent).ml(px(10.)))
+            .child(
+                div()
+                    .ml(px(10.))
+                    .text_size(px(FS_BODY))
+                    .child(agent.name.clone()),
+            )
             .child(div().flex_1())
             .child(
                 div()
@@ -351,16 +351,15 @@ impl KitterApp {
                     .text_color(p.muted)
                     .child(if self.install_flow.global {
                         dirs::home_dir()
-                            .map(|home| {
-                                display_path(&crate::agents::global_target_root(&home, info.target))
-                            })
+                            .and_then(|home| target.global_dir(&home))
+                            .map(|root| display_path(&root))
                             .unwrap_or_default()
                     } else {
-                        crate::agents::target_directory(info.target).to_string()
+                        target.project_dir().unwrap().to_string()
                     }),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.toggle_install_target(info.target);
+                this.toggle_install_target(target.clone());
                 this.notify_dialog(cx);
             }))
     }
@@ -543,7 +542,9 @@ impl KitterApp {
                 {
                     let path = installation.path.clone();
                     let checked = self.delete_flow.selected.contains(&path);
-                    let target = crate::agents::target_directory(installation.target);
+                    let Some(target) = installation.target.project_dir() else {
+                        continue;
+                    };
                     let removal_kind = project::removal_kind(installation);
                     let deletes_files = matches!(removal_kind, project::RemovalKind::SourceFiles);
                     let external_source = match removal_kind {

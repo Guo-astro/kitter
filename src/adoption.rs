@@ -428,24 +428,31 @@ const EXTRA_DIRECT_ROOTS: &[&str] = &[
 ];
 
 fn skill_root(path: &Path) -> bool {
-    crate::agents::PROJECT_INSTALL_TARGETS
+    crate::agent_plugins::AgentRegistry::global()
+        .install_targets()
         .iter()
-        .any(|target| path.ends_with(crate::agents::target_directory(*target)))
+        .filter_map(|target| target.project_dir())
+        .any(|dir| path.ends_with(dir))
         || EXTRA_DIRECT_ROOTS
             .iter()
             .any(|suffix| path.ends_with(suffix))
 }
 
 fn agent_directory(path: &Path) -> bool {
-    crate::agents::PROJECT_INSTALL_TARGETS.iter().any(|target| {
-        Path::new(crate::agents::target_directory(*target))
-            .parent()
-            .is_some_and(|parent| path.ends_with(parent))
-    }) || EXTRA_DIRECT_ROOTS.iter().any(|root| {
-        Path::new(root)
-            .parent()
-            .is_some_and(|parent| path.ends_with(parent))
-    })
+    crate::agent_plugins::AgentRegistry::global()
+        .install_targets()
+        .iter()
+        .any(|target| {
+            target
+                .project_dir()
+                .and_then(|dir| Path::new(dir).parent())
+                .is_some_and(|parent| path.ends_with(parent))
+        })
+        || EXTRA_DIRECT_ROOTS.iter().any(|root| {
+            Path::new(root)
+                .parent()
+                .is_some_and(|parent| path.ends_with(parent))
+        })
 }
 
 fn plugin_path(path: &Path) -> bool {

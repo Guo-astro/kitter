@@ -570,6 +570,22 @@ pub(super) fn avatar(p: Palette, path: &'static str) -> Div {
         ))
 }
 
+pub(super) fn agent_avatar(p: Palette, agent: &crate::agent_plugins::AgentDef) -> Div {
+    match agent.icon {
+        crate::agent_plugins::AgentIcon::Builtin(path) => avatar(p, path),
+        crate::agent_plugins::AgentIcon::Monogram => div()
+            .size(px(AVATAR))
+            .flex_none()
+            .rounded_full()
+            .bg(p.avatar)
+            .text_color(p.text)
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(agent.name.chars().next().unwrap_or_default().to_string()),
+    }
+}
+
 /// Rounded-square tile behind a functional icon (not an identity mark).
 pub(super) fn icon_tile(p: Palette, path: &'static str, size: f32) -> Div {
     let (radius, icon) = if size >= 48. {

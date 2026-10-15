@@ -143,17 +143,19 @@ impl KitterApp {
         let mut ordered_estimates = estimates
             .iter()
             .filter(|estimate| {
-                let is_global_only = crate::agents::AGENT_ICON_ORDER
+                let is_global_only = crate::agent_plugins::AgentRegistry::global()
+                    .agents()
                     .iter()
-                    .find(|agent| agent.id == estimate.agent.id())
+                    .find(|agent| agent.id.as_str() == estimate.agent.id())
                     .is_some_and(|agent| agent.global_only);
                 is_global_context || !is_global_only
             })
             .collect::<Vec<_>>();
         ordered_estimates.sort_by_key(|estimate| {
-            crate::agents::AGENT_ICON_ORDER
+            crate::agent_plugins::AgentRegistry::global()
+                .agents()
                 .iter()
-                .position(|agent| agent.id == estimate.agent.id())
+                .position(|agent| agent.id.as_str() == estimate.agent.id())
                 .unwrap_or(usize::MAX)
         });
         let can_expand = ordered_estimates.len() > 8;
@@ -164,10 +166,8 @@ impl KitterApp {
             let automatic_count = estimate
                 .model_visible_count
                 .saturating_sub(estimate.name_only_count);
-            let Some(icon) = crate::agents::AGENT_ICON_ORDER
-                .iter()
-                .find(|agent| agent.id == estimate.agent.id())
-                .map(|agent| agent.icon_path)
+            let Some(definition) =
+                crate::agent_plugins::AgentRegistry::global().agent(estimate.agent.id())
             else {
                 continue;
             };
@@ -226,11 +226,26 @@ impl KitterApp {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .child(Self::brand_icon(
-                                        icon,
-                                        Self::brand_icon_size(icon, 18.),
-                                        p.text,
-                                    )),
+                                    .child(match definition.icon {
+                                        crate::agent_plugins::AgentIcon::Builtin(icon) => {
+                                            Self::brand_icon(
+                                                icon,
+                                                Self::brand_icon_size(icon, 18.),
+                                                p.text,
+                                            )
+                                        }
+                                        crate::agent_plugins::AgentIcon::Monogram => div()
+                                            .text_color(p.text)
+                                            .child(
+                                                definition
+                                                    .name
+                                                    .chars()
+                                                    .next()
+                                                    .unwrap_or_default()
+                                                    .to_string(),
+                                            )
+                                            .into_any_element(),
+                                    }),
                             )
                             .child(estimate.agent.label()),
                     )
@@ -375,15 +390,14 @@ impl KitterApp {
                 .expanded_project_plugins
                 .contains(&group.key);
             let toggle_key = group.key.clone();
-            let agent = crate::agents::AGENT_ICON_ORDER
+            let agent = crate::agent_plugins::AgentRegistry::global()
+                .agents()
                 .iter()
-                .find(|agent| agent.id == group.agent.id());
+                .find(|agent| agent.id.as_str() == group.agent.id());
             let agent_name = agent
-                .map(|agent| agent.name)
-                .unwrap_or_else(|| group.agent.label());
-            let agent_icon = agent
-                .map(|agent| agent.icon_path)
-                .unwrap_or("icons/package.svg");
+                .map(|agent| agent.name.clone())
+                .unwrap_or_else(|| group.agent.label().to_string());
+
             card = card.child(
                 kit::card_row(p, index == 0)
                     .id(ElementId::Name(format!("plugin-{}", group.key).into()))
@@ -393,7 +407,11 @@ impl KitterApp {
                     })
                     .cursor_pointer()
                     .hover(move |row| row.bg(p.hover))
-                    .child(kit::avatar(p, agent_icon))
+                    .child(
+                        agent
+                            .map(|agent| kit::agent_avatar(p, agent))
+                            .unwrap_or_else(|| kit::avatar(p, "icons/package.svg")),
+                    )
                     .child(
                         div()
                             .min_w_0()

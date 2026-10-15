@@ -2248,7 +2248,7 @@ mod e2e_tests {
         if !cx.read_entity(&app, |app, _| {
             app.install_flow
                 .selected_targets
-                .contains(&crate::InstallTarget::Universal)
+                .contains(&crate::InstallTarget::universal())
         }) {
             click(cx, "target-universal");
         }

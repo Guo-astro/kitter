@@ -467,8 +467,13 @@ mod tests {
         fs::create_dir_all(&cwd).unwrap();
         let library = temp.path().join("library");
         write_skill(&library, "installed", "");
-        crate::project::install(&repo, &library, "installed", &[crate::InstallTarget::Omp])
-            .unwrap();
+        crate::project::install(
+            &repo,
+            &library,
+            "installed",
+            &[crate::InstallTarget::from("omp")],
+        )
+        .unwrap();
         write_skill(&repo.join(".omp/skills/group"), "nested", "");
         write_skill(&repo.join(".omp/skills"), ".hidden", "");
         let context = context(home, cwd, repo.clone());
@@ -496,8 +501,13 @@ mod tests {
                 .installations[0]
                 .managed
         );
-        crate::project::uninstall(&repo, &library, "installed", &[crate::InstallTarget::Omp])
-            .unwrap();
+        crate::project::uninstall(
+            &repo,
+            &library,
+            "installed",
+            &[crate::InstallTarget::from("omp")],
+        )
+        .unwrap();
         assert!(library.join("installed/SKILL.md").is_file());
         assert!(!repo.join(".omp/skills/installed").exists());
     }
