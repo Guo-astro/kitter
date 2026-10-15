@@ -114,14 +114,14 @@ impl KitterApp {
             return div().into_any_element();
         };
         let p = self.palette();
-        let base = div().w_full().rounded(px(RADIUS_CONTROL)).overflow_hidden();
+        let base = div().w_full().rounded(px(R_MD)).overflow_hidden();
         match row {
             AdoptionRow::Header(_) => base
-                .h(px(32.))
-                .px(px(11.))
+                .h(px(ROW_1))
+                .px(px(8.))
                 .flex()
                 .items_center()
-                .text_size(px(12.))
+                .text_size(px(FS_SMALL))
                 .text_color(p.secondary)
                 .child(self.source_label(&candidate.origin))
                 .into_any_element(),
@@ -151,10 +151,10 @@ impl KitterApp {
                 };
                 base.id(ElementId::Name(format!("adoption-row-{index}").into()))
                     .h(px(54.))
-                    .px(px(11.))
+                    .px(px(8.))
                     .flex()
                     .items_center()
-                    .gap(px(9.))
+                    .gap(px(8.))
                     .bg(if selected { p.selected } else { p.surface })
                     .child(
                         Checkbox::new(ElementId::Name(format!("adoption-check-{index}").into()))
@@ -167,7 +167,7 @@ impl KitterApp {
                             .child(
                                 div()
                                     .font_family(MONO)
-                                    .text_size(px(13.))
+                                    .text_size(px(FS_BODY))
                                     .truncate()
                                     .child(candidate.name.clone()),
                             )
@@ -176,7 +176,7 @@ impl KitterApp {
                                     .id(ElementId::Name(format!("adoption-source-{index}").into()))
                                     .mt(px(2.))
                                     .font_family(MONO)
-                                    .text_size(px(11.))
+                                    .text_size(px(FS_CAPTION))
                                     .text_color(p.muted)
                                     .truncate()
                                     .child(source_path)
@@ -188,7 +188,7 @@ impl KitterApp {
                     .child(
                         div()
                             .flex_shrink_0()
-                            .text_size(px(11.))
+                            .text_size(px(FS_CAPTION))
                             .text_color(p.muted)
                             .child(label),
                     )
@@ -208,13 +208,13 @@ impl KitterApp {
                 let expanded = self.add_flow.adoption_expanded.contains(&id);
                 base.id(ElementId::Name(format!("adoption-expand-{index}").into()))
                     .h(px(24.))
-                    .px(px(11.))
+                    .px(px(8.))
                     .flex()
                     .items_center()
-                    .gap(px(5.))
+                    .gap(px(4.))
                     .border_b_1()
                     .border_color(p.border)
-                    .text_size(px(11.))
+                    .text_size(px(FS_CAPTION))
                     .text_color(p.muted)
                     .cursor_pointer()
                     .child(Self::icon(
@@ -223,7 +223,7 @@ impl KitterApp {
                         } else {
                             "icons/chevron-right.svg"
                         },
-                        11.,
+                        ICON_XS,
                         p.muted,
                     ))
                     .child(t!("adoption.references").to_string())
@@ -268,7 +268,7 @@ impl KitterApp {
                 .h(px(24.))
                 .px(px(22.))
                 .font_family(MONO)
-                .text_size(px(11.))
+                .text_size(px(FS_CAPTION))
                 .text_color(p.muted)
                 .truncate()
                 .child(path)

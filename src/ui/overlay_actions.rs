@@ -36,6 +36,11 @@ impl KitterApp {
         self.groups_flow.edit = None;
         self.groups_flow.delete_pending = None;
         self.groups_flow.move_skills.clear();
+        self.install_flow.preset = None;
+        self.presets_view.edit = None;
+        self.presets_view.error = None;
+        self.presets_view.confirmation = None;
+        self.presets_view.picked_skills.clear();
         self.shell.dialog_body = None;
         cx.notify();
     }

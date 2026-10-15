@@ -146,6 +146,7 @@ Confirmed source files:
 
 - `assets/icons/crown.svg`
 - `assets/icons/house.svg`
+- `assets/icons/layers.svg`
 
 Several other interface icons are local variants. This notice is retained for any portions derived from Lucide or its Feather predecessors.
 

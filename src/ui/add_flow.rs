@@ -21,10 +21,10 @@ impl KitterApp {
             .mt(px(16.))
             .flex()
             .flex_col()
-            .gap(px(7.))
+            .gap(px(6.))
             .child(
                 div()
-                    .text_size(px(12.))
+                    .text_size(px(FS_SMALL))
                     .text_color(p.secondary)
                     .child(label),
             )
@@ -66,20 +66,13 @@ impl KitterApp {
             .appearance(false)
             .anchor(Anchor::TopRight)
             .trigger(
-                self.dropdown_button("add-source-select", source_label, 14.)
+                kit::select_trigger(p, "add-source-select", source_label)
                     .w_full()
                     .disabled(pending)
                     .when(pending, |button| button.opacity(0.55)),
             )
             .content(move |_, _, popover_cx| {
-                let mut menu = div()
-                    .w(px(486.))
-                    .p(px(4.))
-                    .rounded(px(RADIUS_MENU))
-                    .border_1()
-                    .border_color(p.border_strong)
-                    .bg(p.elevated)
-                    .shadow_lg();
+                let mut menu = kit::menu(p).w(px(480.));
                 for (index, (kind, label)) in [
                     (AddKind::Npx, "skills.sh / github".to_string()),
                     (AddKind::Claude, t!("common.claude_plugin").to_string()),
@@ -95,38 +88,26 @@ impl KitterApp {
                     let active = selected_kind == kind;
                     let app = app.clone();
                     menu = menu.child(
-                        div()
-                            .id(ElementId::Name(format!("add-source-option-{index}").into()))
-                            .h(px(29.))
-                            .px(px(10.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .bg(if active { p.selected } else { rgba(0x00000000) })
-                            .hover(move |item| item.bg(p.hover))
-                            .font_family(FONT_UI)
-                            .text_size(px(13.))
-                            .child(label)
-                            .on_click(popover_cx.listener(move |_, _, window, cx| {
+                        kit::menu_item(
+                            p,
+                            ElementId::Name(format!("add-source-option-{index}").into()),
+                            label,
+                            active,
+                        )
+                        .on_click(popover_cx.listener(
+                            move |_, _, window, cx| {
                                 let _ = app.update(cx, |this, cx| {
                                     this.set_add_kind(kind, window, cx);
                                 });
                                 cx.emit(DismissEvent);
-                            })),
+                            },
+                        )),
                     );
                 }
                 menu
             });
-        let mut form = div().mt(px(14.)).flex().flex_col().gap(px(7.));
-        form = form
-            .child(
-                div()
-                    .text_size(px(13.))
-                    .text_color(p.secondary)
-                    .child(t!("add.source").to_string()),
-            )
-            .child(source_control);
+        let mut form =
+            kit::form().child(kit::field(p, t!("add.source").to_string(), source_control));
         if self.add_flow.selected.len() > 1 && self.add_flow.kind != AddKind::Existing {
             form = form.child(self.add_group_control(cx));
         }
@@ -139,114 +120,69 @@ impl KitterApp {
                 .unwrap_or_else(|| t!("add.home_folder").to_string().into());
             form = form.child(
                 div()
-                    .mt(px(5.))
                     .flex()
                     .items_center()
                     .gap(px(8.))
                     .child(
-                        div()
-                            .id("choose-adoption-root")
-                            .flex_1()
-                            .min_w_0()
-                            .h(px(36.))
-                            .px(px(11.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .border_1()
-                            .border_color(p.border_strong)
-                            .bg(p.surface)
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(Self::icon("icons/folder.svg", 15., p.secondary))
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(13.))
-                                    .child(root_label),
+                        kit::picker(
+                            p,
+                            "choose-adoption-root",
+                            "icons/folder.svg",
+                            root_label,
+                            !pending,
+                        )
+                        .flex_1()
+                        .when(!pending, |picker| {
+                            picker.on_click(
+                                cx.listener(|this, _, _, cx| this.browse_adoption_root(cx)),
                             )
-                            .when(!pending, |button| {
-                                button.cursor_pointer().on_click(
-                                    cx.listener(|this, _, _, cx| this.browse_adoption_root(cx)),
-                                )
-                            }),
+                        }),
                     )
                     .when(self.add_flow.adoption_root.is_some() && !pending, |row| {
                         row.child(
-                            div()
-                                .id("reset-adoption-root")
-                                .text_size(px(12.))
-                                .text_color(p.secondary)
-                                .cursor_pointer()
-                                .child(t!("add.reset").to_string())
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.add_flow.adoption_root = None;
-                                    this.add_flow.adoption_scan = None;
-                                    this.add_flow.selected.clear();
-                                    this.notify_dialog(cx);
-                                })),
+                            kit::button(
+                                p,
+                                "reset-adoption-root",
+                                kit::ButtonKind::Quiet,
+                                kit::Size::Md,
+                                true,
+                            )
+                            .child(t!("add.reset").to_string())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.add_flow.adoption_root = None;
+                                this.add_flow.adoption_scan = None;
+                                this.add_flow.selected.clear();
+                                this.notify_dialog(cx);
+                            })),
                         )
                     }),
             );
         }
         if self.add_flow.kind == AddKind::Local {
             form = form.child(
-                div()
-                    .id("choose-local-skill")
-                    .debug_selector(|| "choose-local-skill".into())
-                    .mt(px(5.))
-                    .h(px(40.))
-                    .px(px(11.))
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(p.border_strong)
-                    .bg(p.surface)
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .cursor(if pending {
-                        CursorStyle::Arrow
-                    } else {
-                        CursorStyle::PointingHand
-                    })
-                    .child(Self::icon("icons/folder.svg", 16., p.secondary))
-                    .text_size(px(14.))
-                    .child(t!("add.choose_skill_folder").to_string())
-                    .when(!pending, |button| {
-                        button.on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| this.browse_add_local(window, cx)),
-                        )
-                    }),
+                kit::picker(
+                    p,
+                    "choose-local-skill",
+                    "icons/folder.svg",
+                    t!("add.choose_skill_folder").to_string(),
+                    !pending,
+                )
+                .when(!pending, |picker| {
+                    picker.on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| this.browse_add_local(window, cx)),
+                    )
+                }),
             );
         } else if self.add_flow.kind != AddKind::Existing {
-            form = form
-                .child(
-                    div()
-                        .mt(px(5.))
-                        .text_size(px(13.))
-                        .text_color(p.secondary)
-                        .child(t!("add.address").to_string()),
-                )
-                .child(
-                    Input::new(&self.add_flow.primary_input)
-                        .disabled(pending)
-                        .h(px(INPUT_HEIGHT))
-                        .w_full()
-                        .rounded(px(RADIUS_CONTROL))
-                        .bg(p.surface)
-                        .border_color(p.border_strong)
-                        .text_size(px(14.)),
-                );
+            form = form.child(kit::field(
+                p,
+                t!("add.address").to_string(),
+                kit::input(p, &self.add_flow.primary_input).disabled(pending),
+            ));
         }
         if let Some(error) = &self.add_flow.error {
-            form = form.child(
-                div()
-                    .mt(px(4.))
-                    .text_size(px(12.))
-                    .text_color(p.danger)
-                    .child(error.clone()),
-            );
+            form = form.child(kit::field_error(p, error.clone()));
         }
         if let Some(scan) = &self.add_flow.adoption_scan {
             let rows = list(
@@ -260,57 +196,45 @@ impl KitterApp {
                 && all_safe
                     .iter()
                     .all(|id| self.add_flow.selected.contains(id));
-            form = form
-                .child(
-                    div()
-                        .mt(px(8.))
-                        .flex()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .text_color(p.secondary)
-                                .child(t!("add.select_skills").to_string()),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .id("adoption-select-all")
-                                .text_size(px(12.))
-                                .text_color(p.secondary)
-                                .child(if all_selected {
-                                    t!("add.clear_all").to_string()
-                                } else {
-                                    t!("common.select_all").to_string()
-                                })
-                                .when(!pending, |toggle| {
-                                    toggle.cursor_pointer().on_click(cx.listener(
-                                        move |this, _, _, cx| {
-                                            if all_selected {
-                                                this.add_flow.selected.clear();
-                                            } else {
-                                                if let Some(scan) = &this.add_flow.adoption_scan {
-                                                    this.add_flow.selected.extend(
-                                                        scan.selectable_ids().iter().cloned(),
-                                                    );
-                                                }
-                                            }
-                                            this.notify_dialog(cx);
-                                        },
-                                    ))
-                                }),
-                        ),
-                )
-                .child(
-                    div()
-                        .rounded(px(RADIUS_CARD))
-                        .border_1()
-                        .border_color(p.border_strong)
-                        .bg(p.surface)
-                        .p(px(6.))
-                        .overflow_hidden()
-                        .child(rows),
-                );
+            let toggle = kit::button(
+                p,
+                "adoption-select-all",
+                kit::ButtonKind::Quiet,
+                kit::Size::Sm,
+                !pending,
+            )
+            .child(if all_selected {
+                t!("add.clear_all").to_string()
+            } else {
+                t!("common.select_all").to_string()
+            })
+            .when(!pending, |toggle| {
+                toggle.on_click(cx.listener(move |this, _, _, cx| {
+                    if all_selected {
+                        this.add_flow.selected.clear();
+                    } else if let Some(scan) = &this.add_flow.adoption_scan {
+                        this.add_flow
+                            .selected
+                            .extend(scan.selectable_ids().iter().cloned());
+                    }
+                    this.notify_dialog(cx);
+                }))
+            });
+            form = form.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(kit::field_label(p, t!("add.select_skills").to_string()))
+                            .child(toggle),
+                    )
+                    .child(kit::card(p).p(px(4.)).child(rows)),
+            );
         } else if let Some(scan) = &self.add_flow.scan {
             let source_key = scan.source_key();
             let selectable = scan
@@ -350,13 +274,13 @@ impl KitterApp {
                     div()
                         .id(ElementId::Name(format!("scan-skill-{index}").into()))
                         .debug_selector(move || format!("scan-skill-{index}"))
-                        .rounded(px(RADIUS_CONTROL))
-                        .min_h(px(52.))
-                        .px(px(11.))
+                        .rounded(px(R_MD))
+                        .min_h(px(ROW_2))
+                        .px(px(10.))
                         .flex()
                         .items_center()
                         .gap(px(10.))
-                        .bg(if selected { p.selected } else { p.surface })
+                        .when(selected, |row| row.bg(p.selected))
                         .cursor(if installed || pending {
                             CursorStyle::Arrow
                         } else {
@@ -373,7 +297,7 @@ impl KitterApp {
                                 .child(
                                     div()
                                         .font_family(MONO)
-                                        .text_size(px(13.))
+                                        .text_size(px(FS_BODY))
                                         .font_weight(FontWeight::MEDIUM)
                                         .truncate()
                                         .child(name.clone()),
@@ -382,8 +306,7 @@ impl KitterApp {
                                     column.child(
                                         div()
                                             .mt(px(2.))
-                                            .font_family(MONO)
-                                            .text_size(px(12.))
+                                            .text_size(px(FS_SMALL))
                                             .text_color(p.muted)
                                             .truncate()
                                             .child(description),
@@ -391,12 +314,7 @@ impl KitterApp {
                                 }),
                         )
                         .when(installed, |row| {
-                            row.child(
-                                div()
-                                    .text_size(px(12.))
-                                    .text_color(p.muted)
-                                    .child(t!("add.added").to_string()),
-                            )
+                            row.child(kit::badge(p).child(t!("add.added").to_string()))
                         })
                         .when(!installed && !pending, |row| {
                             row.on_click(cx.listener(move |this, _, _, cx| {
@@ -409,61 +327,61 @@ impl KitterApp {
                 );
             }
             // GPUI scroll clipping is rectangular: keep the viewport inside the card's corners.
-            let candidates = div()
-                .p(px(6.))
-                .rounded(px(RADIUS_CARD))
-                .border_1()
-                .border_color(p.border_strong)
-                .bg(p.surface);
-            let candidates = candidates.overflow_hidden().child(candidate_rows);
-            form = form
-                .child(
-                    div()
-                        .mt(px(8.))
-                        .flex()
-                        .items_center()
-                        .child(div().text_size(px(12.)).text_color(p.secondary).child(
-                            crate::i18n::tn(
-                                "add.found_skills",
-                                scan.skills().len(),
-                                &[("count", (scan.skills().len()).to_string())],
-                            ),
-                        ))
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .id("toggle-all-scanned-skills")
-                                .text_size(px(12.))
-                                .text_color(p.accent)
-                                .cursor_pointer()
-                                .child(if all_selected {
-                                    t!("add.clear_all").to_string()
-                                } else {
-                                    t!("common.select_all").to_string()
-                                })
-                                .when(!pending, |toggle| {
-                                    toggle.on_click(cx.listener(move |this, _, _, cx| {
-                                        if all_selected {
-                                            for name in &toggle_names {
-                                                this.add_flow.selected.remove(name);
-                                            }
-                                        } else {
-                                            this.add_flow.selected.extend(toggle_names.clone());
-                                        }
-                                        this.notify_dialog(cx);
-                                    }))
-                                }),
-                        ),
-                )
-                .child(candidates)
-                .child(
-                    div()
-                        .font_family(MONO)
-                        .text_size(px(12.))
-                        .text_color(p.muted)
-                        .truncate()
-                        .child(display_path(Path::new(scan.source_label()))),
-                );
+            let candidates = kit::card(p).p(px(4.)).child(candidate_rows);
+            let toggle = kit::button(
+                p,
+                "toggle-all-scanned-skills",
+                kit::ButtonKind::Quiet,
+                kit::Size::Sm,
+                !pending,
+            )
+            .child(if all_selected {
+                t!("add.clear_all").to_string()
+            } else {
+                t!("common.select_all").to_string()
+            })
+            .when(!pending, |toggle| {
+                toggle.on_click(cx.listener(move |this, _, _, cx| {
+                    if all_selected {
+                        for name in &toggle_names {
+                            this.add_flow.selected.remove(name);
+                        }
+                    } else {
+                        this.add_flow.selected.extend(toggle_names.clone());
+                    }
+                    this.notify_dialog(cx);
+                }))
+            });
+            form = form.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(kit::field_label(
+                                p,
+                                crate::i18n::tn(
+                                    "add.found_skills",
+                                    scan.skills().len(),
+                                    &[("count", (scan.skills().len()).to_string())],
+                                ),
+                            ))
+                            .child(toggle),
+                    )
+                    .child(candidates)
+                    .child(
+                        div()
+                            .font_family(MONO)
+                            .text_size(px(FS_CAPTION))
+                            .text_color(p.muted)
+                            .truncate()
+                            .child(display_path(Path::new(scan.source_label()))),
+                    ),
+            );
         }
         let has_scan = self.add_flow.scan.is_some() || self.add_flow.adoption_scan.is_some();
         let ready = !pending
@@ -502,155 +420,69 @@ impl KitterApp {
             None if self.add_flow.kind == AddKind::Existing => t!("add.scan").to_string(),
             None => t!("add.detect").to_string(),
         };
-        let close_button = div()
-            .id("close-add-modal")
-            .debug_selector(|| "close-add-modal".into())
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(p.raised)
-            .text_color(if can_close { p.text } else { p.muted })
-            .child(Self::icon(
-                "icons/x.svg",
-                14.,
-                if can_close { p.text } else { p.muted },
-            ))
+        let close_button = kit::close_button(p, "close-add-modal", can_close)
             .when(can_close, |button| {
-                button
-                    .cursor_pointer()
-                    .hover(move |button| button.bg(p.hover))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.close_dialog(cx);
-                    }))
+                button.on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx)))
             });
-        let panel = div()
-            .relative()
-            .bg(p.elevated)
-            .rounded(px(RADIUS_MODAL))
-            .overflow_hidden()
+        let cancel = kit::button(
+            p,
+            "cancel-add",
+            kit::ButtonKind::Ghost,
+            kit::Size::Md,
+            can_close,
+        )
+        .child(t!("common.cancel").to_string())
+        .when(can_close, |button| {
+            button.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.close_dialog(cx)),
+            )
+        });
+        let confirm = kit::button(
+            p,
+            "confirm-add",
+            kit::ButtonKind::Primary,
+            kit::Size::Md,
+            ready || pending,
+        )
+        .when(pending, |button| {
+            button
+                .cursor_default()
+                .child(self.shell.spinner_on_accent.clone())
+        })
+        .child(action_label)
+        .when(ready, |button| {
+            button.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    if has_scan {
+                        this.import_scanned_skills(cx);
+                    } else {
+                        this.scan_add_source(cx);
+                    }
+                }),
+            )
+        });
+        let panel = kit::modal_panel(p)
+            .child(kit::modal_header(
+                t!("common.add_skill").to_string(),
+                close_button,
+            ))
             .child(
-                div()
+                kit::modal_body()
                     .id("add-modal-content")
-                    .rounded_tl(px(RADIUS_MODAL))
-                    .rounded_tr(px(RADIUS_MODAL))
-                    .bg(p.elevated)
-                    .px(px(20.))
-                    .pt(px(20.))
-                    .pb(px(19.))
                     .max_h(px(520.))
                     .overflow_y_scroll()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .font_family(FONT_UI)
-                                    .text_size(px(16.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t!("common.add_skill").to_string()),
-                            )
-                            .child(div().flex_1())
-                            .child(close_button),
-                    )
-                    .child(
-                        div()
-                            .mt(px(12.))
-                            .text_size(px(14.))
-                            .line_height(relative(1.5))
-                            .text_color(p.muted)
-                            .child(if self.add_flow.kind == AddKind::Existing {
-                                t!("add.adoption_hint").to_string()
-                            } else {
-                                t!("add.source_hint").to_string()
-                            }),
-                    )
                     .child(form)
-                    .when(self.add_flow.task == Some(AddTask::Scanning), |panel| {
-                        panel.child(self.scan_progress(window, cx))
+                    .when(self.add_flow.task == Some(AddTask::Scanning), |body| {
+                        body.child(self.scan_progress(window, cx))
                     }),
             )
             .child(
-                div()
-                    .h(px(60.))
-                    .rounded_bl(px(RADIUS_MODAL))
-                    .rounded_br(px(RADIUS_MODAL))
-                    .px(px(20.))
-                    .border_t_1()
-                    .border_color(p.border)
-                    .bg(p.elevated)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .id("cancel-add")
-                            .debug_selector(|| "cancel-add".into())
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .text_color(if can_close { p.text } else { p.muted })
-                            .cursor(if !can_close {
-                                CursorStyle::Arrow
-                            } else {
-                                CursorStyle::PointingHand
-                            })
-                            .child(t!("common.cancel").to_string())
-                            .when(can_close, |button| {
-                                button
-                                    .hover(move |button| button.bg(p.hover))
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|this, _, _, cx| {
-                                            this.close_dialog(cx);
-                                        }),
-                                    )
-                            }),
-                    )
+                kit::modal_footer(p)
+                    .child(cancel)
                     .when(self.add_flow.kind != AddKind::Local || has_scan, |footer| {
-                        footer.child(
-                            div()
-                                .id("confirm-add")
-                                .debug_selector(|| "confirm-add".into())
-                                .h(px(DIALOG_CONTROL_HEIGHT))
-                                .px(px(16.))
-                                .rounded(px(RADIUS_CONTROL))
-                                .border_1()
-                                .border_color(p.border)
-                                .bg(if ready { p.accent_fill } else { p.raised })
-                                .text_color(if ready { p.on_accent } else { p.muted })
-                                .flex()
-                                .items_center()
-                                .cursor(if ready {
-                                    CursorStyle::PointingHand
-                                } else {
-                                    CursorStyle::Arrow
-                                })
-                                .gap(px(6.))
-                                .when(pending, |button| {
-                                    button.child(self.shell.spinner_on_accent.clone())
-                                })
-                                .child(action_label)
-                                .when(ready, |button| {
-                                    button
-                                        .hover(move |button| button.opacity(0.82))
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _, _, cx| {
-                                                if has_scan {
-                                                    this.import_scanned_skills(cx);
-                                                } else {
-                                                    this.scan_add_source(cx);
-                                                }
-                                            }),
-                                        )
-                                }),
-                        )
+                        footer.child(confirm)
                     }),
             );
         let _ = window;

@@ -40,36 +40,27 @@ impl KitterApp {
         &self,
         popover_id: String,
         agents: Vec<(&'static str, &'static str)>,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) -> Div {
         let p = self.palette();
         let hidden = agents.len().saturating_sub(5);
         let visible = agents.len().min(5);
-        let badge_width = if visible == 0 {
+        let slots = visible + usize::from(hidden > 0);
+        // Avatars overlap by 6px; keep the column width stable for alignment.
+        let width = if slots == 0 {
             0.
         } else {
-            25. + (visible.saturating_sub(1) as f32 * 20.)
-        } + if hidden > 0 { 20. } else { 0. };
-        let brand_color = p.text;
+            AVATAR + (slots - 1) as f32 * (AVATAR - 6.)
+        };
+        let ring = |avatar: Div, index: usize| {
+            avatar
+                .when(index > 0, |avatar| avatar.ml(px(-6.)))
+                .border_1()
+                .border_color(p.surface)
+        };
         let mut badges = div().flex().items_center();
         for (index, (_, icon)) in agents.iter().take(5).enumerate() {
-            badges = badges.child(
-                div()
-                    .ml(if index == 0 { px(0.) } else { px(-5.) })
-                    .size(px(25.))
-                    .rounded_full()
-                    .border_1()
-                    .border_color(rgb(0xffffff))
-                    .bg(rgb(0xf5f5f7))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(Self::brand_icon(
-                        icon,
-                        Self::brand_icon_size(icon, 17.),
-                        p.text,
-                    )),
-            );
+            badges = badges.child(ring(kit::avatar(p, icon), index));
         }
         if hidden > 0 {
             badges = badges.child(
@@ -77,61 +68,43 @@ impl KitterApp {
                     .appearance(false)
                     .anchor(Anchor::TopRight)
                     .trigger(
-                        Button::new(ElementId::Name(format!("agent-more-{popover_id}").into()))
-                            .label(format!("+{hidden}"))
-                            .xsmall()
-                            .custom(
-                                ButtonCustomVariant::new(cx)
-                                    .color(p.raised.into())
-                                    .foreground(p.muted.into())
-                                    .hover(p.hover.into())
-                                    .active(p.selected.into()),
-                            )
-                            .ml(px(-5.))
-                            .size(px(25.))
-                            .rounded(px(999.))
-                            .font_family(MONO)
-                            .text_size(px(8.)),
+                        gpui_base::Button::new(ElementId::Name(
+                            format!("agent-more-{popover_id}").into(),
+                        ))
+                        .accessibility_label(format!("+{hidden}"))
+                        .ml(px(-6.))
+                        .size(px(AVATAR))
+                        .flex_none()
+                        .rounded_full()
+                        .border_1()
+                        .border_color(p.surface)
+                        .bg(p.avatar)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .font_family(MONO)
+                        .text_size(px(10.))
+                        .text_color(p.secondary)
+                        .hover(move |button| button.text_color(p.text))
+                        .child(format!("+{hidden}")),
                     )
                     .content(move |_, _, _| {
-                        let mut menu = div()
+                        let mut menu = kit::menu(p)
                             .id("agent-popover-scroll")
-                            .w(px(176.))
+                            .w(px(180.))
                             .max_h(px(246.))
-                            .p(px(4.))
-                            .rounded(px(RADIUS_MENU))
-                            .border_1()
-                            .border_color(p.border_strong)
-                            .bg(p.elevated)
-                            .shadow_lg()
                             .overflow_y_scroll();
                         for (name, icon) in agents.clone() {
                             menu = menu.child(
                                 div()
-                                    .h(px(29.))
+                                    .h(px(H_SM + 4.))
                                     .px(px(8.))
-                                    .rounded(px(RADIUS_CONTROL))
                                     .flex()
                                     .items_center()
-                                    .gap(px(6.))
-                                    .child(
-                                        div()
-                                            .size(px(24.))
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .child(Self::brand_icon(
-                                                icon,
-                                                Self::brand_icon_size(icon, 18.),
-                                                brand_color,
-                                            )),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(13.))
-                                            .text_color(p.secondary)
-                                            .child(name),
-                                    ),
+                                    .gap(px(8.))
+                                    .text_size(px(FS_BODY))
+                                    .child(kit::avatar(p, icon))
+                                    .child(name),
                             );
                         }
                         menu
@@ -139,7 +112,7 @@ impl KitterApp {
             );
         }
         div()
-            .w(px(badge_width))
+            .w(px(width))
             .flex_none()
             .flex()
             .items_center()

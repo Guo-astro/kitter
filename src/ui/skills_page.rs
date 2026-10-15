@@ -78,6 +78,28 @@ impl KitterApp {
         let checkbox_name = storage_name.clone();
         let trigger_mode = self.model.library.trigger_mode_by_storage(&storage_name);
         let trigger_label = t!("skills.trigger_timing").to_string();
+        let preset_label = t!("skills.add_to_preset").to_string();
+        let selected_names = if multi_selection {
+            self.selected_skill_keys()
+        } else {
+            Vec::new()
+        };
+        let preset_choices = self
+            .presets_view
+            .store
+            .presets()
+            .iter()
+            .map(|preset| {
+                let included = if multi_selection {
+                    selected_names
+                        .iter()
+                        .all(|name| preset.skills.contains(name))
+                } else {
+                    preset.skills.contains(&storage_name)
+                };
+                (preset.id.clone(), preset.name.clone(), included)
+            })
+            .collect::<Vec<_>>();
         let trigger_choices = [
             (
                 TriggerMode::FollowSkill,
@@ -89,209 +111,219 @@ impl KitterApp {
                 t!("skills.automatic_trigger").to_string(),
             ),
         ];
-        let checkbox = div()
-            .id(ElementId::Name(
-                format!("select-skill-{storage_name}").into(),
-            ))
-            .size(px(18.))
-            .rounded(px(5.))
-            .border_1()
-            .border_color(if selected { p.accent } else { p.border_strong })
-            .bg(if selected { p.accent } else { rgba(0x00000000) })
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .when(selected, |cell| {
-                cell.child(Self::icon("icons/check.svg", 13., p.on_accent))
-            })
-            .on_click(cx.listener(move |this, _, _, cx| {
-                cx.stop_propagation();
-                this.toggle_skill_selection(checkbox_name.clone(), cx);
-            }));
-        div()
-            .id(ElementId::Name(format!("skill-{storage_name}").into()))
-            .min_h(px(44.))
-            .px(px(8.))
-            .my(px(2.))
-            .ml(px(if nested { 12. } else { 0. }))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .cursor_pointer()
-            .bg(if selected {
-                p.selected
+        let checkbox = Checkbox::new(ElementId::Name(
+            format!("select-skill-{storage_name}").into(),
+        ))
+        .checked(selected)
+        .on_click(cx.listener(move |this, _: &bool, _, cx| {
+            cx.stop_propagation();
+            this.toggle_skill_selection(checkbox_name.clone(), cx);
+        }));
+        kit::list_row(
+            p,
+            ElementId::Name(format!("skill-{storage_name}").into()),
+            selected,
+        )
+        .min_h(px(ROW_2))
+        .my(px(1.))
+        .ml(px(if nested { 12. } else { 0. }))
+        .when(selection_mode, |row| row.child(checkbox))
+        .child(Self::icon(
+            if built_in {
+                "icons/crown.svg"
             } else {
-                rgba(0x00000000)
-            })
-            .hover(move |row| row.bg(p.hover))
-            .when(selection_mode, |row| row.child(checkbox))
-            .child(Self::icon(
-                if built_in {
-                    "icons/crown.svg"
-                } else {
-                    "icons/package.svg"
-                },
-                16.,
-                p.secondary,
-            ))
-            .child(
-                div()
-                    .min_w_0()
-                    .flex_1()
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .truncate()
-                            .child(name.clone()),
-                    )
-                    .child(
-                        div().text_size(px(12.)).text_color(p.muted).child(
-                            if dirs::home_dir()
-                                .is_some_and(|home| self.skill_installed_at(skill, &home, cx))
-                            {
-                                if skill.installed_projects == 0 {
-                                    t!("skills.installed_globally").to_string().into()
-                                } else {
-                                    crate::i18n::tn(
-                                        "skills.global_projects",
-                                        skill.installed_projects,
-                                        &[("count", (skill.installed_projects).to_string())],
-                                    )
-                                }
-                            } else if skill.installed_projects == 0 {
-                                t!("skills.uninstalled").to_string().into()
+                "icons/package.svg"
+            },
+            ICON_MD,
+            p.secondary,
+        ))
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .child(
+                    div()
+                        .font_family(MONO)
+                        .text_size(px(FS_BODY))
+                        .font_weight(FontWeight::MEDIUM)
+                        .truncate()
+                        .child(name.clone()),
+                )
+                .child(
+                    div().text_size(px(FS_SMALL)).text_color(p.muted).child(
+                        if dirs::home_dir()
+                            .is_some_and(|home| self.skill_installed_at(skill, &home, cx))
+                        {
+                            if skill.installed_projects == 0 {
+                                t!("skills.installed_globally").to_string().into()
                             } else {
                                 crate::i18n::tn(
-                                    "skills.project_count",
+                                    "skills.global_projects",
                                     skill.installed_projects,
                                     &[("count", (skill.installed_projects).to_string())],
                                 )
-                            },
-                        ),
+                            }
+                        } else if skill.installed_projects == 0 {
+                            t!("skills.uninstalled").to_string().into()
+                        } else {
+                            crate::i18n::tn(
+                                "skills.project_count",
+                                skill.installed_projects,
+                                &[("count", (skill.installed_projects).to_string())],
+                            )
+                        },
                     ),
+                ),
+        )
+        .when(skill.manual_only, |row| {
+            row.child(self.manual_skill_badge())
+        })
+        .when(!built_in, |row| {
+            row.on_drag(
+                SkillDrag {
+                    name: storage_name.clone(),
+                },
+                |drag, _, _, cx| cx.new(|_| drag.clone()),
             )
-            .when(skill.manual_only, |row| {
-                row.child(self.manual_skill_badge())
-            })
-            .when(!built_in, |row| {
-                row.on_drag(
-                    SkillDrag {
-                        name: storage_name.clone(),
-                    },
-                    |drag, _, _, cx| cx.new(|_| drag.clone()),
-                )
-            })
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, _, _, cx| {
-                    this.prepare_skill_context_selection(context_name.clone(), cx);
-                }),
-            )
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                this.select_skill_from_click(
-                    click_name.clone(),
-                    event.modifiers(),
-                    click_order.as_ref(),
-                    cx,
-                );
-            }))
-            .context_menu(move |menu, window, menu_cx| {
-                let install_app = context_app.clone();
-                let set_tags_app = context_app.clone();
-                let move_app = context_app.clone();
-                let delete_app = context_app.clone();
-                let mut menu = menu.min_w(px(210.)).item(
-                    PopupMenuItem::new(install_label.clone())
-                        .icon(Icon::default().path("icons/download.svg"))
-                        .on_click(move |_, window, cx| {
-                            let _ = install_app.update(cx, |this, cx| {
-                                this.open_install_dialog(window, cx);
-                            });
-                        }),
-                );
-                if !multi_selection {
-                    let reveal_path = reveal_path.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(reveal_label.clone())
-                            .icon(Icon::new(IconName::FolderOpen))
-                            .on_click(move |_, _, cx| cx.reveal_path(&reveal_path)),
-                    );
-                }
+        })
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, _, _, cx| {
+                this.prepare_skill_context_selection(context_name.clone(), cx);
+            }),
+        )
+        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+            this.select_skill_from_click(
+                click_name.clone(),
+                event.modifiers(),
+                click_order.as_ref(),
+                cx,
+            );
+        }))
+        .context_menu(move |menu, window, menu_cx| {
+            let install_app = context_app.clone();
+            let set_tags_app = context_app.clone();
+            let move_app = context_app.clone();
+            let delete_app = context_app.clone();
+            let mut menu = menu.min_w(px(210.)).item(
+                PopupMenuItem::new(install_label.clone())
+                    .icon(Icon::default().path("icons/download.svg"))
+                    .on_click(move |_, window, cx| {
+                        let _ = install_app.update(cx, |this, cx| {
+                            this.open_install_dialog(window, cx);
+                        });
+                    }),
+            );
+            if !multi_selection {
+                let reveal_path = reveal_path.clone();
                 menu = menu.item(
-                    PopupMenuItem::new(set_tags_label.clone())
-                        .icon(Icon::default().path("icons/hash.svg"))
+                    PopupMenuItem::new(reveal_label.clone())
+                        .icon(Icon::new(IconName::FolderOpen))
+                        .on_click(move |_, _, cx| cx.reveal_path(&reveal_path)),
+                );
+            }
+            menu = menu.item(
+                PopupMenuItem::new(set_tags_label.clone())
+                    .icon(Icon::default().path("icons/hash.svg"))
+                    .on_click(move |_, _, cx| {
+                        let _ = set_tags_app.update(cx, |this, cx| {
+                            let keys = this.selected_skill_keys();
+                            this.open_tag_assignment_dialog_for_selection(keys, cx);
+                        });
+                    }),
+            );
+            if !multi_selection {
+                let trigger_app = context_app.clone();
+                let trigger_storage = storage_name.clone();
+                let trigger_label = trigger_label.clone();
+                let trigger_choices = trigger_choices.clone();
+                menu = menu.submenu_with_icon(
+                    Some(Icon::default().path("icons/clock-3.svg")),
+                    trigger_label,
+                    window,
+                    menu_cx,
+                    move |submenu, _, _| {
+                        trigger_choices
+                            .iter()
+                            .fold(submenu, |submenu, (mode, label)| {
+                                let mode = *mode;
+                                let app = trigger_app.clone();
+                                let storage = trigger_storage.clone();
+                                submenu.item(
+                                    PopupMenuItem::new(label.clone())
+                                        .checked(trigger_mode == mode)
+                                        .on_click(move |_, _, cx| {
+                                            let _ = app.update(cx, |this, cx| {
+                                                this.set_skill_trigger_mode(&storage, mode, cx);
+                                            });
+                                        }),
+                                )
+                            })
+                    },
+                );
+            }
+            if !preset_choices.is_empty() {
+                let preset_app = context_app.clone();
+                let preset_choices = preset_choices.clone();
+                menu = menu.submenu_with_icon(
+                    Some(Icon::default().path("icons/layers.svg")),
+                    preset_label.clone(),
+                    window,
+                    menu_cx,
+                    move |submenu, _, _| {
+                        preset_choices
+                            .iter()
+                            .fold(submenu, |submenu, (id, name, included)| {
+                                let app = preset_app.clone();
+                                let id = id.clone();
+                                let included = *included;
+                                submenu.item(
+                                    PopupMenuItem::new(name.clone()).checked(included).on_click(
+                                        move |_, _, cx| {
+                                            let _ = app.update(cx, |this, cx| {
+                                                let keys = this.selected_skill_keys();
+                                                this.toggle_skills_in_preset(
+                                                    &id, &keys, included, cx,
+                                                );
+                                            });
+                                        },
+                                    ),
+                                )
+                            })
+                    },
+                );
+            }
+            if !protected_selection {
+                menu = menu.item(
+                    PopupMenuItem::new(move_group_label.clone())
+                        .icon(Icon::new(IconName::Folder))
                         .on_click(move |_, _, cx| {
-                            let _ = set_tags_app.update(cx, |this, cx| {
+                            let _ = move_app.update(cx, |this, cx| {
                                 let keys = this.selected_skill_keys();
-                                this.open_tag_assignment_dialog_for_selection(keys, cx);
+                                this.open_move_group_dialog_for_selection(keys, cx);
                             });
                         }),
                 );
-                if !multi_selection {
-                    let trigger_app = context_app.clone();
-                    let trigger_storage = storage_name.clone();
-                    let trigger_label = trigger_label.clone();
-                    let trigger_choices = trigger_choices.clone();
-                    menu = menu.submenu_with_icon(
-                        Some(Icon::default().path("icons/clock-3.svg")),
-                        trigger_label,
-                        window,
-                        menu_cx,
-                        move |submenu, _, _| {
-                            trigger_choices
-                                .iter()
-                                .fold(submenu, |submenu, (mode, label)| {
-                                    let mode = *mode;
-                                    let app = trigger_app.clone();
-                                    let storage = trigger_storage.clone();
-                                    submenu.item(
-                                        PopupMenuItem::new(label.clone())
-                                            .checked(trigger_mode == mode)
-                                            .on_click(move |_, _, cx| {
-                                                let _ = app.update(cx, |this, cx| {
-                                                    this.set_skill_trigger_mode(&storage, mode, cx);
-                                                });
-                                            }),
-                                    )
-                                })
+                let delete_menu_item =
+                    Self::danger_menu_item(delete_label.clone(), delete_menu_color).on_click(
+                        move |_, window, cx| {
+                            let _ = delete_app.update(cx, |this, cx| {
+                                let targets = this.selected_library_targets();
+                                if targets.is_empty() {
+                                    return;
+                                }
+                                this.delete_flow.selected.clear();
+                                this.delete_flow.confirmation =
+                                    Some(DeleteConfirmation::LibrarySkills { skills: targets });
+                                this.open_delete_dialog(window, cx);
+                            });
                         },
                     );
-                }
-                if !protected_selection {
-                    menu = menu.item(
-                        PopupMenuItem::new(move_group_label.clone())
-                            .icon(Icon::new(IconName::Folder))
-                            .on_click(move |_, _, cx| {
-                                let _ = move_app.update(cx, |this, cx| {
-                                    let keys = this.selected_skill_keys();
-                                    this.open_move_group_dialog_for_selection(keys, cx);
-                                });
-                            }),
-                    );
-                    let delete_menu_item =
-                        Self::danger_menu_item(delete_label.clone(), delete_menu_color).on_click(
-                            move |_, window, cx| {
-                                let _ = delete_app.update(cx, |this, cx| {
-                                    let targets = this.selected_library_targets();
-                                    if targets.is_empty() {
-                                        return;
-                                    }
-                                    this.delete_flow.selected.clear();
-                                    this.delete_flow.confirmation =
-                                        Some(DeleteConfirmation::LibrarySkills { skills: targets });
-                                    this.open_delete_dialog(window, cx);
-                                });
-                            },
-                        );
-                    menu = menu.item(delete_menu_item);
-                }
-                menu
-            })
-            .into_any_element()
+                menu = menu.item(delete_menu_item);
+            }
+            menu
+        })
+        .into_any_element()
     }
 
     pub(super) fn group_inline_editor(&self, id: &str, cx: &mut Context<Self>) -> AnyElement {
@@ -306,66 +338,47 @@ impl KitterApp {
                 .is_empty();
         div()
             .id(ElementId::Name(id.to_string().into()))
-            .min_h(px(34.))
-            .pl(px(if id == "add-group-editor" { 6. } else { 22. }))
+            .min_h(px(ROW_1 + 4.))
+            .pl(px(if id == "add-group-editor" { 0. } else { 22. }))
             .pr(px(6.))
             .flex()
             .items_center()
             .gap(px(4.))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
-                Input::new(&self.groups_flow.name_input)
+                kit::input(p, &self.groups_flow.name_input)
                     .disabled(self.add_flow.task.is_some())
                     .small()
-                    .h(px(30.))
+                    .h(px(H_SM))
                     .min_w_0()
-                    .flex_1()
-                    .rounded(px(RADIUS_INLINE_INPUT))
-                    .bg(p.surface)
-                    .border_color(p.border_strong)
-                    .text_size(px(13.)),
+                    .flex_1(),
             )
             .child(
-                div()
-                    .id("cancel-group-edit")
-                    .size(px(24.))
-                    .rounded(px(7.5))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_pointer()
-                    .hover(move |button| button.bg(p.hover))
-                    .child(Self::icon("icons/x.svg", 13., p.muted))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.groups_flow.edit = None;
-                        this.tags_flow.error = None;
-                        this.notify_dialog(cx);
-                    })),
+                kit::icon_button(
+                    p,
+                    "cancel-group-edit",
+                    "icons/x.svg",
+                    kit::IconKind::Ghost,
+                    kit::Size::Sm,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.groups_flow.edit = None;
+                    this.tags_flow.error = None;
+                    this.notify_dialog(cx);
+                })),
             )
             .child(
-                div()
-                    .id("save-group-edit")
-                    .size(px(24.))
-                    .rounded(px(7.5))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor(if can_save {
-                        CursorStyle::PointingHand
-                    } else {
-                        CursorStyle::Arrow
-                    })
-                    .text_color(if can_save { p.text } else { p.muted })
-                    .when(can_save, |button| {
-                        button
-                            .hover(move |button| button.bg(p.hover))
-                            .on_click(cx.listener(|this, _, _, cx| this.commit_group_edit(cx)))
-                    })
-                    .child(Self::icon(
-                        "icons/check.svg",
-                        13.,
-                        if can_save { p.text } else { p.muted },
-                    )),
+                kit::icon_button(
+                    p,
+                    "save-group-edit",
+                    "icons/check.svg",
+                    kit::IconKind::Ghost,
+                    kit::Size::Sm,
+                )
+                .when(!can_save, |button| button.opacity(0.4).cursor_default())
+                .when(can_save, |button| {
+                    button.on_click(cx.listener(|this, _, _, cx| this.commit_group_edit(cx)))
+                }),
             )
             .into_any_element()
     }
@@ -383,12 +396,6 @@ impl KitterApp {
         let rename_group_id = group_id.clone();
         let delete_group_id = group_id.clone();
         let group_name = group.name.clone();
-        let count = self
-            .model
-            .skills
-            .iter()
-            .filter(|skill| skill.record.group_id.as_deref() == Some(group.id.as_str()))
-            .count();
         let group_key = SharedString::from(format!("sortable-group-Management-{}", group.id));
         let mut actions = div()
             .invisible()
@@ -396,75 +403,58 @@ impl KitterApp {
             .flex()
             .items_center();
         actions = actions.child(
-            div()
-                .id(ElementId::Name(format!("delete-group-{}", group_id).into()))
-                .size(px(24.))
-                .rounded(px(7.5))
-                .flex()
-                .items_center()
-                .justify_center()
-                .cursor_pointer()
-                .hover(move |button| button.bg(p.danger_soft))
-                .child(Self::icon("icons/x.svg", 13., p.danger))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.open_group_delete_dialog(delete_group_id.clone(), cx);
-                })),
+            kit::icon_button(
+                p,
+                ElementId::Name(format!("delete-group-{}", group_id).into()),
+                "icons/trash.svg",
+                kit::IconKind::Danger,
+                kit::Size::Sm,
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.open_group_delete_dialog(delete_group_id.clone(), cx);
+            })),
         );
-        div()
-            .id(ElementId::Name(format!("group-row-{}", group_id).into()))
-            .group(group_key.clone())
-            .h(px(34.))
-            .pl(px(10.))
-            .pr(px(6.))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .gap(px(7.))
-            .hover(move |row| row.bg(p.hover))
-            .when(true, |row| {
-                self.sortable_group_row(
-                    row,
-                    group_id.clone(),
-                    group_name.clone(),
-                    GroupDragScope::Management,
-                    cx,
-                )
-            })
-            .child(Self::icon("icons/folder.svg", 15., p.secondary))
-            .child(
-                div()
-                    .id(ElementId::Name(
-                        format!("edit-group-name-{}", group_id).into(),
-                    ))
-                    .min_w_0()
-                    .flex_1()
-                    .font_family(MONO)
-                    .text_size(px(13.))
-                    .truncate()
-                    .cursor_pointer()
-                    .child(group_name)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.start_group_edit(
-                            GroupEdit::Rename(rename_group_id.clone()),
-                            window,
-                            cx,
-                        );
-                    })),
+        kit::list_row(
+            p,
+            ElementId::Name(format!("group-row-{}", group_id).into()),
+            false,
+        )
+        .group(group_key.clone())
+        .h(px(ROW_1 + 4.))
+        .pr(px(4.))
+        .cursor_default()
+        .when(true, |row| {
+            self.sortable_group_row(
+                row,
+                group_id.clone(),
+                group_name.clone(),
+                GroupDragScope::Management,
+                cx,
             )
-            .child(
-                div()
-                    .font_family(MONO)
-                    .text_size(px(12.))
-                    .text_color(p.muted)
-                    .child(count.to_string()),
-            )
-            .child(actions)
-            .into_any_element()
+        })
+        .child(Self::icon("icons/folder.svg", ICON_MD, p.secondary))
+        .child(
+            div()
+                .id(ElementId::Name(
+                    format!("edit-group-name-{}", group_id).into(),
+                ))
+                .min_w_0()
+                .flex_1()
+                .font_family(MONO)
+                .text_size(px(FS_BODY))
+                .truncate()
+                .cursor_pointer()
+                .child(group_name)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.start_group_edit(GroupEdit::Rename(rename_group_id.clone()), window, cx);
+                })),
+        )
+        .child(actions)
+        .into_any_element()
     }
 
     pub(super) fn group_delete_modal(&self, cx: &mut Context<Self>) -> Div {
-        let mut p = self.palette();
-        p.elevated.a = 1.;
+        let p = self.palette();
         let Some(group) =
             self.model.library.groups().into_iter().find(|group| {
                 self.groups_flow.delete_pending.as_deref() == Some(group.id.as_str())
@@ -479,46 +469,52 @@ impl KitterApp {
             .filter(|skill| skill.record.group_id.as_deref() == Some(group.id.as_str()))
             .count();
         let delete_skills = self.groups_flow.delete_skills;
-        div()
-            .bg(p.elevated)
-            .rounded(px(RADIUS_MODAL))
+        let close = kit::close_button(p, "close-delete-group", true)
+            .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx)));
+        let cancel = kit::button(
+            p,
+            "cancel-delete-group",
+            kit::ButtonKind::Ghost,
+            kit::Size::Md,
+            true,
+        )
+        .child(t!("common.cancel").to_string())
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| this.close_dialog(cx)),
+        );
+        let confirm = kit::button(
+            p,
+            "confirm-delete-group",
+            kit::ButtonKind::Danger,
+            kit::Size::Md,
+            true,
+        )
+        .child(if delete_skills {
+            t!("skills.delete_group_and_skills").to_string()
+        } else {
+            t!("skills.delete_group").to_string()
+        })
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _, _, cx| {
+                this.delete_skill_group(group.id.clone(), delete_skills, cx);
+            }),
+        );
+        kit::modal_panel(p)
+            .child(kit::modal_header(
+                t!("skills.delete_group").to_string(),
+                close,
+            ))
             .child(
-                div()
-                    .p(px(20.))
+                kit::modal_body()
+                    .pt(px(4.))
+                    .text_size(px(FS_BODY))
+                    .line_height(relative(1.5))
+                    .child(t!("skills.delete_group_confirm", name = group.name).to_string())
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(16.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t!("skills.delete_group").to_string()),
-                            )
-                            .child(
-                                self.bordered_icon_button(
-                                    "close-delete-group",
-                                    "icons/x.svg",
-                                    p.text,
-                                    cx,
-                                )
-                                .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx))),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .mt(px(12.))
-                            .text_size(px(14.))
-                            .line_height(relative(1.55))
-                            .child(
-                                t!("skills.delete_group_confirm", name = group.name).to_string(),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .mt(px(6.))
-                            .text_size(px(13.))
+                            .mt(px(4.))
                             .text_color(p.secondary)
                             .child(t!("skills.delete_group_hint").to_string()),
                     )
@@ -535,7 +531,7 @@ impl KitterApp {
                                     Checkbox::new("delete-group-skills-checkbox")
                                         .checked(delete_skills),
                                 )
-                                .child(div().text_size(px(13.)).child(crate::i18n::tn(
+                                .child(div().child(crate::i18n::tn(
                                     "skills.delete_group_skills",
                                     count,
                                     &[("count", (count).to_string())],
@@ -549,78 +545,14 @@ impl KitterApp {
                     })
                     .when(delete_skills, |body| {
                         body.child(
-                            div()
-                                .mt(px(8.))
-                                .text_size(px(12.))
-                                .text_color(p.danger)
-                                .child(t!("skills.delete_warning").to_string()),
+                            kit::field_error(p, t!("skills.delete_warning").to_string()).mt(px(8.)),
                         )
                     })
                     .when_some(self.tags_flow.error.clone(), |body, error| {
-                        body.child(
-                            div()
-                                .mt(px(8.))
-                                .text_size(px(12.))
-                                .text_color(p.danger)
-                                .child(error),
-                        )
+                        body.child(kit::field_error(p, error).mt(px(8.)))
                     }),
             )
-            .child(
-                div()
-                    .h(px(60.))
-                    .px(px(20.))
-                    .border_t_1()
-                    .border_color(p.border)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .id("cancel-delete-group")
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(14.))
-                            .hover(move |button| button.bg(p.hover))
-                            .child(t!("common.cancel").to_string())
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| this.close_dialog(cx)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id("confirm-delete-group")
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .border_1()
-                            .border_color(p.border)
-                            .bg(p.danger)
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(14.))
-                            .text_color(p.on_accent)
-                            .hover(move |button| button.opacity(0.82))
-                            .child(if delete_skills {
-                                t!("skills.delete_group_and_skills").to_string()
-                            } else {
-                                t!("skills.delete_group").to_string()
-                            })
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| {
-                                    this.delete_skill_group(group.id.clone(), delete_skills, cx);
-                                }),
-                            ),
-                    ),
-            )
+            .child(kit::modal_footer(p).child(cancel).child(confirm))
     }
 
     pub(super) fn group_management_modal(
@@ -630,18 +562,18 @@ impl KitterApp {
     ) -> Div {
         let p = self.palette();
         let groups = self.model.library.groups();
-        let mut rows = div().mt(px(12.)).flex().flex_col().gap(px(2.));
+        let mut rows = div().flex().flex_col().gap(px(2.));
         if self.groups_flow.edit == Some(GroupEdit::Create) {
             rows = rows.child(self.group_inline_editor("new-group-row", cx));
         }
         if groups.is_empty() && self.groups_flow.edit != Some(GroupEdit::Create) {
             rows = rows.child(
                 div()
-                    .h(px(54.))
+                    .h(px(44.))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(13.))
+                    .text_size(px(FS_BODY))
                     .text_color(p.muted)
                     .child(t!("skills.no_groups_yet").to_string()),
             );
@@ -650,36 +582,35 @@ impl KitterApp {
             rows = rows.child(self.group_management_row(group, cx));
         }
         rows = rows.child(
-            div()
-                .id("new-group-at-end")
-                .mt(px(6.))
-                .h(px(CONTROL_HEIGHT))
-                .pr(px(8.))
-                .rounded(px(RADIUS_CONTROL))
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .cursor_pointer()
-                .text_size(px(13.))
-                .text_color(p.secondary)
-                .hover(move |row| row.bg(p.hover))
-                .child(Self::icon("icons/plus.svg", 15., p.secondary))
-                .child(t!("skills.new_group").to_string())
-                .on_click(cx.listener(|this, _, window, cx| {
-                    this.start_group_edit(GroupEdit::Create, window, cx);
-                })),
+            kit::button(
+                p,
+                "new-group-at-end",
+                kit::ButtonKind::Quiet,
+                kit::Size::Sm,
+                true,
+            )
+            .mt(px(6.))
+            .self_start()
+            .child(Self::icon("icons/plus.svg", ICON_SM, p.secondary))
+            .child(t!("organize.new_group").to_string())
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.start_group_edit(GroupEdit::Create, window, cx);
+            })),
         );
-        div()
-            .bg(p.elevated)
-            .rounded(px(RADIUS_MODAL))
-            .overflow_hidden()
+        let close = kit::close_button(p, "close-groups-modal", true)
+            .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx)));
+        kit::modal_panel(p)
+            .child(kit::modal_header(
+                t!("common.manage_groups").to_string(),
+                close,
+            ))
             .child(
                 div()
                     .id("group-manager-scroll")
                     .pl(px(32.))
                     .pr(px(20.))
-                    .pt(px(20.))
-                    .pb(px(18.))
+                    .pt(px(4.))
+                    .pb(px(20.))
                     .max_h(px(600.))
                     .overflow_y_scroll()
                     .on_mouse_down(
@@ -692,44 +623,40 @@ impl KitterApp {
                             }
                         }),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .text_size(px(16.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t!("common.manage_groups").to_string()),
-                            )
-                            .child(div().flex_1())
-                            .child(div().w(px(6.)))
-                            .child(
-                                div()
-                                    .id("close-groups-modal")
-                                    .size(px(CONTROL_HEIGHT))
-                                    .rounded(px(RADIUS_CONTROL))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .cursor_pointer()
-                                    .bg(p.raised)
-                                    .hover(move |button| button.bg(p.hover))
-                                    .child(Self::icon("icons/x.svg", 14., p.text))
-                                    .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx))),
-                            ),
-                    )
                     .child(rows)
                     .when_some(self.tags_flow.error.clone(), |panel, error| {
-                        panel.child(
-                            div()
-                                .mt(px(8.))
-                                .text_size(px(12.))
-                                .text_color(p.danger)
-                                .child(error),
-                        )
+                        panel.child(kit::field_error(p, error).mt(px(8.)))
                     }),
             )
+    }
+
+    /// Row above a list showing the active tag filter. Hidden until the
+    /// scope has tags, since the menu would only offer "All".
+    pub(super) fn tag_filter_bar(&self, scope: TagScope, cx: &mut Context<Self>) -> Option<Div> {
+        let tags = self.tags_for(scope);
+        if tags.tags().is_empty() {
+            return None;
+        }
+        let p = self.palette();
+        let label = self
+            .tag_filter_for(scope)
+            .and_then(|tag| tags.path(tag))
+            .map(|path| format!("#{path}"))
+            .unwrap_or_else(|| match scope {
+                TagScope::Skills => t!("common.all_skills").to_string(),
+            });
+        Some(
+            div()
+                .pl(px(16.))
+                .pr(px(12.))
+                .pb(px(4.))
+                .flex()
+                .items_center()
+                .text_size(px(FS_SMALL))
+                .text_color(p.muted)
+                .child(div().min_w_0().flex_1().truncate().child(label))
+                .child(self.tag_filter_control(scope, cx)),
+        )
     }
 
     pub(super) fn tag_filter_control(&self, scope: TagScope, cx: &mut Context<Self>) -> Popover {
@@ -739,22 +666,13 @@ impl KitterApp {
         let tags = tag_state
             .tags()
             .iter()
-            .map(|tag| {
-                (
-                    tag.id,
-                    tag.name.clone(),
-                    tag.parent,
-                    tag_state.count(tag.id),
-                )
-            })
+            .map(|tag| (tag.id, tag.name.clone(), tag.parent))
             .collect::<Vec<_>>();
         let scope_prefix = match scope {
             TagScope::Skills => "skill",
-            TagScope::Projects => "project",
         };
         let all_label = match scope {
             TagScope::Skills => t!("common.all_skills").to_string(),
-            TagScope::Projects => t!("common.all_projects").to_string(),
         };
         let app = cx.entity().downgrade();
         Popover::new(ElementId::Name(
@@ -763,163 +681,70 @@ impl KitterApp {
         .appearance(false)
         .anchor(Anchor::TopRight)
         .trigger(
-            Button::new(ElementId::Name(
-                format!("{scope_prefix}-tag-filter-trigger").into(),
-            ))
-            .small()
-            .custom(
-                ButtonCustomVariant::new(cx)
-                    .color(rgba(0x00000000).into())
-                    .foreground(
-                        if selected.is_some() {
-                            p.accent
-                        } else {
-                            p.muted
-                        }
-                        .into(),
-                    )
-                    .hover(p.hover.into())
-                    .active(p.selected.into()),
-            )
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .child(Self::icon(
+            kit::icon_trigger(
+                p,
+                ElementId::Name(format!("{scope_prefix}-tag-filter-trigger").into()),
                 "icons/hash.svg",
-                15.,
-                if selected.is_some() {
-                    p.accent
-                } else {
-                    p.muted
-                },
-            )),
+                t!("common.tags").to_string(),
+            )
+            .when(selected.is_some(), |button| button.bg(p.selected)),
         )
         .content(move |_, _, popover_cx| {
-            let mut menu = div()
-                .w(px(220.))
-                .p(px(4.))
-                .rounded(px(RADIUS_MENU))
-                .border_1()
-                .border_color(p.border)
-                .bg(p.elevated)
-                .shadow_lg();
+            let mut menu = kit::menu(p).w(px(220.));
             let all_app = app.clone();
             menu = menu.child(
-                div()
-                    .id(ElementId::Name(
-                        format!("{scope_prefix}-tag-filter-all").into(),
-                    ))
-                    .h(px(29.))
-                    .px(px(8.))
-                    .rounded(px(RADIUS_CONTROL))
-                    .flex()
-                    .items_center()
-                    .cursor_pointer()
-                    .bg(if selected.is_none() {
-                        p.selected
-                    } else {
-                        rgba(0x00000000)
-                    })
-                    .hover(move |row| row.bg(p.hover))
-                    .text_size(px(13.))
-                    .child(all_label.clone())
+                kit::menu_item(
+                    p,
+                    ElementId::Name(format!("{scope_prefix}-tag-filter-all").into()),
+                    all_label.clone(),
+                    selected.is_none(),
+                )
+                .on_click(popover_cx.listener(move |_, _, _, cx| {
+                    let _ = all_app.update(cx, |this, cx| {
+                        this.set_tag_filter(scope, None);
+                        cx.notify();
+                    });
+                    cx.emit(DismissEvent);
+                })),
+            );
+            for (id, name, _parent) in tags.iter().filter(|tag| tag.2.is_none()) {
+                let root_app = app.clone();
+                let root_id = *id;
+                menu = menu.child(
+                    kit::menu_item(
+                        p,
+                        ElementId::Name(format!("{scope_prefix}-tag-filter-{id}").into()),
+                        format!("#{name}"),
+                        selected == Some(*id),
+                    )
                     .on_click(popover_cx.listener(move |_, _, _, cx| {
-                        let _ = all_app.update(cx, |this, cx| {
-                            this.set_tag_filter(scope, None);
+                        let _ = root_app.update(cx, |this, cx| {
+                            this.set_tag_filter(scope, Some(root_id));
                             cx.notify();
                         });
                         cx.emit(DismissEvent);
                     })),
-            );
-            for (id, name, _parent, count) in tags.iter().filter(|tag| tag.2.is_none()) {
-                let root_app = app.clone();
-                let root_id = *id;
-                menu = menu.child(
-                    div()
-                        .id(ElementId::Name(
-                            format!("{scope_prefix}-tag-filter-{id}").into(),
-                        ))
-                        .h(px(29.))
-                        .px(px(8.))
-                        .rounded(px(RADIUS_CONTROL))
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .cursor_pointer()
-                        .bg(if selected == Some(*id) {
-                            p.selected
-                        } else {
-                            rgba(0x00000000)
-                        })
-                        .hover(move |row| row.bg(p.hover))
-                        .child(Self::icon("icons/chevron-down.svg", 14., p.muted))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .text_size(px(13.))
-                                .truncate()
-                                .child(name.clone()),
-                        )
-                        .child(
-                            div()
-                                .font_family(MONO)
-                                .text_size(px(12.))
-                                .text_color(p.muted)
-                                .child(count.to_string()),
-                        )
-                        .on_click(popover_cx.listener(move |_, _, _, cx| {
-                            let _ = root_app.update(cx, |this, cx| {
-                                this.set_tag_filter(scope, Some(root_id));
-                                cx.notify();
-                            });
-                            cx.emit(DismissEvent);
-                        })),
                 );
-                for (child_id, child_name, _, child_count) in
-                    tags.iter().filter(|tag| tag.2 == Some(*id))
-                {
+                for (child_id, child_name, _) in tags.iter().filter(|tag| tag.2 == Some(*id)) {
                     let child_app = app.clone();
                     let child_id = *child_id;
                     menu = menu.child(
-                        div()
-                            .id(ElementId::Name(
-                                format!("{scope_prefix}-tag-filter-{child_id}").into(),
-                            ))
-                            .h(px(29.))
-                            .pl(px(28.))
-                            .pr(px(8.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .bg(if selected == Some(child_id) {
-                                p.selected
-                            } else {
-                                rgba(0x00000000)
-                            })
-                            .hover(move |row| row.bg(p.hover))
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .flex_1()
-                                    .text_size(px(13.))
-                                    .truncate()
-                                    .child(child_name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .font_family(MONO)
-                                    .text_size(px(12.))
-                                    .text_color(p.muted)
-                                    .child(child_count.to_string()),
-                            )
-                            .on_click(popover_cx.listener(move |_, _, _, cx| {
+                        kit::menu_item(
+                            p,
+                            ElementId::Name(format!("{scope_prefix}-tag-filter-{child_id}").into()),
+                            format!("#{child_name}"),
+                            selected == Some(child_id),
+                        )
+                        .pl(px(24.))
+                        .on_click(popover_cx.listener(
+                            move |_, _, _, cx| {
                                 let _ = child_app.update(cx, |this, cx| {
                                     this.set_tag_filter(scope, Some(child_id));
                                     cx.notify();
                                 });
                                 cx.emit(DismissEvent);
-                            })),
+                            },
+                        )),
                     );
                 }
             }
@@ -941,13 +766,7 @@ impl KitterApp {
             .skills
             .iter()
             .filter(|skill| {
-                let matches_query = query.is_empty()
-                    || skill.record.name.to_lowercase().contains(&query)
-                    || skill.record.description.to_lowercase().contains(&query)
-                    || self
-                        .source_label(&skill.record.origin)
-                        .to_lowercase()
-                        .contains(&query);
+                let matches_query = self.skill_matches_query(skill, &query);
                 let matches_tag = self.tags_flow.selected_skill_filter.is_none_or(|tag| {
                     self.tags_flow
                         .skills
@@ -1034,7 +853,6 @@ impl KitterApp {
                 self.panel_header(
                     "skills-panel-window-drag",
                     t!("common.skills").to_string(),
-                    self.model.skills.len(),
                     cx,
                 )
                 .child(self.skills_manage_control(cx))
@@ -1043,7 +861,6 @@ impl KitterApp {
                     self.labeled_icon_button(
                         "add-skill",
                         "icons/plus.svg",
-                        p.text,
                         t!("common.add_skill").to_string(),
                         cx,
                     )
@@ -1056,47 +873,23 @@ impl KitterApp {
                 ),
             )
             .child(
-                div().px(px(10.)).py(px(8.)).child(
-                    Input::new(&self.skills_view.skill_search)
-                        .small()
-                        .h(px(SEARCH_HEIGHT))
-                        .w_full()
-                        .rounded(px(999.))
-                        .bg(p.surface)
-                        .border_color(p.border_strong)
-                        .text_size(px(14.))
-                        .prefix(Self::icon("icons/search.svg", 16., p.muted)),
-                ),
-            )
-            .child(
                 div()
-                    .px(px(16.))
-                    .pb(px(6.))
-                    .flex()
-                    .items_center()
-                    .text_size(px(12.))
-                    .text_color(p.muted)
-                    .child(
-                        self.tags_flow
-                            .selected_skill_filter
-                            .and_then(|tag| self.tags_flow.skills.path(tag))
-                            .map(|path| format!("#{path}  {visible_count}"))
-                            .unwrap_or_else(|| {
-                                format!("{}  {}", t!("skills.all").to_string(), visible_count)
-                            }),
-                    )
-                    .child(div().flex_1())
-                    .child(self.tag_filter_control(TagScope::Skills, cx)),
+                    .px(px(12.))
+                    .py(px(8.))
+                    .child(kit::search_input(p, &self.skills_view.skill_search).small()),
             )
+            .children(self.tag_filter_bar(TagScope::Skills, cx))
             .when(self.skills_view.selection.is_multiple(), |list| {
                 let visible_selection_order = visible_selection_order.clone();
                 list.child(
                     div()
-                        .px(px(16.))
-                        .pb(px(6.))
+                        .pl(px(16.))
+                        .pr(px(12.))
+                        .pb(px(4.))
                         .flex()
                         .items_center()
-                        .text_size(px(12.))
+                        .gap(px(2.))
+                        .text_size(px(FS_SMALL))
                         .text_color(p.secondary)
                         .child(crate::i18n::tn(
                             "skills.selection_count",
@@ -1105,29 +898,41 @@ impl KitterApp {
                         ))
                         .child(div().flex_1())
                         .child(
-                            div()
-                                .id("select-all-visible-skills")
-                                .px(px(5.))
-                                .cursor_pointer()
-                                .hover(move |button| button.text_color(p.text))
-                                .child(t!("skills.select_all_short").to_string())
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                            kit::button(
+                                p,
+                                "select-all-visible-skills",
+                                kit::ButtonKind::Quiet,
+                                kit::Size::Sm,
+                                true,
+                            )
+                            .h(px(24.))
+                            .px(px(6.))
+                            .text_size(px(FS_SMALL))
+                            .child(t!("skills.select_all_short").to_string())
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     this.select_all_visible_skills(
                                         visible_selection_order.as_ref(),
                                         cx,
                                     );
-                                })),
+                                },
+                            )),
                         )
                         .child(
-                            div()
-                                .id("clear-skill-selection")
-                                .px(px(5.))
-                                .cursor_pointer()
-                                .hover(move |button| button.text_color(p.text))
-                                .child(t!("skills.clear").to_string())
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.clear_skill_selection(cx);
-                                })),
+                            kit::button(
+                                p,
+                                "clear-skill-selection",
+                                kit::ButtonKind::Quiet,
+                                kit::Size::Sm,
+                                true,
+                            )
+                            .h(px(24.))
+                            .px(px(6.))
+                            .text_size(px(FS_SMALL))
+                            .child(t!("skills.clear").to_string())
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.clear_skill_selection(cx);
+                            })),
                         ),
                 )
             });
@@ -1147,8 +952,6 @@ impl KitterApp {
             let skills = grouped.remove(&group_id).unwrap_or_default();
             let collapsed =
                 query.is_empty() && self.skills_view.collapsed_groups.contains(&group_id);
-            let group_count = skills.len();
-            let count_label = group_count.to_string();
             let toggle_key = group_id.clone();
             let drop_group_id = group_id.clone();
             let context_app = cx.entity().downgrade();
@@ -1161,119 +964,155 @@ impl KitterApp {
                 .remove(&group_id)
                 .unwrap_or_default();
             let install_group_count = install_group_skills.len();
+            let preset_label = t!("skills.add_to_preset").to_string();
+            let preset_choices = self
+                .presets_view
+                .store
+                .presets()
+                .iter()
+                .map(|preset| {
+                    let included = install_group_skills
+                        .iter()
+                        .all(|name| preset.skills.contains(name));
+                    (preset.id.clone(), preset.name.clone(), included)
+                })
+                .collect::<Vec<_>>();
             let install_group_label = crate::i18n::tn(
                 "skills.install_group_count",
                 install_group_count,
                 &[("count", (install_group_count).to_string())],
             );
             rows = rows.child(
-                div()
-                    .id(ElementId::Name(format!("skill-group-{group_id}").into()))
-                    .h(px(ROW_HEIGHT))
-                    .px(px(8.))
-                    .mt(px(3.))
-                    .rounded(px(RADIUS_LIST_ROW))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .cursor_pointer()
-                    .text_color(p.secondary)
-                    .hover(move |row| row.bg(p.hover))
-                    .when(true, |row| {
-                        self.sortable_group_row(
-                            row,
-                            group_id.clone(),
-                            group_label.clone(),
-                            GroupDragScope::List,
-                            cx,
-                        )
-                    })
-                    .child(Self::icon(
-                        if collapsed {
-                            "icons/chevron-right.svg"
-                        } else {
-                            "icons/chevron-down.svg"
-                        },
-                        14.,
-                        p.muted,
-                    ))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .font_family(MONO)
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .truncate()
-                            .child(group_label),
+                kit::list_row(
+                    p,
+                    ElementId::Name(format!("skill-group-{group_id}").into()),
+                    false,
+                )
+                .h(px(ROW_1))
+                .mt(px(4.))
+                .text_color(p.secondary)
+                .when(true, |row| {
+                    self.sortable_group_row(
+                        row,
+                        group_id.clone(),
+                        group_label.clone(),
+                        GroupDragScope::List,
+                        cx,
                     )
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(12.))
-                            .text_color(p.muted)
-                            .child(count_label),
-                    )
-                    .drag_over::<SkillDrag>(move |style, _, _, _| style.bg(p.selected))
-                    .on_drop(cx.listener(move |this, drag: &SkillDrag, _, cx| {
-                        this.assign_skill_group(drag.name.clone(), Some(drop_group_id.clone()), cx);
-                    }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this.skills_view.collapsed_groups.remove(&toggle_key) {
-                            this.skills_view.collapsed_groups.insert(toggle_key.clone());
-                        }
-                        this.persist_collapsed_groups();
-                        cx.notify();
-                    }))
-                    .context_menu(move |menu, _, _| {
-                        let install_app = context_app.clone();
-                        let rename_app = context_app.clone();
-                        let delete_app = context_app.clone();
-                        let install_group_skills = install_group_skills.clone();
-                        let rename_group_id = rename_group_id.clone();
-                        let delete_group_id = delete_group_id.clone();
-                        let delete_menu_item = Self::danger_menu_item(
-                            delete_group_label.clone(),
-                            delete_group_menu_color,
-                        )
-                        .on_click(move |_, _, cx| {
-                            let _ = delete_app.update(cx, |this, cx| {
-                                this.open_group_delete_dialog(delete_group_id.clone(), cx);
+                })
+                .child(Self::icon(
+                    if collapsed {
+                        "icons/chevron-right.svg"
+                    } else {
+                        "icons/chevron-down.svg"
+                    },
+                    ICON_SM,
+                    p.muted,
+                ))
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .font_family(MONO)
+                        .text_size(px(FS_BODY))
+                        .font_weight(FontWeight::MEDIUM)
+                        .truncate()
+                        .child(group_label),
+                )
+                .drag_over::<SkillDrag>(move |style, _, _, _| style.bg(p.selected))
+                .on_drop(cx.listener(move |this, drag: &SkillDrag, _, cx| {
+                    this.assign_skill_group(drag.name.clone(), Some(drop_group_id.clone()), cx);
+                }))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if !this.skills_view.collapsed_groups.remove(&toggle_key) {
+                        this.skills_view.collapsed_groups.insert(toggle_key.clone());
+                    }
+                    this.persist_collapsed_groups();
+                    cx.notify();
+                }))
+                .context_menu(move |menu, window, menu_cx| {
+                    let install_app = context_app.clone();
+                    let preset_app = context_app.clone();
+                    let preset_skills = install_group_skills.clone();
+                    let preset_choices = preset_choices.clone();
+                    let rename_app = context_app.clone();
+                    let delete_app = context_app.clone();
+                    let install_group_skills = install_group_skills.clone();
+                    let rename_group_id = rename_group_id.clone();
+                    let delete_group_id = delete_group_id.clone();
+                    let delete_menu_item =
+                        Self::danger_menu_item(delete_group_label.clone(), delete_group_menu_color)
+                            .on_click(move |_, _, cx| {
+                                let _ = delete_app.update(cx, |this, cx| {
+                                    this.open_group_delete_dialog(delete_group_id.clone(), cx);
+                                });
                             });
-                        });
-                        menu.min_w(px(190.))
-                            .when(!install_group_skills.is_empty(), |menu| {
-                                menu.item(
-                                    PopupMenuItem::new(install_group_label.clone())
-                                        .icon(Icon::default().path("icons/download.svg"))
-                                        .on_click(move |_, window, cx| {
-                                            let _ = install_app.update(cx, |this, cx| {
-                                                let primary = this
-                                                    .skills_view
-                                                    .selection
-                                                    .select_all(&install_group_skills);
-                                                this.set_detail_selection(primary);
-                                                this.open_install_dialog(window, cx);
-                                            });
-                                        }),
-                                )
-                            })
-                            .item(
-                                PopupMenuItem::new(rename_group_label.clone())
-                                    .icon(Icon::default().path("icons/pencil.svg"))
+                    menu.min_w(px(190.))
+                        .when(!install_group_skills.is_empty(), |menu| {
+                            menu.item(
+                                PopupMenuItem::new(install_group_label.clone())
+                                    .icon(Icon::default().path("icons/download.svg"))
                                     .on_click(move |_, window, cx| {
-                                        let _ = rename_app.update(cx, |this, cx| {
-                                            this.open_group_dialog(cx);
-                                            this.start_group_edit(
-                                                GroupEdit::Rename(rename_group_id.clone()),
-                                                window,
-                                                cx,
-                                            );
+                                        let _ = install_app.update(cx, |this, cx| {
+                                            let primary = this
+                                                .skills_view
+                                                .selection
+                                                .select_all(&install_group_skills);
+                                            this.set_detail_selection(primary);
+                                            this.open_install_dialog(window, cx);
                                         });
                                     }),
                             )
-                            .item(delete_menu_item)
-                    }),
+                        })
+                        .when(
+                            !preset_skills.is_empty() && !preset_choices.is_empty(),
+                            |menu| {
+                                menu.submenu_with_icon(
+                                    Some(Icon::default().path("icons/layers.svg")),
+                                    preset_label.clone(),
+                                    window,
+                                    menu_cx,
+                                    move |submenu, _, _| {
+                                        preset_choices.iter().fold(
+                                            submenu,
+                                            |submenu, (id, name, included)| {
+                                                let app = preset_app.clone();
+                                                let id = id.clone();
+                                                let skills = preset_skills.clone();
+                                                let included = *included;
+                                                submenu.item(
+                                                    PopupMenuItem::new(name.clone())
+                                                        .checked(included)
+                                                        .on_click(move |_, _, cx| {
+                                                            let _ = app.update(cx, |this, cx| {
+                                                                this.toggle_skills_in_preset(
+                                                                    &id, &skills, included, cx,
+                                                                );
+                                                            });
+                                                        }),
+                                                )
+                                            },
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                        .item(
+                            PopupMenuItem::new(rename_group_label.clone())
+                                .icon(Icon::default().path("icons/pencil.svg"))
+                                .on_click(move |_, window, cx| {
+                                    let _ = rename_app.update(cx, |this, cx| {
+                                        this.open_group_dialog(cx);
+                                        this.start_group_edit(
+                                            GroupEdit::Rename(rename_group_id.clone()),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                }),
+                        )
+                        .item(delete_menu_item)
+                }),
             );
             if collapsed {
                 continue;
@@ -1328,18 +1167,14 @@ impl KitterApp {
             .mt(px(12.))
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(px(6.))
             .flex_wrap();
         for (tag_id, path) in assigned {
             labels = labels.child(
-                div()
+                kit::chip(p)
                     .id(ElementId::Name(format!("skill-tag-{tag_id}").into()))
-                    .px(px(2.))
-                    .rounded(px(5.))
                     .cursor_pointer()
                     .font_family(MONO)
-                    .text_size(px(12.))
-                    .text_color(p.secondary)
                     .hover(move |label| label.bg(p.hover).text_color(p.text))
                     .child(format!("#{path}"))
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -1356,20 +1191,22 @@ impl KitterApp {
         .appearance(false)
         .anchor(Anchor::TopLeft)
         .trigger(
-            Button::new(ElementId::Name(
+            gpui_base::Button::new(ElementId::Name(
                 format!("skill-tags-trigger-{skill_name}").into(),
             ))
-            .small()
-            .custom(
-                ButtonCustomVariant::new(cx)
-                    .color(rgba(0x00000000).into())
-                    .foreground(p.muted.into())
-                    .hover(p.hover.into())
-                    .active(p.selected.into()),
-            )
-            .h(px(CONTROL_HEIGHT))
-            .px(px(6.))
-            .rounded(px(RADIUS_CONTROL))
+            .h(px(24.))
+            .px(px(8.))
+            .rounded(px(R_SM))
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .text_size(px(FS_SMALL))
+            .text_color(p.secondary)
+            .hover(move |button| button.bg(p.hover).text_color(p.text))
+            .styles(|styles| styles.selected(|style| style.bg(p.selected)))
+            .when(!has_assigned, |button| {
+                button.child(Self::icon("icons/plus.svg", ICON_XS, p.secondary))
+            })
             .child(if has_assigned {
                 t!("skills.edit").to_string()
             } else {
@@ -1377,20 +1214,13 @@ impl KitterApp {
             }),
         )
         .content(move |_, _, popover_cx| {
-            let mut menu = div()
-                .w(px(240.))
-                .p(px(4.))
-                .rounded(px(RADIUS_MENU))
-                .border_1()
-                .border_color(p.border_strong)
-                .bg(p.elevated)
-                .shadow_lg();
+            let mut menu = kit::menu(p).w(px(240.));
             if tag_rows.is_empty() {
                 menu = menu.child(
                     div()
                         .px(px(8.))
-                        .py(px(10.))
-                        .text_size(px(13.))
+                        .py(px(8.))
+                        .text_size(px(FS_BODY))
                         .text_color(p.muted)
                         .child(t!("common.no_tags_yet").to_string()),
                 );
@@ -1400,64 +1230,36 @@ impl KitterApp {
                 let tag_skill = skill.clone();
                 let tag_id = *id;
                 menu = menu.child(
-                    div()
-                        .id(ElementId::Name(format!("assign-tag-{tag_id}").into()))
-                        .h(px(29.))
-                        .pl(px(if parent.is_some() { 28. } else { 8. }))
-                        .pr(px(8.))
-                        .rounded(px(RADIUS_CONTROL))
-                        .flex()
-                        .items_center()
-                        .cursor_pointer()
-                        .hover(move |row| row.bg(p.hover))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .text_size(px(13.))
-                                .truncate()
-                                .child(format!("#{}", name)),
-                        )
-                        .when(*checked, |row| {
-                            row.child(Self::icon("icons/check.svg", 14., p.text))
-                        })
-                        .on_click(popover_cx.listener(move |_, _, _, cx| {
-                            let _ = tag_app.update(cx, |this, app_cx| {
-                                this.tags_flow.skills.toggle_assignment(&tag_skill, tag_id);
-                                this.persist_tags();
-                                app_cx.notify();
-                            });
-                            cx.notify();
-                        })),
+                    kit::menu_item(
+                        p,
+                        ElementId::Name(format!("assign-tag-{tag_id}").into()),
+                        format!("#{}", name),
+                        *checked,
+                    )
+                    .when(parent.is_some(), |row| row.pl(px(24.)))
+                    .on_click(popover_cx.listener(move |_, _, _, cx| {
+                        let _ = tag_app.update(cx, |this, app_cx| {
+                            this.tags_flow.skills.toggle_assignment(&tag_skill, tag_id);
+                            this.persist_tags();
+                            app_cx.notify();
+                        });
+                        cx.notify();
+                    })),
                 );
             }
             let new_tag_app = app.clone();
-            menu.child(
-                div()
-                    .mt(px(4.))
-                    .pt(px(4.))
-                    .border_t_1()
-                    .border_color(p.border)
-                    .child(
-                        div()
-                            .id("new-tag-from-skill")
-                            .h(px(29.))
-                            .px(px(8.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(13.))
-                            .text_color(p.secondary)
-                            .hover(move |row| row.bg(p.hover))
-                            .child(t!("common.add_tag").to_string())
-                            .on_click(popover_cx.listener(move |_, _, _, cx| {
-                                let _ = new_tag_app.update(cx, |this, cx| {
-                                    this.open_tag_dialog(TagScope::Skills, cx)
-                                });
-                                cx.emit(DismissEvent);
-                            })),
-                    ),
+            menu.child(kit::menu_separator(p)).child(
+                kit::menu_action(
+                    p,
+                    "new-tag-from-skill",
+                    "icons/plus.svg",
+                    t!("organize.new_tag").to_string(),
+                )
+                .on_click(popover_cx.listener(move |_, _, _, cx| {
+                    let _ = new_tag_app
+                        .update(cx, |this, cx| this.open_tag_dialog(TagScope::Skills, cx));
+                    cx.emit(DismissEvent);
+                })),
             )
         });
         labels.child(editor)
@@ -1482,19 +1284,19 @@ impl KitterApp {
         for name in selected_names.iter().take(preview_count) {
             names = names.child(
                 div()
-                    .h(px(30.))
+                    .h(px(ROW_1))
                     .px(px(10.))
-                    .rounded(px(RADIUS_CONTROL))
+                    .rounded(px(R_MD))
                     .flex()
                     .items_center()
                     .gap(px(8.))
                     .bg(p.raised)
-                    .child(Self::icon("icons/package.svg", 14., p.secondary))
+                    .child(Self::icon("icons/package.svg", ICON_SM, p.secondary))
                     .child(
                         div()
                             .min_w_0()
                             .font_family(MONO)
-                            .text_size(px(13.))
+                            .text_size(px(FS_BODY))
                             .truncate()
                             .child(name.clone()),
                     ),
@@ -1504,7 +1306,7 @@ impl KitterApp {
             names = names.child(
                 div()
                     .mt(px(4.))
-                    .text_size(px(12.))
+                    .text_size(px(FS_SMALL))
                     .text_color(p.muted)
                     .child(
                         t!("skills.and_more", count = selection_count - preview_count).to_string(),
@@ -1519,60 +1321,29 @@ impl KitterApp {
             .flex()
             .flex_col()
             .px(px(24.))
-            .pt(px(28.))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .size(px(40.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .bg(p.raised)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(Self::icon("icons/package.svg", 20., p.secondary)),
-                    )
-                    .child(
-                        div()
-                            .ml(px(14.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .text_size(px(18.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(crate::i18n::tn(
-                                        "skills.selection_count",
-                                        selection_count,
-                                        &[("count", (selection_count).to_string())],
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .mt(px(4.))
-                                    .text_size(px(12.))
-                                    .text_color(p.muted)
-                                    .child(t!("skills.selection_hint").to_string()),
-                            ),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        self.labeled_icon_button(
-                            "install-selected-skills",
-                            "icons/download.svg",
-                            p.text,
-                            t!("skills.install_selection").to_string(),
-                            cx,
-                        )
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| {
-                                this.open_install_dialog(window, cx);
-                            }),
-                        ),
-                    ),
-            )
+            .pt(px(24.))
+            .child(kit::detail_header(
+                p,
+                "icons/package.svg",
+                crate::i18n::tn(
+                    "skills.selection_count",
+                    selection_count,
+                    &[("count", (selection_count).to_string())],
+                ),
+                t!("skills.selection_hint").to_string(),
+                self.labeled_icon_button(
+                    "install-selected-skills",
+                    "icons/download.svg",
+                    t!("skills.install_selection").to_string(),
+                    cx,
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        this.open_install_dialog(window, cx);
+                    }),
+                ),
+            ))
             .child(names)
             .child(self.window_drag_strip("multi-skill-detail-window-drag", 24., cx))
     }
@@ -1595,14 +1366,13 @@ impl KitterApp {
         };
         let storage_name = skill_storage_name(skill).to_string();
         let skill_path = skill.path.clone();
-        let mut actions = div().flex().gap(px(8.));
+        let mut actions = div().flex().items_center().gap(px(4.));
         if skill.record.update_available {
             let update_name = storage_name.clone();
             actions = actions.child(
                 self.labeled_icon_button(
                     "update-skill",
                     "icons/rotate-cw.svg",
-                    p.secondary,
                     t!("skills.update").to_string(),
                     cx,
                 )
@@ -1631,7 +1401,7 @@ impl KitterApp {
                     ),
             )
             .child(
-                self.primary_icon_button(
+                self.labeled_icon_button(
                     "install-skill",
                     "icons/download.svg",
                     t!("skills.install_skill").to_string(),
@@ -1693,7 +1463,7 @@ impl KitterApp {
         let mut description_text = div()
             .relative()
             .font_family(FONT_UI)
-            .text_size(px(14.))
+            .text_size(px(FS_EMPH))
             .line_height(relative(1.5))
             .text_color(p.secondary)
             .child(self.selectable_text("skill-detail-description", 102, description, window, cx));
@@ -1728,43 +1498,42 @@ impl KitterApp {
             };
             description_section = description_section.child(
                 div().w_full().mt(px(4.)).flex().items_center().child(
-                    div()
-                        .id("toggle-skill-description")
-                        .h(px(24.))
-                        .px(px(6.))
-                        .rounded(px(6.))
-                        .flex()
-                        .items_center()
-                        .gap(px(3.))
-                        .cursor_pointer()
-                        .font_family(FONT_UI)
-                        .text_size(px(12.))
-                        .text_color(p.secondary)
-                        .hover(move |button| button.bg(p.hover).text_color(p.text))
-                        .child(toggle_label)
-                        .child(Self::icon(
-                            if description_expanded {
-                                "icons/chevron-up.svg"
+                    kit::button(
+                        p,
+                        "toggle-skill-description",
+                        kit::ButtonKind::Quiet,
+                        kit::Size::Sm,
+                        true,
+                    )
+                    .h(px(24.))
+                    .px(px(6.))
+                    .ml(px(-6.))
+                    .gap(px(4.))
+                    .text_size(px(FS_SMALL))
+                    .child(toggle_label)
+                    .child(Self::icon(
+                        if description_expanded {
+                            "icons/chevron-up.svg"
+                        } else {
+                            "icons/chevron-down.svg"
+                        },
+                        ICON_XS,
+                        p.secondary,
+                    ))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _, _, cx| {
+                            if this.skills_view.expanded_description.as_deref()
+                                == Some(description_name.as_str())
+                            {
+                                this.skills_view.expanded_description = None;
                             } else {
-                                "icons/chevron-down.svg"
-                            },
-                            12.,
-                            p.secondary,
-                        ))
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                if this.skills_view.expanded_description.as_deref()
-                                    == Some(description_name.as_str())
-                                {
-                                    this.skills_view.expanded_description = None;
-                                } else {
-                                    this.skills_view.expanded_description =
-                                        Some(description_name.clone());
-                                }
-                                cx.notify();
-                            }),
-                        ),
+                                this.skills_view.expanded_description =
+                                    Some(description_name.clone());
+                            }
+                            cx.notify();
+                        }),
+                    ),
                 ),
             );
         }
@@ -1772,68 +1541,38 @@ impl KitterApp {
             .px(px(24.))
             .pt(px(24.))
             .pb(px(16.))
-            .child(
+            .child(kit::detail_header(
+                p,
+                "icons/package.svg",
                 div()
                     .flex()
-                    .items_start()
-                    .child(
-                        div()
-                            .size(px(40.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .bg(p.raised)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(Self::icon("icons/package.svg", 20., p.secondary)),
-                    )
-                    .child(
-                        div()
-                            .ml(px(14.))
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .font_family(MONO)
-                                    .text_size(px(18.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(self.selectable_text(
-                                        "skill-detail-name",
-                                        100,
-                                        skill.record.name.clone(),
-                                        window,
-                                        cx,
-                                    ))
-                                    .when(skill.manual_only, |title| {
-                                        title.child(self.manual_skill_badge())
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .mt(px(4.))
-                                    .text_size(px(12.))
-                                    .text_color(p.muted)
-                                    .child(self.selectable_text(
-                                        "skill-detail-origin",
-                                        101,
-                                        self.source_label(&skill.record.origin),
-                                        window,
-                                        cx,
-                                    )),
-                            ),
-                    )
-                    .child(div().flex_1())
-                    .child(actions),
-            )
+                    .items_center()
+                    .gap(px(8.))
+                    .font_family(MONO)
+                    .child(self.selectable_text(
+                        "skill-detail-name",
+                        100,
+                        skill.record.name.clone(),
+                        window,
+                        cx,
+                    ))
+                    .when(skill.manual_only, |title| {
+                        title.child(self.manual_skill_badge())
+                    }),
+                self.selectable_text(
+                    "skill-detail-origin",
+                    101,
+                    self.source_label(&skill.record.origin),
+                    window,
+                    cx,
+                ),
+                actions,
+            ))
             .child(description_section)
             .child(self.skill_tag_controls(&storage_name, cx));
-        let tabs = div()
-            .h(px(40.))
+        let tabs = kit::tabs()
+            .h(px(44.))
             .px(px(24.))
-            .flex()
-            .items_center()
-            .gap(px(2.))
             .border_b_1()
             .border_color(p.border)
             .child(self.tab_button(
@@ -1873,20 +1612,8 @@ impl KitterApp {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let label: SharedString = label.into();
-        let p = self.palette();
         let active = self.skills_view.tab == tab;
-        div()
-            .id(id)
-            .h(px(CONTROL_HEIGHT))
-            .px(px(8.))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .cursor_pointer()
-            .text_size(px(13.))
-            .text_color(if active { p.text } else { p.muted })
-            .bg(if active { p.selected } else { rgba(0x00000000) })
-            .hover(move |tab| tab.bg(p.hover))
+        kit::tab(self.palette(), id, active)
             .child(label)
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.skills_view.tab = tab;
@@ -1958,32 +1685,15 @@ impl KitterApp {
             .collect::<Vec<_>>();
         if projects.is_empty() {
             body = body.child(
-                div()
-                    .mt(px(34.))
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .text_color(p.muted)
-                    .child(Self::icon("icons/package.svg", 28., p.muted))
-                    .child(
-                        div()
-                            .mt(px(10.))
-                            .text_size(px(12.))
-                            .child(t!("skills.installation_empty").to_string()),
-                    ),
+                kit::empty_state(
+                    p,
+                    "icons/package.svg",
+                    t!("skills.installation_empty").to_string(),
+                )
+                .mt(px(32.)),
             );
         } else {
-            body = body.child(
-                div()
-                    .mb(px(10.))
-                    .text_size(px(12.))
-                    .text_color(p.muted)
-                    .child(crate::i18n::tn(
-                        "skills.location_count",
-                        projects.len(),
-                        &[("count", (projects.len()).to_string())],
-                    )),
-            );
+            let mut card = kit::card(p);
             for (index, path) in projects.into_iter().enumerate() {
                 let popover_id = format!("agents:{}:{}", skill.record.name, path.display());
                 let project_name = if home.as_ref() == Some(&path) {
@@ -2005,21 +1715,15 @@ impl KitterApp {
                     name: skill.record.name.clone(),
                     installations,
                 };
-                body = body.child(
-                    div()
-                        .h(px(64.))
-                        .px(px(14.))
-                        .border_b_1()
-                        .border_color(p.border)
-                        .flex()
-                        .items_center()
-                        .child(Self::icon("icons/folder.svg", 16., p.secondary))
+                card = card.child(
+                    kit::card_row(p, index == 0)
+                        .h(px(56.))
+                        .child(Self::icon("icons/folder.svg", ICON_MD, p.secondary))
                         .child(
                             div()
-                                .ml(px(11.))
                                 .min_w_0()
                                 .flex_1()
-                                .child(div().font_family(MONO).text_size(px(13.)).child(
+                                .child(div().font_family(MONO).text_size(px(FS_BODY)).child(
                                     self.selectable_text(
                                         format!("install-project-name-{index}"),
                                         110 + index as u64 * 2,
@@ -2030,9 +1734,9 @@ impl KitterApp {
                                 ))
                                 .child(
                                     div()
-                                        .mt(px(3.))
+                                        .mt(px(2.))
                                         .font_family(MONO)
-                                        .text_size(px(12.))
+                                        .text_size(px(FS_SMALL))
                                         .text_color(p.muted)
                                         .child(self.selectable_text(
                                             format!("install-project-path-{index}"),
@@ -2050,7 +1754,6 @@ impl KitterApp {
                                 "icons/trash.svg",
                                 cx,
                             )
-                            .ml(px(10.))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, window, cx| {
@@ -2070,6 +1773,7 @@ impl KitterApp {
                         ),
                 );
             }
+            body = body.child(card);
         }
         body
     }
@@ -2135,81 +1839,77 @@ impl KitterApp {
                     .contains(&file);
                 let directory_for_click = file.clone();
                 tree = tree.child(
-                    div()
-                        .id(ElementId::Name(
-                            format!("directory-{}", file.display()).into(),
-                        ))
-                        .h(px(ROW_HEIGHT))
-                        .mx(px(6.))
-                        .pl(px(3. + depth * 14.))
-                        .pr(px(9.))
-                        .rounded(px(RADIUS_LIST_ROW))
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .cursor_pointer()
-                        .text_color(p.secondary)
-                        .hover(move |row| row.bg(p.hover))
-                        .child(
-                            div()
-                                .size(px(14.))
-                                .flex_none()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(Self::icon(
-                                    if collapsed {
-                                        "icons/chevron-right.svg"
-                                    } else {
-                                        "icons/chevron-down.svg"
-                                    },
-                                    14.,
-                                    p.muted,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .size(px(18.))
-                                .flex_none()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(Self::icon(
-                                    if collapsed {
-                                        "icons/folder.svg"
-                                    } else {
-                                        "icons/folder-open.svg"
-                                    },
-                                    15.,
-                                    p.secondary,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .font_family(MONO)
-                                .text_size(px(12.))
-                                .truncate()
-                                .child(
-                                    file.file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .into_owned(),
-                                ),
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if !this
-                                .skills_view
+                    kit::list_row(
+                        p,
+                        ElementId::Name(format!("directory-{}", file.display()).into()),
+                        false,
+                    )
+                    .w_auto()
+                    .h(px(ROW_1))
+                    .mx(px(8.))
+                    .pl(px(4. + depth * 14.))
+                    .gap(px(6.))
+                    .text_color(p.secondary)
+                    .child(
+                        div()
+                            .size(px(14.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(Self::icon(
+                                if collapsed {
+                                    "icons/chevron-right.svg"
+                                } else {
+                                    "icons/chevron-down.svg"
+                                },
+                                14.,
+                                p.muted,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .size(px(18.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(Self::icon(
+                                if collapsed {
+                                    "icons/folder.svg"
+                                } else {
+                                    "icons/folder-open.svg"
+                                },
+                                ICON_MD,
+                                p.secondary,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .font_family(MONO)
+                            .text_size(px(FS_SMALL))
+                            .truncate()
+                            .child(
+                                file.file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .into_owned(),
+                            ),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !this
+                            .skills_view
+                            .collapsed_content_directories
+                            .remove(&directory_for_click)
+                        {
+                            this.skills_view
                                 .collapsed_content_directories
-                                .remove(&directory_for_click)
-                            {
-                                this.skills_view
-                                    .collapsed_content_directories
-                                    .insert(directory_for_click.clone());
-                            }
-                            cx.notify();
-                        })),
+                                .insert(directory_for_click.clone());
+                        }
+                        cx.notify();
+                    })),
                 );
                 continue;
             }
@@ -2230,62 +1930,54 @@ impl KitterApp {
             let file_for_click = file.clone();
             let depth = file.parent().map_or(0, |path| path.components().count()) as f32;
             tree = tree.child(
-                div()
-                    .id(ElementId::Name(format!("file-{}", file.display()).into()))
-                    .h(px(30.))
-                    .mx(px(6.))
-                    .pl(px(3. + depth * 14.))
-                    .pr(px(9.))
-                    .rounded(px(RADIUS_LIST_ROW))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .cursor_pointer()
-                    .bg(if selected {
-                        p.selected
-                    } else {
-                        rgba(0x00000000)
-                    })
-                    .hover(move |s| s.bg(p.hover))
-                    .child(
-                        div()
-                            .size(px(14.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center(),
-                    )
-                    .child(
-                        div()
-                            .size(px(18.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(Self::icon("icons/file.svg", 15., p.muted)),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .font_family(MONO)
-                            .text_size(px(12.))
-                            .truncate()
-                            .child(
-                                file.file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy()
-                                    .into_owned(),
-                            ),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.skills_view.selected_file = file_for_click.clone();
-                        *this.skills_view.content_snapshot.borrow_mut() = None;
-                        this.skills_view
-                            .content_scroll
-                            .set_offset(point(px(0.), px(0.)));
-                        cx.notify();
-                    })),
+                kit::list_row(
+                    p,
+                    ElementId::Name(format!("file-{}", file.display()).into()),
+                    selected,
+                )
+                .w_auto()
+                .mx(px(8.))
+                .pl(px(4. + depth * 14.))
+                .gap(px(6.))
+                .child(
+                    div()
+                        .size(px(14.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center(),
+                )
+                .child(
+                    div()
+                        .size(px(18.))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(Self::icon("icons/file.svg", ICON_MD, p.muted)),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .font_family(MONO)
+                        .text_size(px(FS_SMALL))
+                        .truncate()
+                        .child(
+                            file.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned(),
+                        ),
+                )
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.skills_view.selected_file = file_for_click.clone();
+                    *this.skills_view.content_snapshot.borrow_mut() = None;
+                    this.skills_view
+                        .content_scroll
+                        .set_offset(point(px(0.), px(0.)));
+                    cx.notify();
+                })),
             );
         }
         let content = snapshot.content;
@@ -2298,14 +1990,14 @@ impl KitterApp {
             .child(
                 div()
                     .h(px(40.))
-                    .px(px(14.))
+                    .px(px(16.))
                     .border_b_1()
                     .border_color(p.border)
                     .bg(p.surface)
                     .flex()
                     .items_center()
                     .font_family(MONO)
-                    .text_size(px(12.))
+                    .text_size(px(FS_SMALL))
                     .text_color(p.secondary)
                     .child(self.selectable_text(
                         "content-selected-file",
@@ -2323,9 +2015,9 @@ impl KitterApp {
                     .min_h_0()
                     .min_w_0()
                     .overflow_y_scroll()
-                    .p(px(22.))
+                    .p(px(24.))
                     .font_family(MONO)
-                    .text_size(px(13.))
+                    .text_size(px(FS_BODY))
                     .line_height(relative(1.6))
                     .text_color(p.secondary)
                     .whitespace_normal()

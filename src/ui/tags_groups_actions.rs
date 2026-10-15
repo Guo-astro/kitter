@@ -98,23 +98,6 @@ impl KitterApp {
         self.open_dialog(DialogKind::AssignTags, cx);
     }
 
-    pub(super) fn open_project_tag_assignment_dialog(
-        &mut self,
-        path: PathBuf,
-        cx: &mut Context<Self>,
-    ) {
-        self.tags_flow.return_to_assignment = None;
-        self.tags_flow.scope = TagScope::Projects;
-        self.tags_flow.assignment_keys = vec![project_tag_key(&path)];
-        self.tags_flow.assignment_label = Some(
-            path.file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
-        );
-        self.open_dialog(DialogKind::AssignTags, cx);
-    }
-
     pub(super) fn start_tag_edit(
         &mut self,
         edit: TagEdit,

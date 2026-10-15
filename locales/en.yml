@@ -11,7 +11,6 @@ add:
   adopt: "Adopt %{count}"
   adopting: "Adopting…"
   adoption_empty: "No skills available to adopt"
-  adoption_hint: "Scan all skills in the selected directory and adopt them into Kitter."
   choose_skill_folder: "Choose skill folder"
   clear_all: "Clear all"
   detect: "Scan"
@@ -29,7 +28,6 @@ add:
   select_skills: "Select skills"
   skipped_summary: "No new skills added · %{count} already added"
   source: "Source"
-  source_hint: "Choose a source and paste its address. Kitter will find the available skills."
   source_placeholder: "Paste a skills.sh/GitHub URL or npx skills add command"
 adoption:
   choose_version: "Choose version"
@@ -98,11 +96,9 @@ cli:
 common:
   add_count: "Add %{count}"
   add_skill: "Add Skill"
-  add_tag: "+ New tag"
   adopted_skills:
     one: "Adopted %{count} skill"
     other: "Adopted %{count} skills"
-  all_projects: "All projects"
   all_skills: "All skills"
   cancel: "Cancel"
   check_updates: "Check for updates"
@@ -313,10 +309,9 @@ install:
 organize:
   choose_group: "Choose group"
   current_groups_differ: "Current groups differ"
-  new_group: "+ New group"
+  new_group: "New group"
   new_tag: "New tag"
   no_group: "No group"
-  project_tags: "Project tags"
   skill_tags: "Skill tags"
 presets:
   create: "Create"
@@ -334,6 +329,7 @@ presets:
   overwrite_title: "Overwrite Edits"
   removed: "Removed"
   save: "Save"
+  skills_empty: "No skills yet"
   skills_failed:
     one: "%{count} skill failed"
     other: "%{count} skills failed"
@@ -386,8 +382,8 @@ settings:
   system: "System"
   theme: "Theme"
 skills:
-  add_tag: "+ Add tag"
-  all: "All"
+  add_tag: "Add tag"
+  add_to_preset: "Add to preset"
   and_more: "and %{count} more"
   automatic_trigger: "Automatic trigger"
   clear: "Clear"
@@ -422,13 +418,9 @@ skills:
   installed_globally: "Installed globally"
   installs: "Installs"
   less: "Less"
-  location_count:
-    one: "Installed in %{count} location"
-    other: "Installed in %{count} locations"
   manual_trigger: "Manual trigger"
   more: "More"
   move_skills_to_group: "Move %{count} skills to group"
-  new_group: "New group"
   no_groups_yet: "No groups yet"
   project_count:
     one: "Installed in %{count} project"
@@ -451,9 +443,6 @@ tags:
   delete_children_confirm:
     one: "Delete #%{name}? Child tags and %{count} assignment will also be removed."
     other: "Delete #%{name}? Child tags and %{count} assignments will also be removed."
-  delete_projects_confirm:
-    one: "Delete #%{name}? %{count} project will lose this tag."
-    other: "Delete #%{name}? %{count} projects will lose this tag."
   delete_skills_confirm:
     one: "Delete #%{name}? %{count} skill will lose this tag."
     other: "Delete #%{name}? %{count} skills will lose this tag."

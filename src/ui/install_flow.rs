@@ -11,7 +11,15 @@ impl KitterApp {
             };
         let selected_keys = self.selected_skill_keys();
         let selected_count = selected_keys.len();
-        let selected_label = if selected_count > 1 {
+        let preset_name = self
+            .install_flow
+            .preset
+            .as_deref()
+            .and_then(|id| self.presets_view.store.preset(id).ok())
+            .map(|preset| preset.name.clone());
+        let selected_label = if let Some(name) = preset_name {
+            name
+        } else if selected_count > 1 {
             crate::i18n::tn(
                 "common.skill_count",
                 selected_count,
@@ -54,24 +62,9 @@ impl KitterApp {
         let project_control = Popover::new("install-project-menu")
             .appearance(false)
             .anchor(Anchor::TopRight)
-            .trigger(
-                self.dropdown_button("install-project-select", project_label, 14.)
-                    .w_full(),
-            )
+            .trigger(kit::select_trigger(p, "install-project-select", project_label).w_full())
             .content(move |_, _, popover_cx| {
-                let mut menu_background = p.elevated;
-                menu_background.a = 1.;
-                let mut menu = div()
-                    .w(px(518.))
-                    .p(px(4.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .rounded(px(RADIUS_MENU))
-                    .border_1()
-                    .border_color(p.border_strong)
-                    .bg(menu_background)
-                    .shadow_lg();
+                let mut menu = kit::menu(p).w(px(520.));
                 for (index, (global, path)) in project_choices.iter().cloned().enumerate() {
                     let active = if global {
                         selected_global
@@ -89,37 +82,15 @@ impl KitterApp {
                     let path_label = display_path(&path);
                     let app = app.clone();
                     menu = menu.child(
-                        div()
-                            .id(ElementId::Name(
-                                format!("install-project-option-{index}").into(),
-                            ))
-                            .min_h(px(46.))
-                            .px(px(10.))
-                            .py(px(5.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .flex_col()
-                            .justify_center()
-                            .cursor_pointer()
-                            .bg(if active { p.selected } else { rgba(0x00000000) })
-                            .hover(move |item| item.bg(p.hover))
-                            .child(
-                                div()
-                                    .font_family(FONT_UI)
-                                    .text_size(px(13.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(name),
-                            )
-                            .child(
-                                div()
-                                    .mt(px(2.))
-                                    .font_family(MONO)
-                                    .text_size(px(11.))
-                                    .text_color(p.muted)
-                                    .truncate()
-                                    .child(path_label),
-                            )
-                            .on_click(popover_cx.listener(move |_, _, _, cx| {
+                        kit::menu_item_detail(
+                            p,
+                            ElementId::Name(format!("install-project-option-{index}").into()),
+                            name,
+                            path_label,
+                            active,
+                        )
+                        .on_click(popover_cx.listener(
+                            move |_, _, _, cx| {
                                 let _ = app.update(cx, |this, cx| {
                                     this.install_flow.global = global;
                                     if !global {
@@ -128,154 +99,92 @@ impl KitterApp {
                                     this.notify_dialog(cx);
                                 });
                                 cx.emit(DismissEvent);
-                            })),
+                            },
+                        )),
                     );
                 }
                 menu
             });
         let project_picker = div().flex_1().child(project_control);
-        let close_button = div()
-            .id("close-install-modal")
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .bg(p.raised)
-            .hover(move |button| button.bg(p.hover))
-            .text_color(p.text)
-            .child(Self::icon("icons/x.svg", 14., p.text))
-            .on_click(cx.listener(|this, _, _, cx| {
+        let close_button = kit::close_button(p, "close-install-modal", true).on_click(cx.listener(
+            |this, _, _, cx| {
                 this.install_flow.modal = false;
                 this.close_dialog(cx);
-            }));
-        let install_content = div()
+            },
+        ));
+        let install_content = kit::modal_body()
             .id("install-modal-content")
-            .px(px(20.))
-            .pb(px(20.))
             .max_h(px(500.))
             .overflow_y_scroll()
             .overflow_x_hidden()
-            .bg(p.elevated)
             .child(
-                div()
-                    .mb(px(7.))
-                    .text_size(px(14.))
-                    .text_color(p.muted)
-                    .child(t!("install.install_to").to_string()),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(project_picker)
-                    .child(
-                        self.bordered_icon_button("modal-browse", "icons/folder.svg", p.text, cx)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, window, cx| this.browse_project(window, cx)),
-                            ),
-                    ),
-            )
-            .child(
-                div()
-                    .mt(px(18.))
-                    .mb(px(7.))
-                    .text_size(px(13.))
-                    .text_color(p.secondary)
-                    .child(t!("install.install_location").to_string()),
-            )
-            .child(self.target_group(cx));
-        let panel = div()
-            .relative()
-            .bg(p.elevated)
-            .rounded(px(RADIUS_MODAL))
-            .overflow_hidden()
-            .child(
-                div()
-                    .rounded_tl(px(RADIUS_MODAL))
-                    .rounded_tr(px(RADIUS_MODAL))
-                    .bg(p.elevated)
-                    .px(px(20.))
-                    .pt(px(20.))
-                    .pb(px(14.))
-                    .child(
+                kit::form()
+                    .child(kit::field(
+                        p,
+                        t!("install.install_to").to_string(),
                         div()
                             .flex()
                             .items_center()
+                            .gap(px(8.))
+                            .child(project_picker)
                             .child(
-                                div()
-                                    .font_family(FONT_UI)
-                                    .text_size(px(16.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(
-                                        t!("install.title", name = selected_label.clone())
-                                            .to_string(),
+                                self.bordered_icon_button("modal-browse", "icons/folder.svg", cx)
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, window, cx| {
+                                            this.browse_project(window, cx)
+                                        }),
                                     ),
-                            )
-                            .child(div().flex_1())
-                            .child(close_button),
-                    ),
-            )
-            .child(install_content)
-            .child(
-                div()
-                    .h(px(60.))
-                    .rounded_bl(px(RADIUS_MODAL))
-                    .rounded_br(px(RADIUS_MODAL))
-                    .px(px(20.))
-                    .border_t_1()
-                    .border_color(p.border)
-                    .bg(p.elevated)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .id("cancel-install")
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(14.))
-                            .hover(move |button| button.bg(p.hover))
-                            .child(t!("common.cancel").to_string())
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.install_flow.modal = false;
-                                    this.close_dialog(cx);
-                                }),
                             ),
-                    )
-                    .child(
-                        div()
-                            .id("confirm-install")
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .border_1()
-                            .border_color(p.border)
-                            .bg(if has_target { p.accent_fill } else { p.raised })
-                            .text_color(if has_target { p.on_accent } else { p.muted })
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(14.))
-                            .child(t!("common.install").to_string())
-                            .when(has_target, |el| {
-                                el.hover(move |button| button.opacity(0.82)).on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(|this, _, _, cx| this.install_selected(cx)),
-                                )
-                            }),
-                    ),
+                    ))
+                    .child(kit::field(
+                        p,
+                        t!("install.install_location").to_string(),
+                        self.target_group(cx),
+                    )),
             );
+        let cancel = kit::button(
+            p,
+            "cancel-install",
+            kit::ButtonKind::Ghost,
+            kit::Size::Md,
+            true,
+        )
+        .child(t!("common.cancel").to_string())
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| {
+                this.install_flow.modal = false;
+                this.close_dialog(cx);
+            }),
+        );
+        let confirm = kit::button(
+            p,
+            "confirm-install",
+            kit::ButtonKind::Primary,
+            kit::Size::Md,
+            has_target,
+        )
+        .child(t!("common.install").to_string())
+        .when(has_target, |button| {
+            button.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.install_flow.preset.is_some() {
+                        this.install_preset(cx);
+                    } else {
+                        this.install_selected(cx);
+                    }
+                }),
+            )
+        });
+        let panel = kit::modal_panel(p)
+            .child(kit::modal_header(
+                t!("install.title", name = selected_label.clone()).to_string(),
+                close_button,
+            ))
+            .child(install_content)
+            .child(kit::modal_footer(p).child(cancel).child(confirm));
         let _ = window;
         panel
     }
@@ -299,7 +208,7 @@ impl KitterApp {
                 // fewer than three Agents.
                 .flex_basis(relative(1. / 3.))
                 .flex_shrink_0()
-                .px(px(11.))
+                .px(px(12.))
                 .border_t_1()
                 .border_color(p.border)
                 .when(right_border, |cell| {
@@ -308,21 +217,13 @@ impl KitterApp {
                 .flex()
                 .items_center()
                 .gap(px(8.))
+                .child(kit::avatar(p, icon_path))
                 .child(
                     div()
-                        .size(px(28.))
-                        .rounded(px(RADIUS_CONTROL))
-                        .bg(if icon_path == "icons/provider-codex.svg" {
-                            rgba(0x00000000)
-                        } else {
-                            p.raised
-                        })
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(Self::brand_icon(icon_path, 18., p.text)),
+                        .text_size(px(FS_SMALL))
+                        .text_color(p.secondary)
+                        .child(name),
                 )
-                .child(div().text_size(px(12.)).text_color(p.secondary).child(name))
         };
         let universal_agents = crate::agents::AGENT_ICON_ORDER
             .iter()
@@ -347,30 +248,23 @@ impl KitterApp {
             }
             universal_rows = universal_rows.child(row);
         }
-        let universal_box = div()
-            .rounded(px(RADIUS_CARD))
-            .border_1()
-            .border_color(p.border)
-            .bg(p.surface)
-            .overflow_hidden()
+        let universal_box = kit::card(p)
             .child(
                 div()
                     .id("target-universal")
-                    .h(px(48.))
-                    .px(px(13.))
+                    .debug_selector(|| "target-universal".into())
+                    .h(px(ROW_2))
+                    .px(px(16.))
+                    .rounded_t(px(R_CARD_INNER))
                     .cursor_pointer()
-                    .bg(if universal { p.selected } else { p.surface })
-                    .when(universal, |row| {
-                        row.rounded_tl(px(RADIUS_CARD - 1.))
-                            .rounded_tr(px(RADIUS_CARD - 1.))
-                    })
+                    .when(universal, |row| row.bg(p.selected))
                     .flex()
                     .items_center()
                     .child(Checkbox::new("target-universal-checkbox").checked(universal))
                     .child(
                         div()
-                            .ml(px(9.))
-                            .text_size(px(14.))
+                            .ml(px(10.))
+                            .text_size(px(FS_BODY))
                             .font_weight(FontWeight::MEDIUM)
                             .child(t!("install.universal").to_string()),
                     )
@@ -378,7 +272,7 @@ impl KitterApp {
                     .child(
                         div()
                             .font_family(MONO)
-                            .text_size(px(12.))
+                            .text_size(px(FS_SMALL))
                             .text_color(p.muted)
                             .child(if self.install_flow.global {
                                 "~/.agents/skills"
@@ -393,26 +287,24 @@ impl KitterApp {
             )
             .child(universal_rows);
         let mut independent_rows = div().flex().flex_col();
-        for info in crate::agents::INDEPENDENT_INSTALL_TARGETS {
-            independent_rows = independent_rows.child(self.target_row(*info, cx));
+        let last = crate::agents::INDEPENDENT_INSTALL_TARGETS
+            .len()
+            .saturating_sub(1);
+        for (index, info) in crate::agents::INDEPENDENT_INSTALL_TARGETS
+            .iter()
+            .enumerate()
+        {
+            independent_rows = independent_rows.child(
+                self.target_row(*info, cx)
+                    .when(index == last, |row| row.rounded_b(px(R_CARD_INNER))),
+            );
         }
-        let independent_box = div()
-            .mt(px(10.))
-            .rounded(px(RADIUS_CARD))
-            .border_1()
-            .border_color(p.border)
-            .bg(p.surface)
-            .overflow_hidden()
-            .child(
-                div()
-                    .px(px(13.))
-                    .h(px(42.))
-                    .flex()
-                    .items_center()
-                    .text_size(px(14.))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(t!("install.agent_specific").to_string()),
-            )
+        let independent_box = kit::card(p)
+            .mt(px(8.))
+            .child(kit::card_header(
+                p,
+                t!("install.agent_specific").to_string(),
+            ))
             .child(independent_rows);
         div().child(universal_box).child(independent_box)
     }
@@ -437,45 +329,25 @@ impl KitterApp {
             InstallTarget::Universal => "target-universal",
         };
         let active = self.install_flow.selected_targets.contains(&info.target);
-        let is_last = crate::agents::INDEPENDENT_INSTALL_TARGETS
-            .last()
-            .is_some_and(|last| last.target == info.target);
         div()
             .id(id)
-            .h(px(48.))
-            .px(px(13.))
+            .debug_selector(|| id.into())
+            .h(px(ROW_2))
+            .px(px(16.))
             .border_t_1()
             .border_color(p.border)
-            .bg(if active { p.selected } else { p.surface })
-            .when(is_last, |row| {
-                row.rounded_bl(px(RADIUS_CARD - 1.))
-                    .rounded_br(px(RADIUS_CARD - 1.))
-            })
+            .when(active, |row| row.bg(p.selected))
             .flex()
             .items_center()
             .cursor_pointer()
             .child(Checkbox::new(ElementId::Name(format!("{id}-checkbox").into())).checked(active))
-            .child(
-                div()
-                    .ml(px(9.))
-                    .size(px(28.))
-                    .rounded(px(RADIUS_CONTROL))
-                    .bg(if info.icon_path == "icons/provider-codex.svg" {
-                        rgba(0x00000000)
-                    } else {
-                        p.raised
-                    })
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(Self::brand_icon(info.icon_path, 18., p.text)),
-            )
-            .child(div().ml(px(9.)).text_size(px(13.)).child(info.name))
+            .child(kit::avatar(p, info.icon_path).ml(px(10.)))
+            .child(div().ml(px(10.)).text_size(px(FS_BODY)).child(info.name))
             .child(div().flex_1())
             .child(
                 div()
                     .font_family(MONO)
-                    .text_size(px(12.))
+                    .text_size(px(FS_SMALL))
                     .text_color(p.muted)
                     .child(if self.install_flow.global {
                         dirs::home_dir()
@@ -614,73 +486,43 @@ impl KitterApp {
             }
         };
 
-        let close_button = div()
-            .id("close-delete-modal")
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .bg(p.raised)
-            .hover(move |button| button.bg(p.hover))
-            .text_color(p.text)
-            .child(Self::icon("icons/x.svg", 14., p.text))
-            .on_click(cx.listener(|this, _, _, cx| {
+        let close_button = kit::close_button(p, "close-delete-modal", true).on_click(cx.listener(
+            |this, _, _, cx| {
                 this.delete_flow.confirmation = None;
                 this.close_dialog(cx);
-            }));
-        let mut body = div()
+            },
+        ));
+        let mut body = kit::modal_body()
             .id("delete-confirmation-body")
+            .pt(px(4.))
             .max_h(px(520.))
             .overflow_y_scroll()
-            .rounded_tl(px(RADIUS_MODAL))
-            .rounded_tr(px(RADIUS_MODAL))
-            .bg(p.elevated)
-            .p(px(20.))
             .child(
                 div()
-                    .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .text_size(px(16.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(title),
-                    )
-                    .child(div().flex_1())
-                    .child(close_button),
-            )
-            .child(
-                div()
-                    .mt(px(10.))
-                    .text_size(px(14.))
-                    .line_height(relative(1.55))
+                    .text_size(px(FS_BODY))
+                    .line_height(relative(1.5))
                     .text_color(p.secondary)
                     .child(message),
             )
             .when_some(location, |body, location| {
                 body.child(
                     div()
-                        .mt(px(10.))
-                        .px(px(11.))
-                        .py(px(9.))
-                        .rounded(px(RADIUS_CONTROL))
+                        .mt(px(12.))
+                        .px(px(10.))
+                        .py(px(8.))
+                        .rounded(px(R_MD))
                         .bg(p.raised)
                         .font_family(MONO)
-                        .text_size(px(12.))
+                        .text_size(px(FS_SMALL))
                         .text_color(p.secondary)
                         .child(location),
                 )
             });
         if let DeleteConfirmation::ProjectSkills { skills, batch, .. } = &confirmation {
             body = body.child(
-                div()
+                kit::field_label(p, t!("install.removal_title").to_string())
                     .mt(px(16.))
-                    .mb(px(6.))
-                    .text_size(px(13.))
-                    .text_color(p.secondary)
-                    .child(t!("install.removal_title").to_string()),
+                    .mb(px(6.)),
             );
             for skill in skills {
                 if *batch || skills.len() > 1 {
@@ -688,7 +530,7 @@ impl KitterApp {
                         div()
                             .mt(px(12.))
                             .font_family(MONO)
-                            .text_size(px(12.))
+                            .text_size(px(FS_SMALL))
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(skill.name.clone()),
                     );
@@ -716,9 +558,10 @@ impl KitterApp {
                                 format!("delete-path-{}", path.display()).into(),
                             ))
                             .mt(px(6.))
-                            .min_h(px(if external_source.is_some() { 64. } else { 48. }))
-                            .px(px(11.))
-                            .rounded(px(RADIUS_CARD))
+                            .min_h(px(ROW_2))
+                            .px(px(12.))
+                            .py(px(8.))
+                            .rounded(px(R_MD))
                             .border_1()
                             .border_color(p.border)
                             .bg(p.surface)
@@ -740,12 +583,12 @@ impl KitterApp {
                                             .flex()
                                             .items_center()
                                             .gap(px(8.))
-                                            .text_size(px(13.))
+                                            .text_size(px(FS_BODY))
                                             .child(target)
                                             .when(*batch && deletes_files, |title| {
                                                 title.child(
                                                     div()
-                                                        .text_size(px(11.))
+                                                        .text_size(px(FS_CAPTION))
                                                         .text_color(p.danger)
                                                         .child(
                                                             t!("install.delete_files").to_string(),
@@ -757,7 +600,7 @@ impl KitterApp {
                                         div()
                                             .mt(px(2.))
                                             .font_family(MONO)
-                                            .text_size(px(11.))
+                                            .text_size(px(FS_CAPTION))
                                             .text_color(p.muted)
                                             .truncate()
                                             .child(display_path(&path)),
@@ -767,7 +610,7 @@ impl KitterApp {
                                             div()
                                                 .mt(px(2.))
                                                 .font_family(MONO)
-                                                .text_size(px(11.))
+                                                .text_size(px(FS_CAPTION))
                                                 .text_color(p.muted)
                                                 .child(
                                                     t!("install.original_path", path = source)
@@ -789,171 +632,129 @@ impl KitterApp {
         let can_confirm = !self.delete_flow.busy
             && (!matches!(confirmation, DeleteConfirmation::ProjectSkills { .. })
                 || !self.delete_flow.selected.is_empty());
-        div()
-            .relative()
-            .rounded(px(RADIUS_MODAL))
-            .bg(p.elevated)
-            .overflow_hidden()
+        let cancel = kit::button(
+            p,
+            "cancel-delete",
+            kit::ButtonKind::Ghost,
+            kit::Size::Md,
+            true,
+        )
+        .child(t!("common.cancel").to_string())
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, _, cx| {
+                this.delete_flow.confirmation = None;
+                this.close_dialog(cx);
+            }),
+        );
+        kit::modal_panel(p)
+            .child(kit::modal_header(title, close_button))
             .child(body)
             .child(
-                div()
-                    .h(px(60.))
-                    .rounded_bl(px(RADIUS_MODAL))
-                    .rounded_br(px(RADIUS_MODAL))
-                    .px(px(18.))
-                    .border_t_1()
-                    .border_color(p.border)
-                    .bg(p.elevated)
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .id("cancel-delete")
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(14.))
-                            .hover(move |button| button.bg(p.hover))
-                            .child(t!("common.cancel").to_string())
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, _, cx| {
-                                    this.delete_flow.confirmation = None;
-                                    this.close_dialog(cx);
-                                }),
-                            ),
+                kit::modal_footer(p).child(cancel).child(
+                    kit::button(
+                        p,
+                        "confirm-delete",
+                        kit::ButtonKind::Danger,
+                        kit::Size::Md,
+                        can_confirm,
                     )
-                    .child(
-                        div()
-                            .id("confirm-delete")
-                            .h(px(DIALOG_CONTROL_HEIGHT))
-                            .px(px(16.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .border_1()
-                            .border_color(p.border)
-                            .bg(if can_confirm { p.danger } else { p.danger_soft })
-                            .flex()
-                            .items_center()
-                            .cursor(if can_confirm {
-                                CursorStyle::PointingHand
-                            } else {
-                                CursorStyle::Arrow
-                            })
-                            .text_size(px(14.))
-                            .text_color(if can_confirm { p.on_accent } else { p.muted })
-                            .child(action)
-                            .when(can_confirm, |button| {
-                                button.on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |this, _, _, cx| {
-                                        if this.delete_flow.busy {
-                                            return;
-                                        }
-                                        this.delete_flow.busy = true;
-                                        match &confirmation {
-                                            DeleteConfirmation::LibrarySkills { skills } => {
-                                                let mut removed = 0usize;
-                                                let mut failures = Vec::new();
-                                                for (name, _) in skills {
-                                                    match this.model.library.remove_by_storage(name)
-                                                    {
-                                                        Ok(()) => removed += 1,
-                                                        Err(error) => {
-                                                            failures.push(this.error_message(error))
-                                                        }
-                                                    }
-                                                }
-                                                this.delete_flow.confirmation = None;
-                                                this.close_dialog(cx);
-                                                this.refresh(cx);
-                                                if failures.is_empty() {
-                                                    this.show_notice(success.clone(), cx);
-                                                } else {
-                                                    this.show_notice(
-                                                        t!(
-                                                            "install.deleted_failed",
-                                                            count = removed,
-                                                            failed = failures.len()
-                                                        )
-                                                        .to_string(),
-                                                        cx,
-                                                    );
+                    .child(action)
+                    .when(can_confirm, |button| {
+                        button.on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                if this.delete_flow.busy {
+                                    return;
+                                }
+                                this.delete_flow.busy = true;
+                                match &confirmation {
+                                    DeleteConfirmation::LibrarySkills { skills } => {
+                                        let mut removed = 0usize;
+                                        let mut failures = Vec::new();
+                                        for (name, _) in skills {
+                                            match this.model.library.remove_by_storage(name) {
+                                                Ok(()) => removed += 1,
+                                                Err(error) => {
+                                                    failures.push(this.error_message(error))
                                                 }
                                             }
-                                            DeleteConfirmation::ProjectSkills {
-                                                project,
-                                                skills,
-                                                ..
-                                            } => {
-                                                let report = project::remove_project_skills(
-                                                    skills
-                                                        .iter()
-                                                        .flat_map(|skill| &skill.installations)
-                                                        .filter(|installation| {
-                                                            this.delete_flow
-                                                                .selected
-                                                                .contains(&installation.path)
-                                                        }),
-                                                );
-                                                let message = if report.failures.is_empty() {
-                                                    success.to_string()
-                                                } else if report.removed > 0 {
-                                                    crate::i18n::tn(
-                                                        "install.removal_partial",
-                                                        report.removed,
-                                                        &[
-                                                            ("count", (report.removed).to_string()),
-                                                            (
-                                                                "failed",
-                                                                (report.failures.len()).to_string(),
-                                                            ),
-                                                        ],
-                                                    )
-                                                } else {
-                                                    crate::i18n::tn(
-                                                        "install.removal_failed",
-                                                        report.failures.len(),
-                                                        &[(
-                                                            "count",
-                                                            (report.failures.len()).to_string(),
-                                                        )],
-                                                    )
-                                                };
-                                                if report.removed > 0 {
-                                                    this.projects_view
-                                                        .context_estimates
-                                                        .borrow_mut()
-                                                        .remove(project);
-                                                    if !dirs::home_dir()
-                                                        .as_ref()
-                                                        .is_some_and(|home| home == project)
-                                                    {
-                                                        this.model
-                                                            .library
-                                                            .config
-                                                            .touch_project(&project);
-                                                        let _ = this.model.library.save();
-                                                    }
-                                                }
-                                                this.delete_flow.confirmation = None;
-                                                this.delete_flow.selected.clear();
-                                                this.projects_view.batch_project = None;
-                                                this.projects_view.batch_selected.clear();
-                                                this.projects_view.batch_filter = None;
-                                                this.close_dialog(cx);
-                                                this.show_notice(message, cx);
-                                                this.refresh(cx);
+                                        }
+                                        this.delete_flow.confirmation = None;
+                                        this.close_dialog(cx);
+                                        this.refresh(cx);
+                                        if failures.is_empty() {
+                                            this.show_notice(success.clone(), cx);
+                                        } else {
+                                            this.show_notice(
+                                                t!(
+                                                    "install.deleted_failed",
+                                                    count = removed,
+                                                    failed = failures.len()
+                                                )
+                                                .to_string(),
+                                                cx,
+                                            );
+                                        }
+                                    }
+                                    DeleteConfirmation::ProjectSkills {
+                                        project, skills, ..
+                                    } => {
+                                        let report = project::remove_project_skills(
+                                            skills
+                                                .iter()
+                                                .flat_map(|skill| &skill.installations)
+                                                .filter(|installation| {
+                                                    this.delete_flow
+                                                        .selected
+                                                        .contains(&installation.path)
+                                                }),
+                                        );
+                                        let message = if report.failures.is_empty() {
+                                            success.to_string()
+                                        } else if report.removed > 0 {
+                                            crate::i18n::tn(
+                                                "install.removal_partial",
+                                                report.removed,
+                                                &[
+                                                    ("count", (report.removed).to_string()),
+                                                    ("failed", (report.failures.len()).to_string()),
+                                                ],
+                                            )
+                                        } else {
+                                            crate::i18n::tn(
+                                                "install.removal_failed",
+                                                report.failures.len(),
+                                                &[("count", (report.failures.len()).to_string())],
+                                            )
+                                        };
+                                        if report.removed > 0 {
+                                            this.projects_view
+                                                .context_estimates
+                                                .borrow_mut()
+                                                .remove(project);
+                                            if !dirs::home_dir()
+                                                .as_ref()
+                                                .is_some_and(|home| home == project)
+                                            {
+                                                this.model.library.config.touch_project(&project);
+                                                let _ = this.model.library.save();
                                             }
                                         }
-                                    }),
-                                )
+                                        this.delete_flow.confirmation = None;
+                                        this.delete_flow.selected.clear();
+                                        this.projects_view.batch_project = None;
+                                        this.projects_view.batch_selected.clear();
+                                        this.projects_view.batch_filter = None;
+                                        this.close_dialog(cx);
+                                        this.show_notice(message, cx);
+                                        this.refresh(cx);
+                                    }
+                                }
                             }),
-                    ),
+                        )
+                    }),
+                ),
             )
     }
 }

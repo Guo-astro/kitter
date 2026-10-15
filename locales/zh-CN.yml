@@ -11,7 +11,6 @@ add:
   adopt: "托管 %{count} 个"
   adopting: "正在托管…"
   adoption_empty: "没有发现可托管的技能"
-  adoption_hint: "扫描指定目录下所有技能并托管到 Kitter。"
   choose_skill_folder: "选择技能文件夹"
   clear_all: "取消全选"
   detect: "检测"
@@ -29,7 +28,6 @@ add:
   select_skills: "选择技能"
   skipped_summary: "没有新增技能，已跳过 %{count} 个已添加技能"
   source: "从哪里添加"
-  source_hint: "选择来源并粘贴地址，Kitter 会自动识别其中可用的技能。"
   source_placeholder: "粘贴 skills.sh、GitHub 地址或 npx skills add 命令"
 adoption:
   choose_version: "选择版本"
@@ -98,11 +96,9 @@ cli:
 common:
   add_count: "添加 %{count} 个"
   add_skill: "添加技能"
-  add_tag: "＋ 新建标签"
   adopted_skills:
     one: "已托管 %{count} 个技能"
     other: "已托管 %{count} 个技能"
-  all_projects: "全部项目"
   all_skills: "全部技能"
   cancel: "取消"
   check_updates: "检查更新"
@@ -313,10 +309,9 @@ install:
 organize:
   choose_group: "选择分组"
   current_groups_differ: "当前分组不一致"
-  new_group: "＋ 新建分组"
+  new_group: "新建分组"
   new_tag: "新建标签"
   no_group: "不使用分组"
-  project_tags: "项目标签"
   skill_tags: "技能标签"
 presets:
   create: "创建"
@@ -334,6 +329,7 @@ presets:
   overwrite_title: "覆盖修改"
   removed: "已移除"
   save: "保存"
+  skills_empty: "还没有技能"
   skills_failed:
     one: "%{count} 个技能处理失败"
     other: "%{count} 个技能处理失败"
@@ -386,8 +382,8 @@ settings:
   system: "跟随系统"
   theme: "主题"
 skills:
-  add_tag: "＋ 添加标签"
-  all: "全部"
+  add_tag: "添加标签"
+  add_to_preset: "添加到预设"
   and_more: "还有 %{count} 个"
   automatic_trigger: "自动触发"
   clear: "清除"
@@ -422,13 +418,9 @@ skills:
   installed_globally: "已全局安装"
   installs: "安装情况"
   less: "收起"
-  location_count:
-    one: "已安装到 %{count} 个位置"
-    other: "已安装到 %{count} 个位置"
   manual_trigger: "手动触发"
   more: "展开"
   move_skills_to_group: "移动 %{count} 个技能到分组"
-  new_group: "新建分组"
   no_groups_yet: "还没有分组"
   project_count:
     one: "已安装到 %{count} 个项目"
@@ -451,9 +443,6 @@ tags:
   delete_children_confirm:
     one: "删除 #%{name}？它的子标签和 %{count} 个关联也会一并移除。"
     other: "删除 #%{name}？它的子标签和 %{count} 个关联也会一并移除。"
-  delete_projects_confirm:
-    one: "删除 #%{name}？%{count} 个项目将失去这个标签。"
-    other: "删除 #%{name}？%{count} 个项目将失去这个标签。"
   delete_skills_confirm:
     one: "删除 #%{name}？%{count} 个技能将失去这个标签。"
     other: "删除 #%{name}？%{count} 个技能将失去这个标签。"

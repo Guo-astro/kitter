@@ -7,17 +7,25 @@ use std::{
 
 use gpui::{Entity, FocusHandle, ListState, ScrollHandle};
 use gpui_base::TextSelectionHandle;
-use gpui_component::{input::InputState, resizable::ResizableState, select::SelectState};
+use gpui_component::{
+    input::{EditorState, InputState},
+    resizable::ResizableState,
+    select::SelectState,
+};
 
 use crate::{
-    InstallTarget, ProjectSkill, SkillLibrary, SkillSummary, adoption, source, tags::TagState,
+    InstallTarget, ProjectSkill, SkillLibrary, SkillSummary, adoption,
+    preset::{PresetStatus, PresetStore},
+    source,
+    tags::TagState,
 };
 
 use super::{
     AddKind, AddTask, ContentSnapshot, ContextEstimateCache, DeleteConfirmation, DialogBody,
-    GroupDragScope, GroupEdit, Page, PageBody, ProjectChoice, ProjectSkillFilter, ProjectSkillsTab,
-    SourceChoice, SpinnerView, TagAssignmentTarget, TagDropPosition, TagDropTarget, TagEdit, TagId,
-    TagScope, adoption_list, effective_skills::AgentKind, skill_selection::SkillSelection,
+    GroupDragScope, GroupEdit, Page, PageBody, PresetConfirmation, PresetEdit, PresetTab,
+    ProjectChoice, ProjectSkillFilter, ProjectSkillsTab, SourceChoice, SpinnerView,
+    TagAssignmentTarget, TagDropPosition, TagDropTarget, TagEdit, TagId, TagScope, adoption_list,
+    effective_skills::AgentKind, skill_selection::SkillSelection,
 };
 
 pub(super) struct AppModel {
@@ -97,6 +105,8 @@ pub(super) struct InstallFlowState {
     pub modal: bool,
     pub global: bool,
     pub selected_targets: HashSet<InstallTarget>,
+    /// Set when the dialog installs a preset instead of the selected skills.
+    pub preset: Option<String>,
 }
 
 pub(super) struct DeleteFlowState {
@@ -110,7 +120,6 @@ pub(super) struct TagsFlowState {
     pub skills: TagState,
     pub projects: TagState,
     pub selected_skill_filter: Option<TagId>,
-    pub selected_project_filter: Option<TagId>,
     pub scope: TagScope,
     pub drop_target: Option<TagDropTarget>,
     pub edit: Option<TagEdit>,
@@ -128,4 +137,20 @@ pub(super) struct GroupsFlowState {
     pub delete_pending: Option<String>,
     pub delete_skills: bool,
     pub move_skills: Vec<String>,
+}
+
+pub(super) struct PresetsState {
+    pub store: PresetStore,
+    pub selected: Option<String>,
+    pub tab: PresetTab,
+    pub name_input: Entity<InputState>,
+    pub edit: Option<PresetEdit>,
+    pub error: Option<String>,
+    pub agents_md: Entity<EditorState>,
+    /// The preset whose AGENTS.md is currently loaded into the editor.
+    pub agents_md_for: RefCell<Option<String>>,
+    pub skill_search: Entity<InputState>,
+    pub picked_skills: HashSet<String>,
+    pub confirmation: Option<PresetConfirmation>,
+    pub statuses: RefCell<BTreeMap<(String, PathBuf), Option<PresetStatus>>>,
 }

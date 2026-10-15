@@ -9,6 +9,7 @@ impl KitterApp {
             "icons/chevron-down.svg" => IconName::ChevronDown.path(),
             "icons/chevron-right.svg" => IconName::ChevronRight.path(),
             "icons/chevron-up.svg" => IconName::ChevronUp.path(),
+            "icons/ellipsis.svg" => IconName::Ellipsis.path(),
             "icons/file.svg" => IconName::File.path(),
             "icons/folder-open.svg" => IconName::FolderOpen.path(),
             "icons/folder.svg" => IconName::Folder.path(),
@@ -105,35 +106,15 @@ impl KitterApp {
 
     pub(super) fn manual_skill_badge(&self) -> Div {
         let p = self.palette();
-        div()
-            .h(px(20.))
-            .px(px(7.))
-            .rounded(px(7.5))
-            .bg(p.raised)
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(px(4.))
-            .text_size(px(11.))
-            .text_color(p.muted)
-            .child(Self::icon("icons/hand.svg", 11., p.muted))
+        kit::badge(p)
+            .child(Self::icon("icons/hand.svg", ICON_XS, p.muted))
             .child(t!("common.manual").to_string())
     }
 
     pub(super) fn managed_skill_badge(&self) -> Div {
         let p = self.palette();
-        div()
-            .h(px(20.))
-            .px(px(7.))
-            .rounded(px(7.5))
-            .bg(p.raised)
-            .flex()
-            .flex_none()
-            .items_center()
-            .gap(px(4.))
-            .text_size(px(11.))
-            .text_color(p.warning)
-            .child(Self::icon("icons/crown.svg", 11., p.warning))
+        kit::badge(p)
+            .child(Self::icon("icons/crown.svg", ICON_XS, p.muted))
             .child(t!("common.managed").to_string())
     }
 
@@ -149,7 +130,6 @@ impl KitterApp {
             .labeled_icon_button(
                 ElementId::Name(format!("refresh-context-{}", path.display()).into()),
                 "icons/rotate-cw.svg",
-                p.secondary,
                 t!("projects.refresh_context").to_string(),
                 cx,
             )
@@ -228,20 +208,16 @@ impl KitterApp {
                     .flex_none()
                     .px(px(12.))
                     .py(px(10.))
-                    .rounded(px(12.))
+                    .rounded(px(R_MD))
                     .cursor_pointer()
-                    .bg(if selected {
-                        p.selected
-                    } else {
-                        rgba(0x00000000)
-                    })
+                    .when(selected, |card| card.bg(p.selected))
                     .hover(move |card| card.bg(p.hover))
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(6.))
-                            .text_size(px(11.))
+                            .text_size(px(FS_CAPTION))
                             .text_color(p.secondary)
                             .child(
                                 div()
@@ -262,7 +238,7 @@ impl KitterApp {
                         div()
                             .mt(px(7.))
                             .font_family(MONO)
-                            .text_size(px(14.))
+                            .text_size(px(FS_EMPH))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(severity)
                             .child(format!("≈ {} tokens", estimate.estimated_tokens)),
@@ -272,7 +248,7 @@ impl KitterApp {
                             .mt(px(2.))
                             .flex()
                             .items_center()
-                            .text_size(px(11.))
+                            .text_size(px(FS_CAPTION))
                             .child(div().text_color(severity).child(automatic))
                             .child(div().text_color(p.muted).child(detail)),
                     )
@@ -290,29 +266,22 @@ impl KitterApp {
         );
         let expand_control = can_expand.then(|| {
             let expanded = self.projects_view.project_agents_expanded;
-            let arrow = div()
-                .id("toggle-project-agents")
-                .size(px(28.))
-                .rounded_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .cursor_pointer()
-                .hover(move |button| button.bg(p.hover).text_color(p.text))
-                .child(Self::icon(
-                    if expanded {
-                        "icons/chevron-up.svg"
-                    } else {
-                        "icons/chevron-down.svg"
-                    },
-                    13.,
-                    p.muted,
-                ))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.projects_view.project_agents_expanded =
-                        !this.projects_view.project_agents_expanded;
-                    cx.notify();
-                }));
+            let arrow = kit::icon_button(
+                p,
+                "toggle-project-agents",
+                if expanded {
+                    "icons/chevron-up.svg"
+                } else {
+                    "icons/chevron-down.svg"
+                },
+                kit::IconKind::Ghost,
+                kit::Size::Sm,
+            )
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.projects_view.project_agents_expanded =
+                    !this.projects_view.project_agents_expanded;
+                cx.notify();
+            }));
             div()
                 .h(px(44.))
                 .w_full()
@@ -321,92 +290,54 @@ impl KitterApp {
                 .justify_center()
                 .child(arrow.mt(px(5.)))
         });
-        let panel = div()
+        let panel = kit::card(p)
             .relative()
-            .w_full()
             .flex_none()
-            .rounded(px(RADIUS_CARD))
-            .border_1()
-            .border_color(p.border)
-            .bg(p.surface)
-            .overflow_hidden()
             .child(cards)
             .children(expand_control)
             .child(refresh_button.absolute().top(px(7.)).right(px(7.)));
         div().w_full().flex_none().child(panel)
     }
 
-    pub(super) fn project_skills_tabs(
-        &self,
-        skill_count: usize,
-        plugin_skill_count: usize,
-        cx: &mut Context<Self>,
-    ) -> Div {
+    pub(super) fn project_skills_tabs(&self, cx: &mut Context<Self>) -> Div {
         let p = self.palette();
-        let mut tabs = div()
-            .h(px(43.))
-            .px(px(28.))
-            .flex_none()
-            .flex()
-            .items_end()
-            .gap(px(20.))
+        let mut tabs = kit::tabs()
+            .h(px(44.))
+            .px(px(24.))
             .border_b_1()
             .border_color(p.border);
-        for (tab, label, count) in [
-            (
-                ProjectSkillsTab::Skills,
-                t!("common.skills").to_string(),
-                skill_count,
-            ),
-            (
-                ProjectSkillsTab::Plugins,
-                t!("common.plugins").to_string(),
-                plugin_skill_count,
-            ),
+        for (tab, label) in [
+            (ProjectSkillsTab::Skills, t!("common.skills").to_string()),
+            (ProjectSkillsTab::Plugins, t!("common.plugins").to_string()),
+            (ProjectSkillsTab::Presets, t!("presets.title").to_string()),
         ] {
             let selected = self.projects_view.project_skills_tab == tab;
             tabs = tabs.child(
-                div()
-                    .id(ElementId::Name(
+                kit::tab(
+                    p,
+                    ElementId::Name(
                         format!(
                             "project-skills-tab-{}",
-                            if tab == ProjectSkillsTab::Skills {
-                                "skills"
-                            } else {
-                                "plugins"
+                            match tab {
+                                ProjectSkillsTab::Skills => "skills",
+                                ProjectSkillsTab::Plugins => "plugins",
+                                ProjectSkillsTab::Presets => "presets",
                             }
                         )
                         .into(),
-                    ))
-                    .h(px(37.))
-                    .px(px(2.))
-                    .border_b_1()
-                    .border_color(if selected { p.accent } else { rgba(0x00000000) })
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .cursor_pointer()
-                    .text_size(px(12.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(if selected { p.text } else { p.muted })
-                    .child(label)
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(10.))
-                            .font_weight(FontWeight::NORMAL)
-                            .text_color(p.muted)
-                            .child(count.to_string()),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.projects_view.project_skills_tab = tab;
-                        if tab == ProjectSkillsTab::Plugins {
-                            this.projects_view.batch_project = None;
-                            this.projects_view.batch_selected.clear();
-                            this.projects_view.batch_filter = None;
-                        }
-                        cx.notify();
-                    })),
+                    ),
+                    selected,
+                )
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.projects_view.project_skills_tab = tab;
+                    if tab != ProjectSkillsTab::Skills {
+                        this.projects_view.batch_project = None;
+                        this.projects_view.batch_selected.clear();
+                        this.projects_view.batch_filter = None;
+                    }
+                    cx.notify();
+                })),
             );
         }
         tabs
@@ -418,31 +349,27 @@ impl KitterApp {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let p = self.palette();
-        let mut list = div()
+        let list = div()
             .id("project-plugins-scroll")
             .flex_1()
             .min_h_0()
-            .px(px(28.))
+            .px(px(24.))
+            .pt(px(16.))
             .pb(px(28.))
             .overflow_y_scroll();
         if groups.is_empty() {
             return list.child(
-                div()
-                    .mt(px(70.))
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .text_color(p.muted)
-                    .child(Self::icon("icons/package.svg", 28., p.muted))
-                    .child(
-                        div()
-                            .mt(px(10.))
-                            .text_size(px(14.))
-                            .child(t!("projects.plugins_empty").to_string()),
-                    ),
+                kit::empty_state(
+                    p,
+                    "icons/package.svg",
+                    t!("projects.plugins_empty").to_string(),
+                )
+                .mt(px(40.)),
             );
         }
-        for group in groups {
+        let mut card = kit::card(p);
+        let last = groups.len() - 1;
+        for (index, group) in groups.into_iter().enumerate() {
             let expanded = self
                 .projects_view
                 .expanded_project_plugins
@@ -457,33 +384,16 @@ impl KitterApp {
             let agent_icon = agent
                 .map(|agent| agent.icon_path)
                 .unwrap_or("icons/package.svg");
-            let count = crate::i18n::tn(
-                "common.skill_count",
-                group.skills.len(),
-                &[("count", (group.skills.len()).to_string())],
-            );
-            let mut plugin = div().border_b_1().border_color(p.border).child(
-                div()
+            card = card.child(
+                kit::card_row(p, index == 0)
                     .id(ElementId::Name(format!("plugin-{}", group.key).into()))
-                    .h(px(58.))
-                    .px(px(4.))
-                    .flex()
-                    .items_center()
-                    .gap(px(9.))
+                    .h(px(56.))
+                    .when(index == last && !expanded, |row| {
+                        row.rounded_b(px(R_CARD_INNER))
+                    })
                     .cursor_pointer()
                     .hover(move |row| row.bg(p.hover))
-                    .child(
-                        div()
-                            .size(px(28.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(Self::brand_icon(
-                                agent_icon,
-                                Self::brand_icon_size(agent_icon, 19.),
-                                p.text,
-                            )),
-                    )
+                    .child(kit::avatar(p, agent_icon))
                     .child(
                         div()
                             .min_w_0()
@@ -491,26 +401,18 @@ impl KitterApp {
                             .child(
                                 div()
                                     .font_family(MONO)
-                                    .text_size(px(12.))
-                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_size(px(FS_BODY))
+                                    .font_weight(FontWeight::MEDIUM)
                                     .truncate()
                                     .child(group.display_name.clone()),
                             )
                             .child(
                                 div()
-                                    .mt(px(3.))
-                                    .text_size(px(10.))
+                                    .mt(px(2.))
+                                    .text_size(px(FS_SMALL))
                                     .text_color(p.muted)
                                     .child(agent_name),
                             ),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_family(MONO)
-                            .text_size(px(10.))
-                            .text_color(p.muted)
-                            .child(count),
                     )
                     .child(Self::icon(
                         if expanded {
@@ -518,7 +420,7 @@ impl KitterApp {
                         } else {
                             "icons/chevron-right.svg"
                         },
-                        14.,
+                        ICON_SM,
                         p.muted,
                     ))
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -536,75 +438,56 @@ impl KitterApp {
             );
             if expanded {
                 for skill in group.skills {
-                    plugin = plugin.child(
-                        div()
-                            .h(px(36.))
-                            .ml(px(40.))
-                            .px(px(8.))
-                            .border_t_1()
-                            .border_color(p.border)
-                            .flex()
-                            .items_center()
-                            .gap(px(9.))
-                            .child(Self::icon("icons/package.svg", 12., p.muted))
+                    card = card.child(
+                        kit::card_row(p, false)
+                            .min_h(px(ROW_1 + 4.))
+                            .pl(px(16. + AVATAR + 12.))
+                            .gap(px(8.))
+                            .child(Self::icon("icons/package.svg", ICON_SM, p.muted))
                             .child(
                                 div()
                                     .min_w_0()
                                     .font_family(MONO)
-                                    .text_size(px(11.))
+                                    .text_size(px(FS_SMALL))
                                     .truncate()
                                     .child(skill),
                             ),
                     );
                 }
             }
-            list = list.child(plugin);
         }
-        list
+        list.child(card)
     }
 
     pub(super) fn icon_button(
         &self,
         id: impl Into<ElementId>,
         path: &'static str,
-        color: impl Into<Hsla>,
         _cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let p = self.palette();
-        let color = color.into();
-        div()
-            .id(id)
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .hover(move |button| button.bg(p.hover))
-            .child(Self::icon(path, 16., color))
+        kit::icon_button(
+            self.palette(),
+            id,
+            path,
+            kit::IconKind::Ghost,
+            kit::Size::Sm,
+        )
     }
 
+    /// Bordered icon button that sits next to an input or select.
     pub(super) fn bordered_icon_button(
         &self,
         id: impl Into<ElementId>,
         path: &'static str,
-        color: impl Into<Hsla>,
         _cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let p = self.palette();
-        div()
-            .id(id)
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .border_1()
-            .border_color(p.border)
-            .bg(p.surface)
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .hover(move |button| button.bg(p.hover))
-            .child(Self::icon(path, 16., color.into()))
+        kit::icon_button(
+            self.palette(),
+            id,
+            path,
+            kit::IconKind::Secondary,
+            kit::Size::Md,
+        )
     }
 
     pub(super) fn danger_icon_button(
@@ -613,53 +496,24 @@ impl KitterApp {
         path: &'static str,
         _cx: &mut Context<Self>,
     ) -> Stateful<Div> {
-        let p = self.palette();
-        div()
-            .id(id)
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .bg(p.danger_soft)
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .hover(move |button| button.opacity(0.8))
-            .child(Self::icon(path, 16., p.danger))
+        kit::icon_button(
+            self.palette(),
+            id,
+            path,
+            kit::IconKind::Danger,
+            kit::Size::Sm,
+        )
     }
 
     pub(super) fn labeled_icon_button(
         &self,
         id: impl Into<ElementId>,
         path: &'static str,
-        color: impl Into<Hsla>,
         label: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let label: SharedString = label.into();
-        self.icon_button(id, path, color, cx)
-            .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
-    }
-
-    pub(super) fn primary_icon_button(
-        &self,
-        id: impl Into<ElementId>,
-        path: &'static str,
-        label: impl Into<SharedString>,
-        _cx: &mut Context<Self>,
-    ) -> Stateful<Div> {
-        let label: SharedString = label.into();
-        let p = self.palette();
-        div()
-            .id(id)
-            .size(px(CONTROL_HEIGHT))
-            .rounded(px(RADIUS_CONTROL))
-            .bg(p.raised)
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .hover(move |button| button.bg(p.hover))
-            .child(Self::icon(path, 16., p.secondary))
+        self.icon_button(id, path, cx)
             .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
     }
 
@@ -722,26 +576,10 @@ impl KitterApp {
                    icon_path: &'static str,
                    page: Page,
                    current: Page| {
-            div()
-                .id(id)
-                .debug_selector(move || id.into())
-                .h(px(ROW_HEIGHT))
-                .px(px(8.))
-                .rounded(px(RADIUS_LIST_ROW))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .cursor_pointer()
-                .bg(if page == current {
-                    p.selected
-                } else {
-                    rgba(0x00000000)
-                })
-                .text_size(px(14.))
-                .line_height(relative(1.5))
+            kit::list_row(p, id, page == current)
+                .text_size(px(FS_EMPH))
                 .text_color(p.sidebar_text)
-                .hover(move |s| s.bg(p.hover))
-                .child(Self::icon(icon_path, 16., p.sidebar_text))
+                .child(Self::icon(icon_path, ICON_MD, p.sidebar_text))
                 .child(label)
         };
         let sidebar = div()
@@ -803,6 +641,19 @@ impl KitterApp {
                             this.shell.page = Page::Projects;
                             cx.notify();
                         })),
+                    )
+                    .child(
+                        nav(
+                            "nav-presets",
+                            t!("presets.title").to_string(),
+                            "icons/layers.svg",
+                            Page::Presets,
+                            self.shell.page,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.shell.page = Page::Presets;
+                            cx.notify();
+                        })),
                     ),
             )
             .child(div().flex_1())
@@ -834,12 +685,11 @@ impl KitterApp {
         &self,
         drag_id: &'static str,
         title: impl Into<SharedString>,
-        count: usize,
         cx: &mut Context<Self>,
     ) -> Div {
         let p = self.palette();
         let header = div()
-            .h(px(52.))
+            .h(px(PANE_HEADER))
             .flex_none()
             .px(px(12.))
             .flex()
@@ -855,66 +705,10 @@ impl KitterApp {
                     .h_full()
                     .flex()
                     .items_center()
-                    .gap(px(7.))
-                    .child(
-                        div()
-                            .text_size(px(14.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(Into::<SharedString>::into(title)),
-                    )
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(12.))
-                            .text_color(p.muted)
-                            .child(count.to_string()),
-                    ),
+                    .child(kit::pane_title(title)),
                 cx,
             ),
         )
-    }
-
-    pub(super) fn dropdown_button(
-        &self,
-        id: &'static str,
-        label: impl Into<SharedString>,
-        font_size: f32,
-    ) -> gpui_base::Button {
-        let p = self.palette();
-        let label = label.into();
-        gpui_base::Button::new(id)
-            .accessibility_label(label.clone())
-            .h(px(CONTROL_HEIGHT))
-            .flex_shrink_0()
-            .px(px(8.))
-            .rounded(px(RADIUS_CONTROL))
-            .border_1()
-            .border_color(p.border)
-            .bg(p.surface)
-            .text_color(p.text)
-            .font_family(FONT_UI)
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(4.))
-            .hover(move |button| button.bg(p.hover))
-            .active(move |button| button.bg(p.selected))
-            .styles(|styles| {
-                styles
-                    .selected(|style| style.bg(p.selected))
-                    .disabled(|style| style.bg(p.surface).text_color(p.muted))
-            })
-            // Button::label clips text to a 1em line box in gpui-component.
-            // Own the label so descenders fit while long values still ellipsize.
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .text_size(px(font_size))
-                    .line_height(relative(1.5))
-                    .child(label),
-            )
-            .child(Self::icon("icons/chevron-down.svg", 12., p.secondary).flex_none())
     }
 
     pub(super) fn skills_manage_control(&self, cx: &mut Context<Self>) -> Popover {
@@ -928,60 +722,33 @@ impl KitterApp {
         Popover::new("skills-manage-menu")
             .appearance(false)
             .anchor(Anchor::TopLeft)
-            .trigger(
-                Button::new("skills-manage-trigger")
-                    .small()
-                    .custom(
-                        ButtonCustomVariant::new(cx)
-                            .color(rgba(0x00000000).into())
-                            .foreground(p.secondary.into())
-                            .hover(p.hover.into())
-                            .active(p.selected.into()),
-                    )
-                    .h(px(CONTROL_HEIGHT))
-                    .w(px(CONTROL_HEIGHT))
-                    .rounded(px(RADIUS_CONTROL))
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(18.))
-                            .text_color(p.secondary)
-                            .child("⋯"),
-                    ),
-            )
+            .trigger(kit::icon_trigger(
+                p,
+                "skills-manage-trigger",
+                "icons/ellipsis.svg",
+                t!("skills.more").to_string(),
+            ))
             .content(move |_, _, popover_cx| {
-                let mut menu = div()
-                    .w(px(180.))
-                    .p(px(4.))
-                    .rounded(px(RADIUS_MENU))
-                    .border_1()
-                    .border_color(p.border_strong)
-                    .bg(p.elevated)
-                    .shadow_lg();
+                let mut menu = kit::menu(p);
                 for (index, label) in labels.clone().into_iter().enumerate() {
                     let item_app = app.clone();
                     menu = menu.child(
-                        div()
-                            .id(ElementId::Name(
-                                format!("skills-manage-item-{index}").into(),
-                            ))
-                            .h(px(30.))
-                            .px(px(9.))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .cursor_pointer()
-                            .text_size(px(13.))
-                            .hover(move |row| row.bg(p.hover))
-                            .child(label)
-                            .on_click(popover_cx.listener(move |_, _, _, cx| {
+                        kit::menu_item(
+                            p,
+                            ElementId::Name(format!("skills-manage-item-{index}").into()),
+                            label,
+                            false,
+                        )
+                        .on_click(popover_cx.listener(
+                            move |_, _, _, cx| {
                                 let _ = item_app.update(cx, |this, cx| match index {
                                     0 => this.check_all_updates(cx),
                                     1 => this.open_tag_dialog(TagScope::Skills, cx),
                                     _ => this.open_group_dialog(cx),
                                 });
                                 cx.emit(DismissEvent);
-                            })),
+                            },
+                        )),
                     );
                 }
                 menu

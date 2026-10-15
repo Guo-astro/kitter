@@ -14,10 +14,9 @@ use gpui::*;
 use gpui_base::TextSelectionHandle;
 use gpui_component::{
     ActiveTheme as _, Icon, IconName, IconNamed as _, IndexPath, Root, Sizable as _,
-    Theme as ComponentTheme, ThemeMode as ComponentThemeMode,
-    button::{Button, ButtonCustomVariant, ButtonVariants as _},
+    ThemeMode as ComponentThemeMode,
     checkbox::Checkbox,
-    input::{Input, InputEvent, InputState},
+    input::{Editor, EditorState, Input, InputEvent, InputState},
     menu::{ContextMenuExt, PopupMenuItem},
     popover::Popover,
     select::{SelectEvent, SelectItem, SelectState},
@@ -47,11 +46,14 @@ mod components;
 mod effective_view;
 mod flows;
 mod install_flow;
+mod kit;
 mod layout;
 mod messages;
 mod motion;
 mod organize_flows;
 mod overlay_actions;
+mod preset_actions;
+mod presets_page;
 mod project_actions;
 mod projects_page;
 mod selectable_text;
@@ -99,10 +101,6 @@ fn display_effective_root(path: &Path, project: &Path) -> String {
         .unwrap_or_else(|| display_path(path))
 }
 
-fn project_tag_key(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
-}
-
 fn unique_installation_paths(installations: &[crate::ProjectSkillInstallation]) -> Vec<PathBuf> {
     let mut keys = HashSet::new();
     installations
@@ -146,13 +144,13 @@ fn effective_skill_rows(
 enum Page {
     Skills,
     Projects,
+    Presets,
     Settings,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TagScope {
     Skills,
-    Projects,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -165,6 +163,27 @@ enum DetailTab {
 enum ProjectSkillsTab {
     Skills,
     Plugins,
+    Presets,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PresetTab {
+    Skills,
+    AgentsMd,
+    Projects,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum PresetEdit {
+    Create,
+    Rename(String),
+}
+
+#[derive(Clone)]
+enum PresetConfirmation {
+    Delete(String),
+    Uninstall(String, PathBuf),
+    Overwrite(String, Vec<PathBuf>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -192,7 +211,7 @@ impl SelectItem for SourceChoice {
         Some(
             div()
                 .font_family(FONT_UI)
-                .text_size(px(13.))
+                .text_size(px(FS_BODY))
                 .child(self.label.clone())
                 .into_any_element(),
         )
@@ -201,7 +220,7 @@ impl SelectItem for SourceChoice {
     fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
         div()
             .font_family(FONT_UI)
-            .text_size(px(13.))
+            .text_size(px(FS_BODY))
             .child(self.label.clone())
     }
 
@@ -220,6 +239,9 @@ enum DialogKind {
     Groups,
     DeleteGroup,
     MoveGroup,
+    PresetName,
+    PresetSkills,
+    PresetConfirm,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -248,15 +270,8 @@ struct SkillDrag {
 }
 
 impl Render for SkillDrag {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px(px(10.))
-            .py(px(6.))
-            .rounded(px(RADIUS_CONTROL))
-            .bg(rgb(0xeeeeee))
-            .font_family(MONO)
-            .text_size(px(12.))
-            .child(self.name.clone())
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        kit::drag_preview(cx, self.name.clone())
     }
 }
 
@@ -271,21 +286,11 @@ struct GroupDrag {
     scope: GroupDragScope,
     id: String,
     name: String,
-    background: Rgba,
-    foreground: Rgba,
 }
 
 impl Render for GroupDrag {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px(px(10.))
-            .py(px(6.))
-            .rounded(px(RADIUS_CONTROL))
-            .bg(self.background)
-            .text_color(self.foreground)
-            .font_family(MONO)
-            .text_size(px(12.))
-            .child(self.name.clone())
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        kit::drag_preview(cx, self.name.clone())
     }
 }
 
@@ -311,15 +316,8 @@ struct TagDropTarget {
 }
 
 impl Render for TagDrag {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px(px(10.))
-            .py(px(6.))
-            .rounded(px(RADIUS_CONTROL))
-            .bg(rgb(0xeeeeee))
-            .font_family(MONO)
-            .text_size(px(12.))
-            .child(format!("#{}", self.name))
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        kit::drag_preview(cx, format!("#{}", self.name))
     }
 }
 
@@ -365,7 +363,7 @@ impl SelectItem for ProjectChoice {
                 .child(
                     div()
                         .font_family(FONT_UI)
-                        .text_size(px(13.))
+                        .text_size(px(FS_BODY))
                         .font_weight(FontWeight::MEDIUM)
                         .child(self.title()),
                 )
@@ -373,8 +371,8 @@ impl SelectItem for ProjectChoice {
                     div()
                         .mt(px(2.))
                         .font_family(MONO)
-                        .text_size(px(12.))
-                        .text_color(rgb(0x858590))
+                        .text_size(px(FS_SMALL))
+                        .opacity(0.6)
                         .truncate()
                         .child(display_path(&self.path)),
                 )
@@ -382,7 +380,7 @@ impl SelectItem for ProjectChoice {
         )
     }
 
-    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
+    fn render(&self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
             .min_w_0()
             .py(px(2.))
@@ -392,7 +390,7 @@ impl SelectItem for ProjectChoice {
             .child(
                 div()
                     .font_family(FONT_UI)
-                    .text_size(px(13.))
+                    .text_size(px(FS_BODY))
                     .font_weight(FontWeight::MEDIUM)
                     .child(self.title()),
             )
@@ -400,8 +398,8 @@ impl SelectItem for ProjectChoice {
                 div()
                     .mt(px(2.))
                     .font_family(MONO)
-                    .text_size(px(12.))
-                    .text_color(rgb(0x858590))
+                    .text_size(px(FS_SMALL))
+                    .text_color(cx.theme().muted_foreground)
                     .truncate()
                     .child(display_path(&self.path)),
             )
@@ -479,6 +477,7 @@ pub struct KitterApp {
     delete_flow: DeleteFlowState,
     tags_flow: TagsFlowState,
     groups_flow: GroupsFlowState,
+    presets_view: PresetsState,
 }
 
 impl KitterApp {
@@ -503,7 +502,7 @@ impl KitterApp {
             Theme::System if system_dark => ComponentThemeMode::Dark,
             Theme::System => ComponentThemeMode::Light,
         };
-        ComponentTheme::change(component_mode, Some(window), cx);
+        apply_component_theme(component_mode, Some(window), cx);
         let skills = library.list().unwrap_or_default();
         let known_groups = library
             .groups()
@@ -590,7 +589,7 @@ impl KitterApp {
             size: 14.,
         });
         let spinner_on_accent = cx.new(|_| SpinnerView {
-            color: initial_palette.on_accent,
+            color: initial_palette.on_primary,
             size: 12.,
         });
         let app = cx.entity();
@@ -700,6 +699,57 @@ impl KitterApp {
             },
         )
         .detach();
+        let preset_store = crate::preset::PresetStore::open_in(&data_dir).unwrap_or_else(|error| {
+            panic!(
+                "{}",
+                t!("errors.startup_failed", error = format!("{error:#}")).to_string()
+            )
+        });
+        let preset_name_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("presets.name_placeholder").to_string())
+        });
+        let preset_skill_search = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("common.search_skills").to_string())
+        });
+        let preset_agents_md = cx.new(|cx| {
+            EditorState::new(window, cx)
+                .line_number(true)
+                .folding(false)
+                .soft_wrap(true)
+        });
+        cx.subscribe_in(
+            &preset_name_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| match event {
+                InputEvent::Change => {
+                    this.presets_view.error = None;
+                    this.notify_dialog(cx);
+                }
+                InputEvent::PressEnter { .. } => this.commit_preset_name(cx),
+                InputEvent::Focus | InputEvent::Blur => {}
+            },
+        )
+        .detach();
+        cx.subscribe_in(
+            &preset_skill_search,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.notify_dialog(cx);
+                }
+            },
+        )
+        .detach();
+        cx.subscribe_in(
+            &preset_agents_md,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.save_preset_agents_md(cx);
+                }
+            },
+        )
+        .detach();
         let (tags, project_tags) = load_tag_states_from(&data_dir);
         let collapsed_groups = if library.config.collapsed_skill_groups_initialized {
             library
@@ -784,6 +834,7 @@ impl KitterApp {
                 modal: false,
                 global: true,
                 selected_targets: HashSet::new(),
+                preset: None,
             },
             delete_flow: DeleteFlowState {
                 confirmation: None,
@@ -795,7 +846,6 @@ impl KitterApp {
                 skills: tags,
                 projects: project_tags,
                 selected_skill_filter: None,
-                selected_project_filter: None,
                 scope: TagScope::Skills,
                 drop_target: None,
                 edit: None,
@@ -812,6 +862,23 @@ impl KitterApp {
                 delete_pending: None,
                 delete_skills: false,
                 move_skills: Vec::new(),
+            },
+            presets_view: PresetsState {
+                selected: preset_store
+                    .presets()
+                    .first()
+                    .map(|preset| preset.id.clone()),
+                store: preset_store,
+                tab: PresetTab::Skills,
+                name_input: preset_name_input,
+                edit: None,
+                error: None,
+                agents_md: preset_agents_md,
+                agents_md_for: RefCell::new(None),
+                skill_search: preset_skill_search,
+                picked_skills: HashSet::new(),
+                confirmation: None,
+                statuses: RefCell::new(BTreeMap::new()),
             },
         }
     }
@@ -869,17 +936,37 @@ impl KitterApp {
         selectable_text::SelectableText::new(selection, document_order, text)
     }
 
+    /// Search match for skill lists. `query` is already trimmed and
+    /// lowercased. Names and sources match anywhere; descriptions only at the
+    /// start of a word, so "matt" finds `ask-matt` but not "formatting".
+    fn skill_matches_query(&self, skill: &SkillSummary, query: &str) -> bool {
+        if query.is_empty()
+            || skill.record.name.to_lowercase().contains(query)
+            || self
+                .source_label(&skill.record.origin)
+                .to_lowercase()
+                .contains(query)
+        {
+            return true;
+        }
+        let description = skill.record.description.to_lowercase();
+        if !query.is_ascii() {
+            return description.contains(query);
+        }
+        description
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|word| word.starts_with(query))
+    }
+
     fn tags_for(&self, scope: TagScope) -> &TagState {
         match scope {
             TagScope::Skills => &self.tags_flow.skills,
-            TagScope::Projects => &self.tags_flow.projects,
         }
     }
 
     fn tags_for_mut(&mut self, scope: TagScope) -> &mut TagState {
         match scope {
             TagScope::Skills => &mut self.tags_flow.skills,
-            TagScope::Projects => &mut self.tags_flow.projects,
         }
     }
 
@@ -905,14 +992,12 @@ impl KitterApp {
     fn tag_filter_for(&self, scope: TagScope) -> Option<TagId> {
         match scope {
             TagScope::Skills => self.tags_flow.selected_skill_filter,
-            TagScope::Projects => self.tags_flow.selected_project_filter,
         }
     }
 
     fn set_tag_filter(&mut self, scope: TagScope, filter: Option<TagId>) {
         match scope {
             TagScope::Skills => self.tags_flow.selected_skill_filter = filter,
-            TagScope::Projects => self.tags_flow.selected_project_filter = filter,
         }
     }
 
@@ -957,6 +1042,7 @@ impl KitterApp {
             .map(|skill| skill_storage_name(skill).to_string())
             .collect::<Vec<_>>();
         self.skills_view.selection.reconcile(&order);
+        self.reload_presets();
         cx.notify();
     }
 
@@ -967,7 +1053,7 @@ impl KitterApp {
             cx.notify();
         });
         self.shell.spinner_on_accent.update(cx, |spinner, cx| {
-            spinner.color = p.on_accent;
+            spinner.color = p.on_primary;
             cx.notify();
         });
     }
@@ -1180,6 +1266,12 @@ impl KitterApp {
         self.groups_flow.name_input.update(cx, |input, cx| {
             input.set_placeholder(t!("common.group_name").to_string(), window, cx)
         });
+        self.presets_view.name_input.update(cx, |input, cx| {
+            input.set_placeholder(t!("presets.name_placeholder").to_string(), window, cx)
+        });
+        self.presets_view.skill_search.update(cx, |input, cx| {
+            input.set_placeholder(t!("common.search_skills").to_string(), window, cx)
+        });
         let placeholder = match self.add_flow.kind {
             AddKind::Npx => t!("add.source_placeholder").to_string(),
             AddKind::Claude => t!("add.plugin_placeholder").to_string(),
@@ -1253,6 +1345,9 @@ impl Render for DialogBody {
             DialogKind::Groups => app.group_management_modal(window, app_cx),
             DialogKind::DeleteGroup => app.group_delete_modal(app_cx),
             DialogKind::MoveGroup => app.move_group_modal(window, app_cx),
+            DialogKind::PresetName => app.preset_name_modal(app_cx),
+            DialogKind::PresetSkills => app.preset_skills_modal(app_cx),
+            DialogKind::PresetConfirm => app.preset_confirm_modal(app_cx),
         })
     }
 }
@@ -1263,6 +1358,7 @@ impl Render for PageBody {
             .update(cx, |app, app_cx| match app.shell.page {
                 Page::Skills => app.skills_page(window, app_cx),
                 Page::Projects => app.projects_page(window, app_cx),
+                Page::Presets => app.presets_page(window, app_cx),
                 Page::Settings => app.settings_page(window, app_cx),
             })
             .unwrap_or_else(|_| div())
@@ -1287,7 +1383,7 @@ impl Render for KitterApp {
             }))
             .font_family(FONT_UI)
             .text_color(p.text)
-            .text_size(px(14.))
+            .text_size(px(FS_EMPH))
             .bg(p.window)
             .flex();
         let main = div()
@@ -1320,54 +1416,28 @@ impl Render for KitterApp {
         }
         if let Some(notice) = self.shell.notice.clone() {
             let progress = self.model.update_check.clone();
-            let mut card = div()
+            let mut card = kit::toast(p)
                 .id("app-notice")
                 .debug_selector(|| "app-notice".into())
                 .absolute()
-                .right(px(18.))
-                .bottom(px(18.))
+                .right(px(16.))
+                .bottom(px(16.))
                 .max_w(px(420.))
                 .when(progress.is_some(), |card| card.min_w(px(240.)))
-                .px(px(13.))
-                .py(px(9.))
-                .rounded(px(RADIUS_MENU))
-                .border_1()
-                .border_color(p.border_strong)
-                .bg(p.surface)
-                .shadow_md()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .text_size(px(13.))
                 .child(notice);
             if let Some(progress) = progress {
                 if let Some(current) = progress.current.filter(|name| !name.is_empty()) {
                     card = card.child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(px(FS_SMALL))
                             .text_color(p.secondary)
                             .truncate()
                             .child(current),
                     );
                 }
                 if progress.total > 0 {
-                    let ratio = (progress.scanned as f32 / progress.total as f32).clamp(0., 1.);
-                    card = card.child(
-                        div()
-                            .relative()
-                            .w_full()
-                            .h(px(4.))
-                            .rounded(px(2.))
-                            .bg(p.raised)
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .h_full()
-                                    .rounded(px(2.))
-                                    .bg(p.accent)
-                                    .w(relative(ratio)),
-                            ),
-                    );
+                    let ratio = progress.scanned as f32 / progress.total as f32;
+                    card = card.child(kit::progress_bar(p, ratio));
                 }
             }
             root = root.child(card);
@@ -1379,8 +1449,10 @@ impl Render for KitterApp {
                 DialogKind::Delete => px(420.),
                 DialogKind::Tags | DialogKind::AssignTags => px(420.),
                 DialogKind::Groups => px(420.),
-                DialogKind::DeleteGroup => px(460.),
+                DialogKind::DeleteGroup => px(420.),
                 DialogKind::MoveGroup => px(420.),
+                DialogKind::PresetName | DialogKind::PresetConfirm => px(420.),
+                DialogKind::PresetSkills => px(520.),
             };
             root = root.child(
                 div()
@@ -1399,11 +1471,12 @@ impl Render for KitterApp {
                         div()
                             .w(width)
                             .max_h(px(680.))
-                            .rounded(px(RADIUS_MODAL))
+                            .rounded(px(R_2XL))
                             .border_1()
-                            .border_color(p.border)
+                            .border_color(p.border_strong)
+                            .bg(p.elevated)
                             .overflow_hidden()
-                            .shadow_lg()
+                            .shadow_2xl()
                             .child(body),
                     ),
             );
@@ -2052,6 +2125,202 @@ mod e2e_tests {
             );
         });
         assert!(cx.debug_bounds("app-notice").is_some());
+    }
+
+    #[test]
+    fn preset_workflow_runs_through_the_ui() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        use super::{DialogKind, Language, PresetEdit};
+        use gpui::{Focusable, VisualTestContext};
+        let mut cx = TestAppContext::single();
+        init(&mut cx);
+        let temp = tempfile::tempdir().unwrap();
+        let data_dir = temp.path().join("kitter-data");
+        let source = temp.path().join("skills");
+        for name in ["alpha", "beta", "gamma"] {
+            fs::create_dir_all(source.join(name)).unwrap();
+            fs::write(
+                source.join(name).join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: Fixture\n---\n"),
+            )
+            .unwrap();
+        }
+        let project = temp.path().join("web");
+        fs::create_dir_all(&project).unwrap();
+        fs::write(project.join("AGENTS.md"), "# Mine\n").unwrap();
+
+        let (app, cx) = cx.add_window_view({
+            let data_dir = data_dir.clone();
+            move |window, cx| KitterApp::new_in(data_dir, window, cx)
+        });
+        let project = app.update_in(cx, |app, window, cx| {
+            app.set_language(Language::ZhCn, window, cx);
+            for name in ["alpha", "beta", "gamma"] {
+                app.model
+                    .library
+                    .import(
+                        &source.join(name),
+                        crate::SkillRecord {
+                            name: name.into(),
+                            storage_name: String::new(),
+                            description: "Fixture".into(),
+                            origin: crate::SkillOrigin::Unknown,
+                            update_available: false,
+                            group_id: None,
+                            last_operated_at: 0,
+                        },
+                    )
+                    .unwrap();
+            }
+            app.model.library.config.touch_project(&project);
+            app.model.library.save().unwrap();
+            app.refresh(cx);
+            app.model.library.config.project_paths()[0].clone()
+        });
+        let skills_dir = project.join(".agents/skills");
+        let agents_md = || fs::read_to_string(project.join("AGENTS.md")).unwrap();
+        let rendered = |cx: &mut VisualTestContext, selector: &'static str| {
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            cx.debug_bounds(selector).is_some()
+        };
+        let click = |cx: &mut VisualTestContext, selector: &'static str| {
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            let bounds = cx
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("{selector} should be rendered"));
+            cx.simulate_click(bounds.center(), Modifiers::none());
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+        };
+
+        // Create a preset and fill it with skills.
+        click(cx, "nav-presets");
+        assert!(rendered(cx, "empty-new-preset"));
+        click(cx, "add-preset");
+        cx.simulate_input("前端");
+        click(cx, "confirm-preset-name");
+        let id = cx.read_entity(&app, |app, _| {
+            let preset = app
+                .selected_preset()
+                .expect("new preset should be selected");
+            assert_eq!(preset.name, "前端");
+            preset.id.clone()
+        });
+        click(cx, "add-preset-skill");
+        click(cx, "pick-preset-skill-alpha");
+        click(cx, "pick-preset-skill-beta");
+        click(cx, "confirm-preset-skills");
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.selected_preset().unwrap().skills, ["alpha", "beta"]);
+            assert!(app.shell.dialog_body.is_none());
+        });
+
+        // Typing into the AGENTS.md tab saves the template.
+        click(cx, "preset-tab-agents-md");
+        app.update_in(cx, |app, window, cx| {
+            app.presets_view
+                .agents_md
+                .focus_handle(cx)
+                .focus(window, cx);
+        });
+        cx.simulate_input("Use pnpm.");
+        cx.run_until_parked();
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.presets_view.store.agents_md(&id).unwrap(), "Use pnpm.");
+        });
+
+        // Install it from the project page.
+        click(cx, "nav-projects");
+        click(cx, String::leak(format!("project-{}", project.display())));
+        click(cx, "project-skills-tab-presets");
+        click(cx, "install-project-preset");
+        click(cx, "install-project-preset-option-0");
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.install_flow.preset.as_deref(), Some(id.as_str()));
+            assert!(!app.install_flow.global);
+            assert_eq!(app.projects_view.open_project.as_ref(), Some(&project));
+        });
+        if !cx.read_entity(&app, |app, _| {
+            app.install_flow
+                .selected_targets
+                .contains(&crate::InstallTarget::Universal)
+        }) {
+            click(cx, "target-universal");
+        }
+        click(cx, "confirm-install");
+        assert!(skills_dir.join("alpha").exists() && skills_dir.join("beta").exists());
+        assert_eq!(
+            agents_md(),
+            format!(
+                "# Mine\n\n<!-- kitter:preset:{id} -->\nUse pnpm.\n<!-- /kitter:preset:{id} -->\n"
+            )
+        );
+        assert!(rendered(cx, "open-project-preset-0"));
+        assert!(!rendered(cx, "sync-project-preset-0"));
+
+        // Editing the preset asks the project to sync.
+        click(cx, "open-project-preset-0");
+        click(cx, "preset-tab-skills");
+        click(cx, "add-preset-skill");
+        click(cx, "pick-preset-skill-gamma");
+        click(cx, "confirm-preset-skills");
+        click(cx, "preset-tab-projects");
+        assert!(rendered(cx, "sync-all-preset-projects"));
+        click(cx, "sync-preset-project-0");
+        assert!(skills_dir.join("gamma").exists());
+        assert!(!rendered(cx, "sync-preset-project-0"));
+
+        // A block edited in the project is only overwritten after confirmation.
+        fs::write(
+            project.join("AGENTS.md"),
+            agents_md().replace("Use pnpm.", "Use npm."),
+        )
+        .unwrap();
+        app.update(cx, |app, cx| app.refresh(cx));
+        click(cx, "sync-preset-project-0");
+        cx.read_entity(&app, |app, cx| {
+            assert!(matches!(
+                app.shell.dialog_body.as_ref().unwrap().read(cx).kind,
+                DialogKind::PresetConfirm
+            ));
+        });
+        assert!(agents_md().contains("Use npm."));
+        click(cx, "confirm-overwrite-preset");
+        assert!(agents_md().contains("Use pnpm."));
+
+        // Rename, then remove it from the project.
+        app.update_in(cx, |app, window, cx| {
+            app.open_preset_name_dialog(PresetEdit::Rename(id.clone()), window, cx);
+            app.presets_view
+                .name_input
+                .update(cx, |input, cx| input.set_value("", window, cx));
+        });
+        cx.simulate_input("Web");
+        click(cx, "confirm-preset-name");
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(app.selected_preset().unwrap().name, "Web");
+        });
+        click(cx, "nav-projects");
+        click(cx, "remove-project-preset-0");
+        click(cx, "confirm-uninstall-preset");
+        assert_eq!(agents_md(), "# Mine\n");
+        for name in ["alpha", "beta", "gamma"] {
+            assert!(!skills_dir.join(name).exists());
+        }
+
+        // Delete the preset.
+        click(cx, "nav-presets");
+        click(cx, "delete-preset");
+        click(cx, "confirm-delete-preset");
+        cx.read_entity(&app, |app, _| {
+            assert!(app.presets_view.store.presets().is_empty());
+        });
+        assert!(rendered(cx, "empty-new-preset"));
     }
 }
 

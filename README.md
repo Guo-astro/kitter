@@ -82,7 +82,20 @@ The per-agent token estimate helps you spot skills that add unnecessary context 
   <img src="./assets/readme/project-effective-skills.en.png" width="100%" alt="Kitter project view showing managed and unmanaged effective skills, plugins, agents, and estimated context cost">
 </p>
 
-### 4. Update once
+### 4. Reuse a setup with presets
+
+A preset bundles skills with optional AGENTS.md instructions. Open **Presets** to build one, then install it into a project in one step. Kitter appends the preset's instructions to the project's `AGENTS.md` inside a managed block and leaves your own content untouched.
+
+When you change a preset, its projects show that they need a sync, and you choose when to apply it. Removing a preset from a project removes only what it installed.
+
+```bash
+kitter preset create frontend
+kitter preset add frontend react typescript
+kitter preset install frontend --project /path/to/project --target universal
+kitter preset sync frontend
+```
+
+### 5. Update once
 
 Run **Check for updates** from the desktop app or use `kitter check` and `kitter update`. Every managed project continues to use the same maintained source.
 

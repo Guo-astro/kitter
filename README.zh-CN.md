@@ -82,7 +82,20 @@ DimAgent 使用共享安装选项。Oh My Pi（omp）可以使用共享选项，
   <img src="./assets/readme/project-effective-skills.zh-CN.png" width="100%" alt="Kitter 项目视图展示托管与非托管的实际生效 Skill、插件、Agent 和上下文开销估算">
 </p>
 
-### 4. 只更新一次
+### 4. 用预设复用一套配置
+
+预设把一组 Skill 和可选的 AGENTS.md 指令打包在一起。在 **预设** 中创建后，可一键安装到项目。Kitter 会把预设的指令追加到项目 `AGENTS.md` 的托管区块中，不会改动你自己写的内容。
+
+修改预设后，相关项目会显示需要同步，由你决定何时应用。从项目移除预设时，只会移除它安装的内容。
+
+```bash
+kitter preset create frontend
+kitter preset add frontend react typescript
+kitter preset install frontend --project /path/to/project --target universal
+kitter preset sync frontend
+```
+
+### 5. 只更新一次
 
 在桌面应用中执行 **检查更新**，或使用 `kitter check` 和 `kitter update`。所有托管项目会继续使用同一份维护来源。
 
