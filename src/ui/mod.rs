@@ -3,7 +3,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -71,15 +71,6 @@ use gpui_component::resizable::ResizableState;
 use skill_selection::SkillSelection;
 use state::*;
 use theme::*;
-
-static CODEX_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static CLAUDE_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static OPENCLAW_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static AMP_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static ANTIGRAVITY_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static TRAE_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static OMP_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
-static DIMAGENT_COLOR_IMAGE: OnceLock<Arc<RenderImage>> = OnceLock::new();
 
 fn display_path(path: &Path) -> String {
     let Some(home) = dirs::home_dir() else {

@@ -1,4 +1,9 @@
+use std::{collections::HashMap, sync::LazyLock};
+
 use super::*;
+
+static BRAND_IMAGES: LazyLock<Mutex<HashMap<String, Arc<RenderImage>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 impl KitterApp {
     pub(super) fn icon_path(path: &'static str) -> SharedString {
@@ -35,62 +40,36 @@ impl KitterApp {
             .icon(Icon::default().path("icons/trash.svg").text_color(danger))
     }
 
-    pub(super) fn brand_icon(path: &'static str, size: f32, color: impl Into<Hsla>) -> AnyElement {
-        let color = color.into();
-        if Self::is_color_brand_icon(path) {
-            Self::color_brand_icon(path, size).into_any_element()
-        } else {
-            svg()
-                .path(path)
-                .size(px(size))
-                .flex_none()
-                .text_color(color)
-                .into_any_element()
-        }
-    }
-
-    pub(super) fn is_color_brand_icon(path: &'static str) -> bool {
-        matches!(
-            path,
-            "icons/provider-codex.svg"
-                | "icons/provider-claude.svg"
-                | "icons/provider-openclaw.svg"
-                | "icons/provider-amp.svg"
-                | "icons/provider-antigravity.svg"
-                | "icons/provider-trae.svg"
-                | "icons/provider-omp.svg"
-                | "icons/provider-dimagent.svg"
-        )
-    }
-
-    pub(super) fn color_brand_icon(path: &'static str, size: f32) -> Img {
-        let cache = match path {
-            "icons/provider-codex.svg" => &CODEX_COLOR_IMAGE,
-            "icons/provider-claude.svg" => &CLAUDE_COLOR_IMAGE,
-            "icons/provider-openclaw.svg" => &OPENCLAW_COLOR_IMAGE,
-            "icons/provider-amp.svg" => &AMP_COLOR_IMAGE,
-            "icons/provider-antigravity.svg" => &ANTIGRAVITY_COLOR_IMAGE,
-            "icons/provider-trae.svg" => &TRAE_COLOR_IMAGE,
-            "icons/provider-omp.svg" => &OMP_COLOR_IMAGE,
-            "icons/provider-dimagent.svg" => &DIMAGENT_COLOR_IMAGE,
-            _ => unreachable!("color_brand_icon called for a monochrome icon"),
-        };
+    pub(super) fn brand_icon(path: &'static str, size: f32, dark: bool) -> AnyElement {
         img(ImageSource::Custom(Arc::new(move |_, cx| {
-            if let Some(image) = cache.get() {
+            let dark_path = format!("{}.dark.svg", path.trim_end_matches(".svg"));
+            let (path, bytes) = if let Some(bytes) = dark
+                .then(|| cx.asset_source().load(&dark_path).ok().flatten())
+                .flatten()
+            {
+                (dark_path, bytes)
+            } else {
+                (
+                    path.to_string(),
+                    cx.asset_source().load(path).ok().flatten()?,
+                )
+            };
+            let mut cache = BRAND_IMAGES.lock().unwrap();
+            if let Some(image) = cache.get(&path) {
                 return Some(Ok(image.clone()));
             }
-            let bytes = cx.asset_source().load(path).ok().flatten()?;
             let image = cx
                 .svg_renderer()
                 .render_single_frame(bytes.as_ref(), 2.0)
                 .map_err(ImageCacheError::from);
             if let Ok(image) = &image {
-                let _ = cache.set(image.clone());
+                cache.insert(path, image.clone());
             }
             Some(image)
         })))
         .size(px(size))
         .flex_none()
+        .into_any_element()
     }
 
     pub(super) fn brand_icon_size(path: &'static str, base: f32) -> f32 {
@@ -231,7 +210,7 @@ impl KitterApp {
                                             Self::brand_icon(
                                                 icon,
                                                 Self::brand_icon_size(icon, 18.),
-                                                p.text,
+                                                p.dark,
                                             )
                                         }
                                         crate::agent_plugins::AgentIcon::Monogram => div()

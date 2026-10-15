@@ -108,6 +108,10 @@ const ICONS: &[(&str, &[u8])] = &[
         include_bytes!("../assets/icons/provider-cursor.svg"),
     ),
     (
+        "icons/provider-cursor.dark.svg",
+        include_bytes!("../assets/icons/provider-cursor.dark.svg"),
+    ),
+    (
         "icons/provider-gemini.svg",
         include_bytes!("../assets/icons/provider-gemini.svg"),
     ),
@@ -124,12 +128,24 @@ const ICONS: &[(&str, &[u8])] = &[
         include_bytes!("../assets/icons/provider-opencode.svg"),
     ),
     (
+        "icons/provider-opencode.dark.svg",
+        include_bytes!("../assets/icons/provider-opencode.dark.svg"),
+    ),
+    (
         "icons/provider-pi.svg",
         include_bytes!("../assets/icons/provider-pi.svg"),
     ),
     (
+        "icons/provider-pi.dark.svg",
+        include_bytes!("../assets/icons/provider-pi.dark.svg"),
+    ),
+    (
         "icons/provider-grok.svg",
         include_bytes!("../assets/icons/provider-grok.svg"),
+    ),
+    (
+        "icons/provider-grok.dark.svg",
+        include_bytes!("../assets/icons/provider-grok.dark.svg"),
     ),
     (
         "icons/provider-openclaw.svg",
@@ -140,8 +156,16 @@ const ICONS: &[(&str, &[u8])] = &[
         include_bytes!("../assets/icons/provider-hermes.svg"),
     ),
     (
+        "icons/provider-hermes.dark.svg",
+        include_bytes!("../assets/icons/provider-hermes.dark.svg"),
+    ),
+    (
         "icons/provider-droid.svg",
         include_bytes!("../assets/icons/provider-droid.svg"),
+    ),
+    (
+        "icons/provider-droid.dark.svg",
+        include_bytes!("../assets/icons/provider-droid.dark.svg"),
     ),
     (
         "icons/provider-antigravity.svg",

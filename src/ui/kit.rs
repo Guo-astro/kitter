@@ -563,16 +563,24 @@ pub(super) fn avatar(p: Palette, path: &'static str) -> Div {
         .flex()
         .items_center()
         .justify_center()
-        .child(KitterApp::brand_icon(
-            path,
-            KitterApp::brand_icon_size(path, ICON_MD),
-            p.text,
-        ))
+        .child(KitterApp::icon(path, ICON_MD, p.text))
 }
 
 pub(super) fn agent_avatar(p: Palette, agent: &crate::agent_plugins::AgentDef) -> Div {
     match agent.icon {
-        crate::agent_plugins::AgentIcon::Builtin(path) => avatar(p, path),
+        crate::agent_plugins::AgentIcon::Builtin(path) => div()
+            .size(px(AVATAR))
+            .flex_none()
+            .rounded_full()
+            .bg(p.avatar)
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(KitterApp::brand_icon(
+                path,
+                KitterApp::brand_icon_size(path, ICON_MD),
+                p.dark,
+            )),
         crate::agent_plugins::AgentIcon::Monogram => div()
             .size(px(AVATAR))
             .flex_none()

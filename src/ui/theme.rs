@@ -54,6 +54,7 @@ pub(super) const ICON_XS: f32 = 12.;
 
 #[derive(Clone, Copy)]
 pub(super) struct Palette {
+    pub dark: bool,
     pub window: Rgba,
     pub window_border: Rgba,
     pub base: Rgba,
@@ -85,6 +86,7 @@ pub(super) struct Palette {
 impl Palette {
     pub fn dark() -> Self {
         Self {
+            dark: true,
             window: rgb(0x141414),
             window_border: rgba(0xb0b0b04d),
             base: rgb(0x181818),
@@ -114,6 +116,7 @@ impl Palette {
 
     pub fn light() -> Self {
         Self {
+            dark: false,
             window: rgb(0xf5f5f5),
             window_border: rgba(0x64646459),
             base: rgb(0xffffff),
