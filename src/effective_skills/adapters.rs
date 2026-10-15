@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use super::additional_agents::{DimAgentAdapter, OmpAdapter};
 use super::scanner::ScanProfile;
 use super::{
-    AgentContextEstimate, AmpPolicy, AntigravityPolicy, ClaudeCodeAdapter, CodexAdapter,
+    AgentContextEstimate, AgentKind, AmpPolicy, AntigravityPolicy, ClaudeCodeAdapter, CodexAdapter,
     CopilotPolicy, CursorPolicy, DiscoveryContext, DroidPolicy, EffectiveSkill, GrokAdapter,
     HermesPolicy, MetadataProfile, OpenClawPolicy, OpenCodePolicy, PiAdapter, SkillScope, discover,
     estimate_skills, estimate_with_policy, estimate_with_profile, normalize_grok_name,
@@ -180,40 +180,74 @@ pub(super) fn inspect_project(
     context: &DiscoveryContext,
     include_global_only: bool,
 ) -> Vec<AgentContextEstimate> {
-    let dimagent = DimAgentAdapter {
-        home: super::additional_agents::dim_home(context),
-    };
-    let adapters: [&dyn AgentAdapter; 12] = [
-        &CodexAdapter,
-        &ClaudeCodeAdapter,
-        &CursorAdapter,
-        &OpenCodeAdapter,
-        &CopilotAdapter,
-        &AntigravityAdapter,
-        &AmpAdapter,
-        &DroidAdapter,
-        &PiAdapter,
-        &OmpAdapter,
-        &dimagent,
-        &GrokAdapter,
+    let agents = [
+        AgentKind::Codex,
+        AgentKind::ClaudeCode,
+        AgentKind::Cursor,
+        AgentKind::OpenCode,
+        AgentKind::Copilot,
+        AgentKind::Antigravity,
+        AgentKind::Amp,
+        AgentKind::Droid,
+        AgentKind::Pi,
+        AgentKind::Omp,
+        AgentKind::DimAgent,
+        AgentKind::Grok,
     ];
-    let mut estimates = adapters
+    let mut estimates = agents
         .into_iter()
-        .map(|adapter| adapter.inspect(context))
+        .map(|agent| inspect_agent(agent, context))
         .collect::<Vec<_>>();
     if include_global_only {
         estimates.extend([
-            OpenClawAdapter.inspect(context),
-            HermesAdapter.inspect(context),
+            inspect_agent(AgentKind::OpenClaw, context),
+            inspect_agent(AgentKind::Hermes, context),
         ]);
     }
     estimates
 }
 
+pub(super) fn inspect_agent(agent: AgentKind, context: &DiscoveryContext) -> AgentContextEstimate {
+    match agent {
+        AgentKind::Codex => CodexAdapter.inspect(context),
+        AgentKind::ClaudeCode => ClaudeCodeAdapter.inspect(context),
+        AgentKind::Cursor => CursorAdapter.inspect(context),
+        AgentKind::OpenCode => OpenCodeAdapter.inspect(context),
+        AgentKind::Copilot => CopilotAdapter.inspect(context),
+        AgentKind::Antigravity => AntigravityAdapter.inspect(context),
+        AgentKind::Amp => AmpAdapter.inspect(context),
+        AgentKind::Droid => DroidAdapter.inspect(context),
+        AgentKind::Pi => PiAdapter.inspect(context),
+        AgentKind::Omp => OmpAdapter.inspect(context),
+        AgentKind::Grok => GrokAdapter.inspect(context),
+        AgentKind::OpenClaw => OpenClawAdapter.inspect(context),
+        AgentKind::Hermes => HermesAdapter.inspect(context),
+        AgentKind::DimAgent => DimAgentAdapter {
+            home: super::additional_agents::dim_home(context),
+        }
+        .inspect(context),
+    }
+}
+
 #[cfg(test)]
-pub(super) fn inspect_dimagent(
-    context: &DiscoveryContext,
-    home: std::path::PathBuf,
-) -> AgentContextEstimate {
-    DimAgentAdapter { home }.inspect(context)
+pub(super) fn render_catalog(agent: AgentKind, skills: &[EffectiveSkill]) -> String {
+    let policy: &dyn super::AgentSkillPolicy = match agent {
+        AgentKind::Codex => &CodexAdapter,
+        AgentKind::ClaudeCode => &ClaudeCodeAdapter,
+        AgentKind::Cursor => &CursorPolicy,
+        AgentKind::OpenCode => &OpenCodePolicy,
+        AgentKind::Copilot => &CopilotPolicy,
+        AgentKind::Antigravity => &AntigravityPolicy,
+        AgentKind::Amp => &AmpPolicy,
+        AgentKind::Droid => &DroidPolicy,
+        AgentKind::Pi => &PiAdapter,
+        AgentKind::Omp => &OmpAdapter,
+        AgentKind::Grok => &GrokAdapter,
+        AgentKind::OpenClaw => &OpenClawPolicy,
+        AgentKind::Hermes => &HermesPolicy,
+        AgentKind::DimAgent => &DimAgentAdapter {
+            home: Default::default(),
+        },
+    };
+    policy.render_initial_catalog(skills).text
 }

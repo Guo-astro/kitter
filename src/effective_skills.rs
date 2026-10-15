@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 mod adapters;
 mod additional_agents;
 mod catalog;
+#[cfg(test)]
+mod golden;
 mod scanner;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -478,19 +480,6 @@ struct PiAdapter;
 struct GrokAdapter;
 struct OpenClawPolicy;
 struct HermesPolicy;
-
-#[cfg(test)]
-#[allow(non_upper_case_globals)]
-const CodexPolicy: CodexAdapter = CodexAdapter;
-#[cfg(test)]
-#[allow(non_upper_case_globals)]
-const ClaudeCodePolicy: ClaudeCodeAdapter = ClaudeCodeAdapter;
-#[cfg(test)]
-#[allow(non_upper_case_globals)]
-const PiPolicy: PiAdapter = PiAdapter;
-#[cfg(test)]
-#[allow(non_upper_case_globals)]
-const GrokPolicy: GrokAdapter = GrokAdapter;
 
 pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
     let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
@@ -3267,7 +3256,7 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: Some(temp.path().join("repo")),
         };
-        let estimate = estimate_with_policy(&PiPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
         assert_eq!(estimate.discovered_count, 2);
         assert_eq!(estimate.model_visible_count, 1);
         assert_eq!(estimate.manual_only_count, 1);
@@ -3290,57 +3279,101 @@ mod tests {
     #[test]
     fn invocation_extensions_are_only_applied_by_providers_that_support_them() {
         let temp = tempdir().unwrap();
-        let skill = temp.path().join("manual");
-        write_skill(
-            temp.path(),
-            "manual",
-            "disable-model-invocation: true\nmetadata:\n  opencode:\n    autoinvoke: false\n",
-        );
-        let metadata = read_metadata(&skill.join("SKILL.md")).unwrap();
+        for root in [
+            ".claude/skills",
+            ".agents/skills",
+            ".factory/skills",
+            ".grok/skills",
+            ".hermes/skills",
+        ] {
+            write_skill(
+                &temp.path().join("home").join(root),
+                "manual",
+                "disable-model-invocation: true\nmetadata:\n  opencode:\n    autoinvoke: false\n",
+            );
+        }
         let context = DiscoveryContext {
             cwd: temp.path().to_path_buf(),
             home: temp.path().join("home"),
             repository_root: None,
         };
 
-        for policy in [
-            &ClaudeCodePolicy as &dyn AgentSkillPolicy,
-            &CursorPolicy,
-            &OpenCodePolicy,
-            &CopilotPolicy,
-            &DroidPolicy,
-            &PiPolicy,
-            &GrokPolicy,
-            &OpenClawPolicy,
+        for agent in [
+            AgentKind::ClaudeCode,
+            AgentKind::Cursor,
+            AgentKind::OpenCode,
+            AgentKind::Copilot,
+            AgentKind::Droid,
+            AgentKind::Pi,
+            AgentKind::Grok,
+            AgentKind::OpenClaw,
         ] {
             assert_eq!(
-                policy.visibility(&skill, &metadata, &context),
+                adapters::inspect_agent(agent, &context)
+                    .skills
+                    .iter()
+                    .find(|skill| skill.name == "manual")
+                    .unwrap()
+                    .visibility,
                 SkillVisibility::ManualOnly,
                 "{} should honor its manual invocation metadata",
-                policy.agent().label()
+                agent.label()
             );
         }
 
-        for policy in [
-            &AntigravityPolicy as &dyn AgentSkillPolicy,
-            &AmpPolicy,
-            &HermesPolicy,
-        ] {
+        for agent in [AgentKind::Antigravity, AgentKind::Amp, AgentKind::Hermes] {
             assert_eq!(
-                policy.visibility(&skill, &metadata, &context),
+                adapters::inspect_agent(agent, &context)
+                    .skills
+                    .iter()
+                    .find(|skill| skill.name == "manual")
+                    .unwrap()
+                    .visibility,
                 SkillVisibility::Automatic,
                 "{} must not honor unsupported invocation metadata",
-                policy.agent().label()
+                agent.label()
             );
         }
     }
 
     #[test]
     fn codex_token_estimate_is_not_capped_at_two_thousand() {
-        let policy = CodexPolicy;
-        let rendered = "x".repeat(8_001);
-
-        assert_eq!(policy.estimate_tokens(&rendered), 2_001);
+        let temp = tempdir().unwrap();
+        let home = temp.path().join("home");
+        let root = home.join(".codex/skills");
+        for index in 0..8 {
+            write_skill(&root, &format!("skill-{index}"), "");
+        }
+        let context = DiscoveryContext {
+            cwd: home.clone(),
+            home,
+            repository_root: None,
+        };
+        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        let rendered = adapters::render_catalog(AgentKind::Codex, &estimate.skills);
+        // Fill the catalog to the original 8,001-byte input without hitting
+        // the per-description limit or the listing budget.
+        let mut remaining = 8_001 - rendered.len();
+        for index in 0..8 {
+            let padding = remaining.min(1_020);
+            remaining -= padding;
+            let name = format!("skill-{index}");
+            fs::write(
+                root.join(&name).join("SKILL.md"),
+                format!(
+                    "---\nname: {name}\ndescription: Test{}\n---\nBody",
+                    "x".repeat(padding)
+                ),
+            )
+            .unwrap();
+        }
+        assert_eq!(remaining, 0);
+        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
+        assert_eq!(
+            adapters::render_catalog(AgentKind::Codex, &estimate.skills).len(),
+            8_001
+        );
+        assert_eq!(estimate.estimated_tokens, 2_001);
     }
 
     #[test]
@@ -3356,7 +3389,7 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&PiPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
         assert_eq!(estimate.discovered_count, 1);
         assert!(estimate.skills[0].path.starts_with(cwd));
     }
@@ -3394,7 +3427,7 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&PiPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
         assert_eq!(estimate.discovered_count, 2);
         assert!(estimate.skills.iter().any(|skill| skill.name == "direct"));
         assert!(estimate.skills.iter().any(|skill| skill.name == "second"));
@@ -3433,7 +3466,7 @@ mod tests {
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&PiPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
         for name in ["user-claude", "user-codex", "project-claude", "shared"] {
             assert!(
                 estimate.skills.iter().any(|skill| skill.name == name),
@@ -3495,14 +3528,14 @@ mod tests {
             home: temp.path().join("home"),
             repository_root: None,
         };
-        let estimate = estimate_with_policy(&PiPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Pi, &context);
         assert!(
             estimate
                 .skills
                 .iter()
                 .all(|skill| skill.name != "no-description")
         );
-        let rendered = PiPolicy.render_visible_metadata(&estimate.skills);
+        let rendered = adapters::render_catalog(AgentKind::Pi, &estimate.skills);
         assert!(rendered.starts_with("\n\nThe following skills provide specialized instructions"));
         assert!(rendered.contains("<location>"));
         assert_eq!(estimate.estimated_tokens, approx_token_count(&rendered));
@@ -3649,7 +3682,7 @@ path = 'D:\skills\active\SKILL.md'
             .iter()
             .find(|skill| skill.name == "release-notes")
             .unwrap();
-        let rendered = GrokPolicy.render_visible_metadata(std::slice::from_ref(command));
+        let rendered = adapters::render_catalog(AgentKind::Grok, std::slice::from_ref(command));
         assert!(rendered.starts_with("<system-reminder>"));
         assert!(rendered.contains("The following skills are available for use:"));
         assert!(rendered.contains("Absolute path:"));
@@ -3765,7 +3798,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&CodexPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
         let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
         assert_eq!(plugin_skills.len(), 1);
         assert_eq!(plugin_skills[0].name, "release");
@@ -3925,7 +3958,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&CodexPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
         let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
         let names = plugin_skills
             .iter()
@@ -3979,7 +4012,7 @@ path = 'D:\skills\active\SKILL.md'
             repository_root: Some(repo),
         };
 
-        let estimate = estimate_with_policy(&CodexPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
         assert!(
             estimate
                 .skills
@@ -4090,12 +4123,8 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        for policy in [
-            &CursorPolicy as &dyn AgentSkillPolicy,
-            &CopilotPolicy as &dyn AgentSkillPolicy,
-            &AmpPolicy as &dyn AgentSkillPolicy,
-        ] {
-            let estimate = estimate_with_policy(policy, &context);
+        for agent in [AgentKind::Cursor, AgentKind::Copilot, AgentKind::Amp] {
+            let estimate = adapters::inspect_agent(agent, &context);
             assert!(
                 estimate
                     .skills
@@ -4126,7 +4155,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo.clone()),
         };
-        let estimate = estimate_with_policy(&CursorPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Cursor, &context);
 
         assert_eq!(estimate.discovered_count, 1);
         assert_eq!(estimate.model_visible_count, 1);
@@ -4179,7 +4208,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&CodexPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Codex, &context);
         assert!(!estimate.plugin_skills().any(|skill| skill.name == "hidden"));
     }
 
@@ -4223,7 +4252,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&ClaudeCodePolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::ClaudeCode, &context);
         let plugin_skills = estimate.plugin_skills().collect::<Vec<_>>();
         assert_eq!(plugin_skills.len(), 1);
         assert_eq!(plugin_skills[0].name, "Deployer UI:release");
@@ -4259,7 +4288,7 @@ path = 'D:\skills\active\SKILL.md'
             home: home.clone(),
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&ClaudeCodePolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::ClaudeCode, &context);
         assert_eq!(
             estimate
                 .skills
@@ -4317,7 +4346,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&OpenCodePolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::OpenCode, &context);
         assert!(estimate.skills.iter().any(|skill| {
             skill.name == "still-visible" && skill.visibility == SkillVisibility::Automatic
         }));
@@ -4348,7 +4377,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&OpenCodePolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::OpenCode, &context);
         let skill = estimate
             .skills
             .iter()
@@ -4358,9 +4387,7 @@ path = 'D:\skills\active\SKILL.md'
         assert_eq!(skill.scope, SkillScope::Repository);
         assert_eq!(skill.visibility, SkillVisibility::ManualOnly);
         assert!(
-            !OpenCodePolicy
-                .render_visible_metadata(&estimate.skills)
-                .contains("<location>")
+            !adapters::render_catalog(AgentKind::OpenCode, &estimate.skills).contains("<location>")
         );
     }
 
@@ -4386,7 +4413,7 @@ path = 'D:\skills\active\SKILL.md'
             home,
             repository_root: Some(repo),
         };
-        let estimate = estimate_with_policy(&OpenCodePolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::OpenCode, &context);
         assert!(!estimate.skills.iter().any(|skill| skill.name == "keep"));
     }
 
@@ -4419,7 +4446,7 @@ path = 'D:\skills\active\SKILL.md'
             repository_root: None,
         };
 
-        let estimate = estimate_with_policy(&OpenClawPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::OpenClaw, &context);
         assert_eq!(
             estimate
                 .skills
@@ -4464,7 +4491,7 @@ path = 'D:\skills\active\SKILL.md'
             repository_root: None,
         };
 
-        let estimate = estimate_with_policy(&HermesPolicy, &context);
+        let estimate = adapters::inspect_agent(AgentKind::Hermes, &context);
         assert!(estimate.skills.iter().any(|skill| skill.name == "local"));
         assert!(estimate.skills.iter().any(|skill| skill.name == "external"));
         assert!(
@@ -4474,9 +4501,7 @@ path = 'D:\skills\active\SKILL.md'
                 .any(|skill| skill.name == "not-implicit")
         );
         assert!(
-            !HermesPolicy
-                .render_visible_metadata(&estimate.skills)
-                .contains("SKILL.md")
+            !adapters::render_catalog(AgentKind::Hermes, &estimate.skills).contains("SKILL.md")
         );
     }
 }

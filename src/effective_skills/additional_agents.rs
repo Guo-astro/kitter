@@ -455,13 +455,7 @@ mod tests {
         }
     }
     fn estimate(context: &DiscoveryContext, agent: AgentKind) -> AgentContextEstimate {
-        if agent == AgentKind::DimAgent {
-            return adapters::inspect_dimagent(context, context.home.join(".dimcode/v2"));
-        }
-        adapters::inspect_project(context, false)
-            .into_iter()
-            .find(|s| s.agent == agent)
-            .unwrap()
+        adapters::inspect_agent(agent, context)
     }
 
     #[test]
