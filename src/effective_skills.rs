@@ -2633,7 +2633,7 @@ fn expand_user_path(value: &str, context: &DiscoveryContext) -> PathBuf {
     }
 }
 
-fn wildcard_match(pattern: &str, value: &str) -> bool {
+pub(crate) fn wildcard_match(pattern: &str, value: &str) -> bool {
     let parts = pattern.split('*').collect::<Vec<_>>();
     if parts.len() == 1 {
         return pattern == value;
@@ -2654,7 +2654,7 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
     pattern.ends_with('*') || rest.is_empty()
 }
 
-fn normalize_jsonc(content: &str) -> String {
+pub(crate) fn normalize_jsonc(content: &str) -> String {
     let mut without_comments = String::with_capacity(content.len());
     let mut chars = content.chars().peekable();
     let mut in_string = false;
@@ -3036,7 +3036,7 @@ fn skill_config_entries(config: &str) -> Vec<(PathBuf, bool)> {
         .collect()
 }
 
-fn cwd_to_boundary(cwd: &Path, boundary: Option<&Path>) -> Vec<PathBuf> {
+pub(crate) fn cwd_to_boundary(cwd: &Path, boundary: Option<&Path>) -> Vec<PathBuf> {
     let mut result = Vec::new();
     for dir in cwd.ancestors() {
         result.push(dir.to_path_buf());
@@ -3106,7 +3106,7 @@ fn first_body_paragraph(content: &str) -> String {
     paragraph.join(" ")
 }
 
-fn truncate_chars(value: &str, limit: usize) -> String {
+pub(crate) fn truncate_chars(value: &str, limit: usize) -> String {
     if value.chars().count() <= limit {
         return value.to_string();
     }
@@ -3194,7 +3194,7 @@ fn codex_manual_only(skill_dir: &Path) -> bool {
         .is_some_and(|allowed| !allowed)
 }
 
-fn xml_escape(value: &str) -> String {
+pub(crate) fn xml_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -3222,6 +3222,26 @@ struct OpenAiMetadata {
 #[derive(Deserialize)]
 struct OpenAiPolicy {
     allow_implicit_invocation: Option<bool>,
+}
+
+#[cfg(test)]
+pub(crate) fn compatible_roots_for_test(
+    cwd: &Path,
+    home: &Path,
+    repo_root: Option<&Path>,
+    project: &[&str],
+    user: &[&str],
+    extra_env: Option<&str>,
+) -> Vec<(PathBuf, SkillScope, bool)> {
+    let context = DiscoveryContext {
+        cwd: cwd.to_path_buf(),
+        home: home.to_path_buf(),
+        repository_root: repo_root.map(Path::to_path_buf),
+    };
+    compatible_filesystem_roots(&context, project, user, extra_env)
+        .into_iter()
+        .map(|root| (root.path, root.scope, root.include_root_markdown))
+        .collect()
 }
 
 #[cfg(test)]
