@@ -133,6 +133,26 @@ pub fn uninstall(
 ) -> Result<()> {
     crate::library::validate_name(name)?;
     let source = library_dir.join(name).canonicalize().ok();
+    uninstall_from_source(project, source.as_deref(), name, targets)
+}
+
+pub fn uninstall_from_path(
+    project: &Path,
+    source: &Path,
+    name: &str,
+    targets: &[InstallTarget],
+) -> Result<()> {
+    crate::library::validate_name(name)?;
+    let source = source.canonicalize().ok();
+    uninstall_from_source(project, source.as_deref(), name, targets)
+}
+
+fn uninstall_from_source(
+    project: &Path,
+    source: Option<&Path>,
+    name: &str,
+    targets: &[InstallTarget],
+) -> Result<()> {
     let mut removable = Vec::new();
     let mut removable_keys = HashSet::new();
     for target in targets {
@@ -149,10 +169,10 @@ pub fn uninstall(
         let Some(directory_link) = directory_link::inspect(&link)? else {
             bail!(t!("errors.unmanaged_delete_protected", path = link.display()).to_string());
         };
-        let Some(source) = &source else {
+        let Some(source) = source else {
             bail!(t!("errors.link_skill_missing", path = link.display()).to_string());
         };
-        if link.canonicalize().ok().as_ref() != Some(source) {
+        if link.canonicalize().ok().as_deref() != Some(source) {
             bail!(t!("errors.link_target_mismatch", path = link.display()).to_string());
         }
         if removable_keys.insert(installation_key(&link)) {

@@ -769,8 +769,13 @@ impl SkillLibrary {
             })
             .cloned()
             .collect::<Vec<_>>();
+        let mut presets = crate::preset::PresetStore::open_in(&self.data_dir)?;
         for project in &self.config.recent_projects {
             crate::project::uninstall_all_from_path(project, &record.name, &path)?;
+        }
+        // Presets can install into projects Kitter has not otherwise opened.
+        for project in presets.projects() {
+            crate::project::uninstall_all_from_path(&project, &record.name, &path)?;
         }
         if let Some(home) = dirs::home_dir() {
             crate::project::uninstall_all_from_path(&home, &record.name, &path)?;
@@ -793,6 +798,7 @@ impl SkillLibrary {
         } else {
             fs::remove_dir_all(path)?;
         }
+        presets.forget_skill(storage_name)?;
         self.registry.skills.remove(storage_name);
         self.registry.adopted_sources.remove(storage_name);
         self.registry.trigger_overrides.remove(storage_name);

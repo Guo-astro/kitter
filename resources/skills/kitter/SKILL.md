@@ -1,6 +1,6 @@
 ---
 name: kitter
-description: Use Kitter CLI to manage a reusable skill library, add or adopt skill sources, install them globally or per project, inspect effective skills, organize the library, and maintain updates. Applies Kitter's minimal-global, project-first best practice.
+description: Use Kitter CLI to manage a reusable skill library, add or adopt skill sources, install them globally or per project, inspect effective skills, organize the library, bundle skills and AGENTS.md instructions into presets, and maintain updates. Applies Kitter's minimal-global, project-first best practice.
 disable-model-invocation: true
 metadata:
   opencode:
@@ -248,6 +248,40 @@ kitter list --tag testing
 
 If tags with the same name exist under different parents, use the `id:<value>` selector shown by `kitter tag list`.
 
+## Use presets
+
+A preset bundles library skills with optional AGENTS.md content so a project can be set up in one step. Use presets when several projects share the same stack or team conventions.
+
+```bash
+kitter preset create frontend
+kitter preset add frontend react typescript
+kitter preset agents-md frontend --set AGENTS.frontend.md
+kitter preset install frontend --project /path/to/project --target universal
+```
+
+Installing a preset links its skills into the project and appends its AGENTS.md content to the project's `AGENTS.md` inside a managed block. Content outside that block belongs to the user and is never changed. User-scope installations (`--project "$HOME"`) install skills only.
+
+Editing a preset does not change projects automatically. Inspect which projects need a sync, then apply the latest content:
+
+```bash
+kitter preset show frontend
+kitter preset sync frontend
+kitter preset sync frontend --project /path/to/project
+```
+
+If the managed AGENTS.md block was edited inside a project, sync stops for that project. Confirm with the user before overwriting it with `--force`.
+
+Remove a preset from one project, or delete it everywhere:
+
+```bash
+kitter preset uninstall frontend --project /path/to/project
+kitter preset delete frontend
+```
+
+Removing a preset only removes the skills it installed and its AGENTS.md block. Skills that the project installed directly, or that another installed preset still includes, are kept.
+
+Other commands: `kitter preset list`, `kitter preset rename <preset> <name>`, `kitter preset remove <preset> <skills>...`, `kitter preset agents-md <preset>` to print the content, and `kitter preset agents-md <preset> --clear`.
+
 ## Update skills
 
 Check managed skills for updates:
@@ -315,4 +349,5 @@ For complete command options, use the relevant help command:
 kitter --help
 kitter install --help
 kitter adopt --help
+kitter preset --help
 ```

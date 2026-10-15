@@ -9,6 +9,7 @@ pub mod effective_skills;
 pub mod i18n;
 pub mod library;
 pub mod model;
+pub mod preset;
 pub mod project;
 pub mod source;
 pub mod tags;

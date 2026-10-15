@@ -13,6 +13,7 @@ use kitter::{
     InstallTarget, ProjectSkill, ProjectSkillInstallation, SkillGroup, SkillLibrary, SkillSummary,
     adoption,
     effective_skills::{self, AgentContextEstimate, AgentKind, group_effective_skills},
+    preset::{AgentsMdState, Preset, PresetStore, SkillFailure},
     project, source,
     tags::{TagId, TagState, load_tag_states, save_tag_states},
 };
@@ -129,6 +130,11 @@ enum Command {
     Tag {
         #[command(subcommand)]
         action: TagAction,
+    },
+    /// Manage presets: bundles of skills and an AGENTS.md installed together
+    Preset {
+        #[command(subcommand)]
+        action: PresetAction,
     },
     /// Show or change where Kitter stores skills
     Library {
@@ -260,6 +266,74 @@ enum TagAction {
     },
 }
 
+#[derive(Subcommand)]
+enum PresetAction {
+    /// List presets
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a preset's skills, AGENTS.md and projects
+    Show {
+        preset: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create an empty preset
+    Create { name: String },
+    /// Rename a preset
+    Rename { preset: String, name: String },
+    /// Delete a preset and remove it from every project it was installed in
+    Delete { preset: String },
+    /// Add skills to a preset
+    Add {
+        preset: String,
+        #[arg(required = true)]
+        skills: Vec<String>,
+    },
+    /// Remove skills from a preset
+    Remove {
+        preset: String,
+        #[arg(required = true)]
+        skills: Vec<String>,
+    },
+    /// Print a preset's AGENTS.md, or replace it
+    AgentsMd {
+        preset: String,
+        /// Read the new content from this file; use - for stdin
+        #[arg(long, value_name = "FILE", conflicts_with = "clear")]
+        set: Option<PathBuf>,
+        /// Remove the preset's AGENTS.md
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Install a preset into a project
+    Install {
+        preset: String,
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long, value_enum, required = true)]
+        target: Vec<TargetArg>,
+    },
+    /// Sync projects with the latest preset content
+    Sync {
+        /// Only sync this preset; defaults to every preset
+        preset: Option<String>,
+        /// Only sync this project; defaults to every project
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Overwrite AGENTS.md preset content edited inside the project
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove a preset from a project
+    Uninstall {
+        preset: String,
+        #[arg(long)]
+        project: PathBuf,
+    },
+}
+
 #[derive(Clone, Copy, ValueEnum)]
 enum TargetArg {
     Universal,
@@ -381,6 +455,24 @@ struct GroupOutput {
 }
 
 #[derive(Serialize)]
+struct PresetOutput {
+    id: String,
+    name: String,
+    skills: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agents_md: Option<String>,
+    projects: Vec<PresetProjectOutput>,
+}
+
+#[derive(Serialize)]
+struct PresetProjectOutput {
+    path: PathBuf,
+    targets: Vec<InstallTarget>,
+    needs_sync: bool,
+    agents_md_modified: bool,
+}
+
+#[derive(Serialize)]
 struct TagOutput {
     id: String,
     name: String,
@@ -469,6 +561,7 @@ fn run() -> Result<()> {
         }
         Command::Group { action } => manage_groups(&mut library, action),
         Command::Tag { action } => manage_tags(&library, action),
+        Command::Preset { action } => manage_presets(&library, action),
         Command::Library { set } => manage_library(&mut library, set),
     }
 }
@@ -1227,6 +1320,250 @@ fn manage_library(library: &mut SkillLibrary, set: Option<PathBuf>) -> Result<()
     }
     println!("{}", library.config.library_dir.display());
     Ok(())
+}
+
+fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
+    let mut presets = PresetStore::open()?;
+    match action {
+        PresetAction::List { json } => {
+            let skills = library.list()?;
+            let output = presets
+                .presets()
+                .iter()
+                .map(|preset| preset_output(&presets, preset, &skills, false))
+                .collect::<Result<Vec<_>>>()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else if output.is_empty() {
+                println!("{}", t!("cli.no_presets"));
+            } else {
+                for preset in output {
+                    let skills = kitter::i18n::tn(
+                        "common.skill_count",
+                        preset.skills.len(),
+                        &[("count", preset.skills.len().to_string())],
+                    );
+                    let projects = kitter::i18n::tn(
+                        "cli.project_count",
+                        preset.projects.len(),
+                        &[("count", preset.projects.len().to_string())],
+                    );
+                    println!(
+                        "{:<28} {}",
+                        preset.name,
+                        t!("cli.preset_summary", skills = skills, projects = projects)
+                    );
+                }
+            }
+            Ok(())
+        }
+        PresetAction::Show { preset, json } => {
+            let skills = library.list()?;
+            let preset = presets.resolve(&preset)?.clone();
+            let output = preset_output(&presets, &preset, &skills, true)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&output)?);
+                return Ok(());
+            }
+            println!("{}", output.name);
+            if output.id != output.name {
+                println!("{}", t!("cli.id", id = output.id));
+            }
+            println!("{}", t!("cli.skills_heading"));
+            for skill in &output.skills {
+                println!("  {skill}");
+            }
+            println!("{}", t!("cli.projects_heading"));
+            for project in &output.projects {
+                let state = if project.agents_md_modified {
+                    format!("  {}", t!("cli.agents_md_edited"))
+                } else if project.needs_sync {
+                    format!("  {}", t!("cli.needs_sync"))
+                } else {
+                    String::new()
+                };
+                println!("  {}{state}", project.path.display());
+            }
+            if let Some(agents_md) = output.agents_md {
+                println!("AGENTS.md:\n{agents_md}");
+            }
+            Ok(())
+        }
+        PresetAction::Create { name } => {
+            let preset = presets.create(&name)?;
+            println!(
+                "{}",
+                t!("cli.preset_created", name = preset.name, id = preset.id)
+            );
+            Ok(())
+        }
+        PresetAction::Rename { preset, name } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            presets.rename(&id, &name)
+        }
+        PresetAction::Delete { preset } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            let report = presets.delete(&id, &library.list()?)?;
+            finish_batch(
+                "cli.removed_installations",
+                report.removed,
+                failure_messages(report.failures),
+            )
+        }
+        PresetAction::Add { preset, skills } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            let skills = resolve_skills(library, &skills)?
+                .into_iter()
+                .map(|skill| skill.record.storage_name)
+                .collect::<Vec<_>>();
+            presets.add_skills(&id, &skills)
+        }
+        PresetAction::Remove { preset, skills } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            let skills = resolve_skills(library, &skills)?
+                .into_iter()
+                .map(|skill| skill.record.storage_name)
+                .collect::<Vec<_>>();
+            presets.remove_skills(&id, &skills)
+        }
+        PresetAction::AgentsMd { preset, set, clear } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            if clear {
+                return presets.set_agents_md(&id, "");
+            }
+            let Some(path) = set else {
+                print!("{}", presets.agents_md(&id)?);
+                return Ok(());
+            };
+            let content = if path.as_os_str() == "-" {
+                std::io::read_to_string(std::io::stdin())?
+            } else {
+                std::fs::read_to_string(&path)
+                    .with_context(|| t!("errors.read_failed", path = path.display()).to_string())?
+            };
+            presets.set_agents_md(&id, &content)
+        }
+        PresetAction::Install {
+            preset,
+            project,
+            target,
+        } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            let project = canonical_project(&project)?;
+            let targets = target.into_iter().map(Into::into).collect::<Vec<_>>();
+            let report = presets.install(&id, &project, &targets, &library.list()?)?;
+            finish_batch(
+                "common.installed_skills",
+                report.installed,
+                failure_messages(report.failures),
+            )
+        }
+        PresetAction::Sync {
+            preset,
+            project,
+            force,
+        } => {
+            let ids = match preset {
+                Some(preset) => vec![presets.resolve(&preset)?.id.clone()],
+                None => presets
+                    .presets()
+                    .iter()
+                    .map(|preset| preset.id.clone())
+                    .collect(),
+            };
+            let project = project.as_deref().map(canonical_project).transpose()?;
+            let skills = library.list()?;
+            let mut synced = 0usize;
+            let mut failures = Vec::new();
+            for id in ids {
+                let projects = presets
+                    .installations(&id)
+                    .map(|installation| installation.project.clone())
+                    .filter(|path| project.as_ref().is_none_or(|project| project == path))
+                    .collect::<Vec<_>>();
+                for path in projects {
+                    match presets.sync(&id, &path, &skills, force) {
+                        Ok(report) => {
+                            synced += 1;
+                            failures.extend(failure_messages(report.failures));
+                        }
+                        Err(error) => {
+                            let modified = presets
+                                .status(&id, &path, &skills)
+                                .is_ok_and(|status| status.agents_md == AgentsMdState::Modified);
+                            let mut failure = t!(
+                                "errors.item_detail",
+                                item = format!("{id} → {}", path.display()),
+                                error = kitter::i18n::error_diagnostic(&error)
+                            )
+                            .to_string();
+                            if modified {
+                                failure.push_str(&t!("cli.force_hint"));
+                            }
+                            failures.push(failure);
+                        }
+                    }
+                }
+            }
+            finish_batch("cli.synced_projects", synced, failures)
+        }
+        PresetAction::Uninstall { preset, project } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            let project = canonical_project(&project)?;
+            let report = presets.uninstall(&id, &project, &library.list()?)?;
+            finish_batch(
+                "cli.removed_skills",
+                report.removed,
+                failure_messages(report.failures),
+            )
+        }
+    }
+}
+
+fn failure_messages(failures: Vec<SkillFailure>) -> Vec<String> {
+    failures.iter().map(ToString::to_string).collect()
+}
+
+fn preset_output(
+    presets: &PresetStore,
+    preset: &Preset,
+    skills: &[SkillSummary],
+    include_agents_md: bool,
+) -> Result<PresetOutput> {
+    let names = preset
+        .skills
+        .iter()
+        .filter_map(|storage_name| {
+            skills
+                .iter()
+                .find(|skill| &skill.record.storage_name == storage_name)
+                .map(|skill| skill.record.name.clone())
+        })
+        .collect();
+    let projects = presets
+        .installations(&preset.id)
+        .map(|installation| {
+            let status = presets.status(&preset.id, &installation.project, skills)?;
+            Ok(PresetProjectOutput {
+                path: installation.project.clone(),
+                targets: installation.targets.clone(),
+                needs_sync: status.needs_sync(),
+                agents_md_modified: status.agents_md == AgentsMdState::Modified,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let agents_md = if include_agents_md {
+        Some(presets.agents_md(&preset.id)?).filter(|content| !content.trim().is_empty())
+    } else {
+        None
+    };
+    Ok(PresetOutput {
+        id: preset.id.clone(),
+        name: preset.name.clone(),
+        skills: names,
+        agents_md,
+        projects,
+    })
 }
 
 fn resolve_skills(library: &SkillLibrary, selectors: &[String]) -> Result<Vec<SkillSummary>> {
