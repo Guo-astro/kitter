@@ -112,6 +112,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 Confirmed source files include the provider icons for Amp, Antigravity, Claude Code, Codex, GitHub Copilot, Cursor, Gemini, OpenClaw, OpenCode, Pi, and Trae under `assets/icons/`.
 
+The `*.dark.svg` variants of these icons are recolored copies of the same artwork.
+
 Source: https://github.com/lobehub/lobe-icons
 
 License: MIT
