@@ -4,7 +4,7 @@
 //! static discovery profiles; scanner and catalog modules are internal primitives.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     env, fs,
     path::{Path, PathBuf},
 };
@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 mod adapters;
 #[cfg(test)]
 mod additional_agents;
-mod catalog;
 #[allow(dead_code)] // Used when plugin dispatch is connected after the registry migration.
 mod engine;
 #[cfg(test)]
@@ -318,105 +317,6 @@ struct SkillMetadata {
     pub source_path: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum NameCollision {
-    KeepAll,
-    FirstWins,
-}
-
-/// Internal entry rules composed by the Agent adapters.
-trait AgentSkillPolicy {
-    fn agent(&self) -> AgentId;
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot>;
-    fn builtins(&self, _context: &DiscoveryContext) -> Vec<EffectiveSkill> {
-        Vec::new()
-    }
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        true
-    }
-    fn effective_name(&self, _skill_dir: &Path, metadata: &SkillMetadata) -> String {
-        metadata.name.clone()
-    }
-    fn effective_name_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-    ) -> String {
-        let _ = root;
-        self.effective_name(skill_dir, metadata)
-    }
-    fn effective_id_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        skill_file: &Path,
-        metadata: &SkillMetadata,
-    ) -> String {
-        let _ = skill_file;
-        self.effective_name_for_root(root, skill_dir, metadata)
-    }
-    fn prompt_path_for_entry(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        skill_file: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> Option<String> {
-        let _ = (root, skill_dir, skill_file, metadata, context);
-        None
-    }
-    fn is_enabled_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        let _ = root;
-        self.is_enabled(skill_dir, metadata, context)
-    }
-    fn is_enabled_for_entry(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        skill_file: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        let _ = skill_file;
-        self.is_enabled_for_root(root, skill_dir, metadata, context)
-    }
-    fn name_collision(&self) -> NameCollision;
-    fn visibility(
-        &self,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> SkillVisibility;
-    fn visibility_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        let _ = root;
-        self.visibility(skill_dir, metadata, context)
-    }
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String;
-    fn render_initial_catalog(&self, skills: &[EffectiveSkill]) -> catalog::CatalogRender {
-        catalog::CatalogRender::all(self.render_visible_metadata(skills), skills.len())
-    }
-    fn estimate_tokens(&self, rendered: &str) -> usize;
-}
-
 pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
     let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
     estimate_project_with_home(project, &home)
@@ -496,136 +396,11 @@ enum MetadataProfile {
     ProviderFrontmatter,
 }
 
-fn estimate_with_policy(
-    policy: &dyn AgentSkillPolicy,
-    context: &DiscoveryContext,
-) -> AgentContextEstimate {
-    estimate_with_profile(
-        policy,
-        context,
-        scanner::ScanProfile::Recursive {
-            max_depth: usize::MAX,
-            max_directories: usize::MAX,
-            max_entries: usize::MAX,
-        },
-        MetadataProfile::StrictFrontmatter,
-    )
-}
-
-fn estimate_with_profile(
-    policy: &dyn AgentSkillPolicy,
-    context: &DiscoveryContext,
-    scan_profile: scanner::ScanProfile,
-    metadata_profile: MetadataProfile,
-) -> AgentContextEstimate {
-    let skills = discover(policy, context, scan_profile, metadata_profile);
-    estimate_skills(policy, skills)
-}
-
-fn estimate_skills(
-    policy: &dyn AgentSkillPolicy,
-    skills: Vec<EffectiveSkill>,
-) -> AgentContextEstimate {
-    let visible = skills
-        .iter()
-        .filter(|skill| {
-            matches!(
-                skill.visibility,
-                SkillVisibility::Automatic | SkillVisibility::NameOnly
-            )
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let rendered = policy.render_initial_catalog(&visible);
-    AgentContextEstimate {
-        agent: policy.agent(),
-        discovered_count: skills.len(),
-        model_visible_count: rendered.included_count,
-        manual_only_count: skills
-            .iter()
-            .filter(|s| s.visibility == SkillVisibility::ManualOnly)
-            .count(),
-        name_only_count: skills
-            .iter()
-            .filter(|s| s.visibility == SkillVisibility::NameOnly)
-            .count(),
-        conditional_count: skills
-            .iter()
-            .filter(|s| s.visibility == SkillVisibility::Conditional)
-            .count(),
-        estimated_tokens: policy.estimate_tokens(&rendered.text),
-        skills,
-    }
-}
-
 pub fn is_manual_skill(skill_dir: &Path) -> bool {
     let Some(metadata) = read_metadata(&skill_dir.join("SKILL.md")) else {
         return false;
     };
     frontmatter_visibility(&metadata) == SkillVisibility::ManualOnly || codex_manual_only(skill_dir)
-}
-
-fn discover(
-    policy: &dyn AgentSkillPolicy,
-    context: &DiscoveryContext,
-    scan_profile: scanner::ScanProfile,
-    metadata_profile: MetadataProfile,
-) -> Vec<EffectiveSkill> {
-    let mut result = policy.builtins(context);
-    let mut ids = result
-        .iter()
-        .map(|skill| skill.id.clone())
-        .collect::<HashSet<_>>();
-    let mut canonical_paths = HashSet::new();
-    for root in policy.roots(context) {
-        for skill_file in scanner::scan(&root, scan_profile) {
-            let skill_dir = skill_file.parent().unwrap_or(&root.path).to_path_buf();
-            // Directory-based Skills deduplicate by their directory, while
-            // Pi roots and explicit paths may contain several independent
-            // root-level Markdown files.  Keying those files by the parent
-            // directory would silently drop every file after the first one.
-            let canonical_target = if root.exact_skill_file.is_some()
-                || (root.include_root_markdown && skill_dir == root.path)
-            {
-                &skill_file
-            } else {
-                &skill_dir
-            };
-            let canonical = fs::canonicalize(canonical_target)
-                .unwrap_or_else(|_| canonical_target.to_path_buf());
-            if !canonical_paths.insert(canonical) {
-                continue;
-            }
-            let Some(metadata) = read_metadata_with_profile(&skill_file, metadata_profile) else {
-                continue;
-            };
-            if !policy.is_enabled_for_entry(&root, &skill_dir, &skill_file, &metadata, context) {
-                continue;
-            }
-            let name = policy.effective_name_for_root(&root, &skill_dir, &metadata);
-            let id = policy.effective_id_for_root(&root, &skill_dir, &skill_file, &metadata);
-            match policy.name_collision() {
-                NameCollision::KeepAll => {}
-                NameCollision::FirstWins if !ids.insert(id.clone()) => continue,
-                NameCollision::FirstWins => {}
-            }
-            let prompt_path =
-                policy.prompt_path_for_entry(&root, &skill_dir, &skill_file, &metadata, context);
-            result.push(EffectiveSkill {
-                id,
-                visibility: policy.visibility_for_root(&root, &skill_dir, &metadata, context),
-                name,
-                description: metadata.description,
-                when_to_use: metadata.when_to_use,
-                path: skill_file,
-                root_path: Some(root.path.clone()),
-                prompt_path,
-                scope: root.scope,
-                source: root.source.clone(),
-            });
-        }
-    }
-    result
 }
 
 /// The desktop's Global project is represented by scanning `home` as the
