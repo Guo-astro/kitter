@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use super::{HostContext, expand_path};
 
@@ -65,7 +65,9 @@ impl AgentSpec {
             return Err("invalid or reserved agent id".into());
         }
         if let Some(install) = &self.install
-            && !std::path::Path::new(&install.project).is_relative()
+            && std::path::Path::new(&install.project)
+                .components()
+                .any(|c| matches!(c, Component::Prefix(_) | Component::RootDir))
         {
             return Err("install.project must be a relative path".into());
         }
