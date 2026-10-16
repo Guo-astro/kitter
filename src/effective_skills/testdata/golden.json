@@ -459,376 +459,6 @@
       ]
     },
     {
-      "agent": "copilot",
-      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 6,
-      "estimated_tokens": 238,
-      "manual_only_count": 1,
-      "model_visible_count": 5,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.copilot/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.copilot/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.copilot/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.copilot/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$HOME/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "manual_only",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$HOME/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use claude-configured",
-          "id": "claude-configured",
-          "name": "claude-configured",
-          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
-      "agent": "antigravity",
-      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 5,
-      "estimated_tokens": 233,
-      "manual_only_count": 0,
-      "model_visible_count": 5,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.gemini/config/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.gemini/config/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.gemini/config/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.gemini/config/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$HOME/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$HOME/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
-      "agent": "amp",
-      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>amp-configured</name>\n    <description>Use amp-configured</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 7,
-      "estimated_tokens": 286,
-      "manual_only_count": 0,
-      "model_visible_count": 7,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$HOME/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$HOME/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use claude-configured",
-          "id": "claude-configured",
-          "name": "claude-configured",
-          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.claude/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.claude/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use amp-configured",
-          "id": "amp-configured",
-          "name": "amp-configured",
-          "path": "$HOME/amp-extra/configured/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/amp-extra",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
-      "agent": "droid",
-      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 5,
-      "estimated_tokens": 211,
-      "manual_only_count": 1,
-      "model_visible_count": 4,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.factory/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.factory/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.factory/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.factory/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$HOME/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "manual_only",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$HOME/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
       "agent": "pi",
       "catalog": "\n\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>pi-configured</name>\n    <description>Use pi-configured</description>\n    <location>$HOME/pi-extra/configured/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n    <location>$HOME/.pi/agent/skills/native/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n    <location>$HOME/.pi/agent/skills/second/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n    <location>$HOME/.agents/skills/shared/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>unicode-long</name>\n    <description>中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀</description>\n    <location>$HOME/.agents/skills/unicode-long/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n    <location>$HOME/.agents/skills/unicode-mixed/SKILL.md</location>\n  </skill>\n</available_skills>",
       "conditional_count": 0,
@@ -1487,6 +1117,376 @@
           "when_to_use": null
         }
       ]
+    },
+    {
+      "agent": "droid",
+      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 5,
+      "estimated_tokens": 211,
+      "manual_only_count": 1,
+      "model_visible_count": 4,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.factory/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.factory/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.factory/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.factory/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$HOME/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "manual_only",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$HOME/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "amp",
+      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>amp-configured</name>\n    <description>Use amp-configured</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 7,
+      "estimated_tokens": 286,
+      "manual_only_count": 0,
+      "model_visible_count": 7,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$HOME/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$HOME/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use claude-configured",
+          "id": "claude-configured",
+          "name": "claude-configured",
+          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.claude/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.claude/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use amp-configured",
+          "id": "amp-configured",
+          "name": "amp-configured",
+          "path": "$HOME/amp-extra/configured/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/amp-extra",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "antigravity",
+      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 5,
+      "estimated_tokens": 233,
+      "manual_only_count": 0,
+      "model_visible_count": 5,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.gemini/config/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.gemini/config/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.gemini/config/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.gemini/config/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$HOME/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$HOME/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "copilot",
+      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 6,
+      "estimated_tokens": 238,
+      "manual_only_count": 1,
+      "model_visible_count": 5,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.copilot/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.copilot/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.copilot/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.copilot/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$HOME/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "manual_only",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$HOME/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use claude-configured",
+          "id": "claude-configured",
+          "name": "claude-configured",
+          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
     }
   ],
   "project": [
@@ -2033,376 +2033,6 @@
       ]
     },
     {
-      "agent": "copilot",
-      "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 6,
-      "estimated_tokens": 238,
-      "manual_only_count": 1,
-      "model_visible_count": 5,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "manual_only",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.copilot/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.copilot/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.copilot/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.copilot/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use claude-configured",
-          "id": "claude-configured",
-          "name": "claude-configured",
-          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
-      "agent": "antigravity",
-      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 5,
-      "estimated_tokens": 233,
-      "manual_only_count": 0,
-      "model_visible_count": 5,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.gemini/config/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.gemini/config/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.gemini/config/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.gemini/config/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
-      "agent": "amp",
-      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>amp-configured</name>\n    <description>Use amp-configured</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 7,
-      "estimated_tokens": 286,
-      "manual_only_count": 0,
-      "model_visible_count": 7,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$HOME/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$HOME/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use claude-configured",
-          "id": "claude-configured",
-          "name": "claude-configured",
-          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.claude/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.claude/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.claude/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use amp-configured",
-          "id": "amp-configured",
-          "name": "amp-configured",
-          "path": "$HOME/amp-extra/configured/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/amp-extra",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
-      "agent": "droid",
-      "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
-      "conditional_count": 0,
-      "discovered_count": 5,
-      "estimated_tokens": 211,
-      "manual_only_count": 1,
-      "model_visible_count": 4,
-      "name_only_count": 0,
-      "skills": [
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "manual_only",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use native",
-          "id": "native",
-          "name": "native",
-          "path": "$HOME/.factory/skills/native/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.factory/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use second",
-          "id": "second",
-          "name": "second",
-          "path": "$HOME/.factory/skills/second/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.factory/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        }
-      ]
-    },
-    {
       "agent": "pi",
       "catalog": "\n\nThe following skills provide specialized instructions for specific tasks.\nUse the read tool to load a skill's file when the task matches its description.\nWhen a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n<available_skills>\n  <skill>\n    <name>pi-configured</name>\n    <description>Use pi-configured</description>\n    <location>$HOME/pi-extra/configured/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n    <location>$HOME/.pi/agent/skills/native/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n    <location>$HOME/.pi/agent/skills/second/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n    <location>$HOME/.agents/skills/shared/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>unicode-long</name>\n    <description>中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀</description>\n    <location>$HOME/.agents/skills/unicode-long/SKILL.md</location>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n    <location>$HOME/.agents/skills/unicode-mixed/SKILL.md</location>\n  </skill>\n</available_skills>",
       "conditional_count": 0,
@@ -2875,6 +2505,376 @@
           "path": "$HOME/.claude/commands/review.md",
           "prompt_path": "$HOME/.claude/commands/review.md",
           "root_path": "$HOME/.claude/commands",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "droid",
+      "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 5,
+      "estimated_tokens": 211,
+      "manual_only_count": 1,
+      "model_visible_count": 4,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "repository",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "manual_only",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "repository",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.factory/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.factory/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.factory/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.factory/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "amp",
+      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>amp-configured</name>\n    <description>Use amp-configured</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 7,
+      "estimated_tokens": 286,
+      "manual_only_count": 0,
+      "model_visible_count": 7,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$HOME/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$HOME/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use claude-configured",
+          "id": "claude-configured",
+          "name": "claude-configured",
+          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.claude/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.claude/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use amp-configured",
+          "id": "amp-configured",
+          "name": "amp-configured",
+          "path": "$HOME/amp-extra/configured/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/amp-extra",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "antigravity",
+      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 5,
+      "estimated_tokens": 233,
+      "manual_only_count": 0,
+      "model_visible_count": 5,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "repository",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "repository",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.gemini/config/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.gemini/config/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.gemini/config/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.gemini/config/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "copilot",
+      "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>claude-configured</name>\n    <description>Use claude-configured</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 6,
+      "estimated_tokens": 238,
+      "manual_only_count": 1,
+      "model_visible_count": 5,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "repository",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "manual_only",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "repository",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.copilot/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.copilot/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.copilot/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.copilot/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use claude-configured",
+          "id": "claude-configured",
+          "name": "claude-configured",
+          "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.claude/skills",
           "scope": "user",
           "source": {
             "type": "filesystem"

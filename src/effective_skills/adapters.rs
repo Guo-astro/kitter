@@ -14,6 +14,7 @@ use super::{
     HermesPolicy, MetadataProfile, OpenClawPolicy, OpenCodePolicy, PiAdapter, SkillScope, discover,
     estimate_skills, estimate_with_policy, estimate_with_profile, normalize_grok_name,
 };
+use crate::agent_plugins::AgentRegistry;
 
 trait AgentAdapter {
     fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate;
@@ -180,38 +181,23 @@ pub(super) fn inspect_project(
     context: &DiscoveryContext,
     include_global_only: bool,
 ) -> Vec<AgentContextEstimate> {
-    let agents = [
-        "codex",
-        "claude-code",
-        "cursor",
-        "opencode",
-        "copilot",
-        "antigravity",
-        "amp",
-        "droid",
-        "pi",
-        "omp",
-        "dimagent",
-        "grok",
-    ];
-    let mut estimates = agents
-        .into_iter()
-        .filter_map(|agent| inspect_agent(&AgentId::from(agent), context))
-        .collect::<Vec<_>>();
-    if include_global_only {
-        estimates.extend(
-            ["openclaw", "hermes"]
-                .into_iter()
-                .filter_map(|agent| inspect_agent(&AgentId::from(agent), context)),
-        );
-    }
-    estimates
+    AgentRegistry::global()
+        .agents()
+        .iter()
+        .filter(|agent| include_global_only || !agent.global_only)
+        .filter_map(|agent| inspect_agent(&agent.id, context))
+        .collect()
 }
 
 pub(super) fn inspect_agent(
     agent: &AgentId,
     context: &DiscoveryContext,
 ) -> Option<AgentContextEstimate> {
+    if let Some(def) = AgentRegistry::global().agent(agent.as_str())
+        && let Some(skills) = &def.skills
+    {
+        return super::engine::estimate(&def.id, skills, &def.source, context).ok();
+    }
     Some(match agent.as_str() {
         "codex" => CodexAdapter.inspect(context),
         "claude-code" => ClaudeCodeAdapter.inspect(context),
