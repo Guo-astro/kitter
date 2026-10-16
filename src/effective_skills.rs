@@ -18,6 +18,8 @@ mod catalog;
 mod engine;
 #[cfg(test)]
 mod golden;
+#[cfg(test)]
+mod plugin_tests_t5a;
 mod scanner;
 
 pub use crate::agent_plugins::AgentId;
@@ -413,16 +415,9 @@ trait AgentSkillPolicy {
 
 struct CodexAdapter;
 struct ClaudeCodeAdapter;
-struct CursorPolicy;
 struct OpenCodePolicy;
-struct CopilotPolicy;
-struct AntigravityPolicy;
-struct AmpPolicy;
-struct DroidPolicy;
 struct PiAdapter;
 struct GrokAdapter;
-struct OpenClawPolicy;
-struct HermesPolicy;
 
 pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
     let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
@@ -904,61 +899,6 @@ impl AgentSkillPolicy for ClaudeCodeAdapter {
     }
 }
 
-impl AgentSkillPolicy for CursorPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("cursor")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        compatible_filesystem_roots(
-            context,
-            &[
-                ".cursor/skills",
-                ".agents/skills",
-                ".claude/skills",
-                ".codex/skills",
-            ],
-            &[
-                ".cursor/skills",
-                ".agents/skills",
-                ".claude/skills",
-                ".codex/skills",
-            ],
-            None,
-        )
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        compatible_skill_is_valid(metadata)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        frontmatter_visibility(metadata)
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        render_name_description_catalog(skills)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
 impl AgentSkillPolicy for OpenCodePolicy {
     fn agent(&self) -> AgentId {
         AgentId::from("opencode")
@@ -1119,211 +1059,6 @@ impl AgentSkillPolicy for OpenCodePolicy {
         format!(
             "Skills provide specialized instructions and workflows for specific tasks.\nUse the skill tool to load a skill when a task matches its description.\n<available_skills>\n{body}\n</available_skills>"
         )
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for CopilotPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("copilot")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        compatible_filesystem_roots(
-            context,
-            &[".github/skills", ".agents/skills", ".claude/skills"],
-            &[".copilot/skills", ".agents/skills", ".claude/skills"],
-            Some("COPILOT_SKILLS_DIRS"),
-        )
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        compatible_skill_is_valid(metadata)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        frontmatter_visibility(metadata)
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        render_name_description_catalog(skills)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for AntigravityPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("antigravity")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        compatible_filesystem_roots(
-            context,
-            &[".agents/skills", ".agent/skills"],
-            &[".gemini/config/skills", ".agents/skills", ".agent/skills"],
-            None,
-        )
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        compatible_skill_is_valid(metadata)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        // Antigravity documents model-routed Skills and separate user-run
-        // Workflows, but no Skill frontmatter switch for manual-only use.
-        SkillVisibility::Automatic
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        render_name_description_catalog(skills)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for AmpPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("amp")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        // Amp's documented precedence puts user-owned Agent/Amp roots ahead
-        // of project roots, while the Claude-compatible project root still
-        // wins over the user Claude root. Keep this provider-specific order
-        // instead of using the generic project-first helper.
-        let mut roots = vec![
-            SkillRoot::new(context.home.join(".config/agents/skills"), SkillScope::User),
-            SkillRoot::new(context.home.join(".agents/skills"), SkillScope::User),
-            SkillRoot::new(context.home.join(".config/amp/skills"), SkillScope::User),
-        ];
-        if !is_global_context(context) {
-            for dir in cwd_to_boundary(&context.cwd, context.repository_root.as_deref()) {
-                roots.push(SkillRoot::new(
-                    dir.join(".agents/skills"),
-                    SkillScope::Repository,
-                ));
-                roots.push(SkillRoot::new(
-                    dir.join(".claude/skills"),
-                    SkillScope::Repository,
-                ));
-            }
-        }
-        roots.push(SkillRoot::new(
-            context.home.join(".claude/skills"),
-            SkillScope::User,
-        ));
-        roots.extend(amp_configured_skill_roots(context));
-        roots
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        compatible_skill_is_valid(metadata)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        // Current Amp no longer exposes user-invokable Skills, so Claude's
-        // disable-model-invocation extension cannot create a manual entry.
-        SkillVisibility::Automatic
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        render_name_description_catalog(skills)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for DroidPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("droid")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        compatible_filesystem_roots(
-            context,
-            &[".factory/skills", ".agents/skills", ".agent/skills"],
-            &[".factory/skills", ".agents/skills", ".agent/skills"],
-            None,
-        )
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        compatible_skill_is_valid(metadata)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        frontmatter_visibility(metadata)
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        render_name_description_catalog(skills)
     }
 
     fn estimate_tokens(&self, rendered: &str) -> usize {
@@ -1554,141 +1289,6 @@ impl AgentSkillPolicy for GrokAdapter {
 
     fn render_initial_catalog(&self, skills: &[EffectiveSkill]) -> catalog::CatalogRender {
         catalog::render_grok_listing(skills, 400_000)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for OpenClawPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("openclaw")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let state_dir = openclaw_state_dir(context);
-        let config = openclaw_config(context);
-        let mut roots = Vec::new();
-        if !is_global_context(context) {
-            roots.push(SkillRoot::new(
-                context.cwd.join("skills"),
-                SkillScope::Local,
-            ));
-            roots.push(SkillRoot::new(
-                context.cwd.join(".agents/skills"),
-                SkillScope::Local,
-            ));
-        }
-        roots.push(SkillRoot::new(
-            context.home.join(".agents/skills"),
-            SkillScope::User,
-        ));
-        roots.push(SkillRoot::new(state_dir.join("skills"), SkillScope::User));
-        roots.extend(
-            openclaw_extra_skill_dirs(&config, context)
-                .into_iter()
-                .map(|path| SkillRoot::new(path, SkillScope::User)),
-        );
-        roots.extend(openclaw_plugin_roots(&config, &state_dir, context));
-        roots
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        !openclaw_disabled_skills(&openclaw_config(context)).contains(&metadata.name)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        frontmatter_visibility(metadata)
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        if skills.is_empty() {
-            return String::new();
-        }
-        let body = skills
-            .iter()
-            .map(|skill| {
-                format!(
-                    "  <skill>\n    <name>{}</name>\n    <description>{}</description>\n  </skill>",
-                    xml_escape(&skill.name),
-                    xml_escape(&skill.description)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        truncate_chars(
-            &format!("<available_skills>\n{body}\n</available_skills>"),
-            30_000,
-        )
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for HermesPolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("hermes")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let hermes_home = hermes_home(context);
-        let mut roots = vec![SkillRoot::new(hermes_home.join("skills"), SkillScope::User)];
-        roots.extend(
-            hermes_external_skill_dirs(context, &hermes_home)
-                .into_iter()
-                .map(|path| SkillRoot::new(path, SkillScope::User)),
-        );
-        roots
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        // Hermes currently indexes ordinary Skills for the model and does
-        // not implement disable-model-invocation for standalone Skills.
-        SkillVisibility::Automatic
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        if skills.is_empty() {
-            return String::new();
-        }
-        let body = skills
-            .iter()
-            .map(|skill| {
-                format!(
-                    "- {}: {}",
-                    skill.name,
-                    truncate_chars(&skill.description, 57)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("<available_skills>\n{body}\n</available_skills>")
     }
 
     fn estimate_tokens(&self, rendered: &str) -> usize {
@@ -1973,6 +1573,7 @@ fn resolve_agent_path(value: &str, home: &Path, relative_base: &Path) -> PathBuf
     }
 }
 
+#[cfg(test)]
 fn compatible_filesystem_roots(
     context: &DiscoveryContext,
     project_relative: &[&str],
@@ -2006,60 +1607,6 @@ fn compatible_filesystem_roots(
         }
     }
     roots
-}
-
-fn amp_configured_skill_roots(context: &DiscoveryContext) -> Vec<SkillRoot> {
-    let mut paths = Vec::new();
-    if let Some(value) = env::var_os("AMP_SKILL_PATHS") {
-        paths.extend(env::split_paths(&value).map(|path| {
-            if path.is_absolute() {
-                path
-            } else {
-                context.cwd.join(path)
-            }
-        }));
-    }
-    let config_files = [
-        context.home.join(".config/amp/settings.json"),
-        context.home.join(".config/amp/config.json"),
-        context.cwd.join(".amp/settings.json"),
-        context.cwd.join(".amp/config.json"),
-    ];
-    for file in config_files {
-        if is_global_context(context) && file.starts_with(&context.cwd.join(".amp")) {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&file) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&normalize_jsonc(&content))
-        else {
-            continue;
-        };
-        let Some(skill_value) = value
-            .pointer("/skills/path")
-            .or_else(|| value.pointer("/skills/paths"))
-            .or_else(|| value.get("skillPath"))
-        else {
-            continue;
-        };
-        let values = skill_value
-            .as_array()
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(|value| value.as_str())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| skill_value.as_str().into_iter().collect::<Vec<_>>());
-        paths.extend(values.into_iter().map(|path| {
-            resolve_agent_path(path, &context.home, file.parent().unwrap_or(&context.cwd))
-        }));
-    }
-    paths
-        .into_iter()
-        .map(|path| SkillRoot::new(path, SkillScope::User).with_root_markdown())
-        .collect()
 }
 
 fn compatible_skill_is_valid(metadata: &SkillMetadata) -> bool {
@@ -2136,49 +1683,31 @@ fn yaml_opencode_autoinvoke_disabled(value: Option<&serde_yaml::Value>) -> bool 
     autoinvoke.as_bool() == Some(false) || autoinvoke.as_str() == Some("false")
 }
 
-fn openclaw_state_dir(context: &DiscoveryContext) -> PathBuf {
-    env::var_os("OPENCLAW_STATE_DIR")
-        .or_else(|| env::var_os("CLAWDBOT_STATE_DIR"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| context.home.join(".openclaw"))
-}
-
-fn openclaw_config(context: &DiscoveryContext) -> serde_json::Value {
-    let state_dir = openclaw_state_dir(context);
-    let path = env::var_os("OPENCLAW_CONFIG_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| state_dir.join("openclaw.json"));
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&normalize_jsonc(&content)).ok())
-        .unwrap_or(serde_json::Value::Null)
-}
-
-fn openclaw_extra_skill_dirs(
-    config: &serde_json::Value,
-    context: &DiscoveryContext,
-) -> Vec<PathBuf> {
-    config
-        .pointer("/skills/load/extraDirs")
-        .and_then(|value| value.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str())
-        .map(|path| resolve_agent_path(path, &context.home, &context.cwd))
-        .collect()
-}
-
-fn openclaw_disabled_skills(config: &serde_json::Value) -> HashSet<String> {
-    config
-        .pointer("/skills/entries")
-        .and_then(|value| value.as_object())
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, entry)| {
-            (entry.get("enabled").and_then(|value| value.as_bool()) == Some(false))
-                .then(|| name.clone())
-        })
-        .collect()
+pub(crate) fn openclaw_plugin_roots_native(
+    host: &crate::agent_plugins::HostContext,
+    input: serde_json::Value,
+) -> serde_json::Value {
+    let context = DiscoveryContext {
+        home: host.home.clone(),
+        cwd: host.cwd.clone(),
+        repository_root: host.repo_root.clone(),
+    };
+    let state_dir = Path::new(input["stateDir"].as_str().unwrap());
+    serde_json::Value::Array(
+        openclaw_plugin_roots(&input["config"], state_dir, &context)
+            .into_iter()
+            .map(|root| {
+                let SkillSource::Plugin { id, display_name } = root.source else {
+                    unreachable!()
+                };
+                serde_json::json!({
+                    "path": root.path,
+                    "scope": root.scope,
+                    "plugin": { "id": id, "displayName": display_name },
+                })
+            })
+            .collect(),
+    )
 }
 
 fn openclaw_plugin_roots(
@@ -2286,30 +1815,6 @@ fn openclaw_plugin_roots(
         }
     }
     roots
-}
-
-fn hermes_home(context: &DiscoveryContext) -> PathBuf {
-    env::var_os("HERMES_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| context.home.join(".hermes"))
-}
-
-fn hermes_external_skill_dirs(context: &DiscoveryContext, hermes_home: &Path) -> Vec<PathBuf> {
-    let Ok(content) = fs::read_to_string(hermes_home.join("config.yaml")) else {
-        return Vec::new();
-    };
-    let Ok(config) = serde_yaml::from_str::<serde_yaml::Value>(&content) else {
-        return Vec::new();
-    };
-    config
-        .get("skills")
-        .and_then(|skills| skills.get("external_dirs"))
-        .and_then(|value| value.as_sequence())
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str())
-        .map(|path| resolve_agent_path(path, &context.home, hermes_home))
-        .collect()
 }
 
 fn claude_skill_override(context: &DiscoveryContext, name: &str) -> Option<String> {

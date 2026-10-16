@@ -364,7 +364,7 @@ mod tests {
             registry
                 .agents()
                 .iter()
-                .all(|agent| agent.skills.is_none() && agent.origin == PluginOrigin::Builtin)
+                .all(|agent| agent.origin == PluginOrigin::Builtin)
         );
     }
 

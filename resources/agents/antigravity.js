@@ -1,4 +1,4 @@
-import { defineAgent } from "kitter";
+import { defineAgent, standard } from "kitter";
 
 export default defineAgent({
   apiVersion: 1,
@@ -10,4 +10,9 @@ export default defineAgent({
     project: ".agent/skills",
     global: "~/.gemini/config/skills",
   },
+  skills: standard.skills({
+    project: [".agents/skills", ".agent/skills"],
+    user: ["~/.gemini/config/skills", "~/.agents/skills", "~/.agent/skills"],
+    visibility: "automatic",
+  }),
 });

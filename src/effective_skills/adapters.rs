@@ -9,9 +9,8 @@ use std::collections::HashMap;
 use super::additional_agents::{DimAgentAdapter, OmpAdapter};
 use super::scanner::ScanProfile;
 use super::{
-    AgentContextEstimate, AgentId, AmpPolicy, AntigravityPolicy, ClaudeCodeAdapter, CodexAdapter,
-    CopilotPolicy, CursorPolicy, DiscoveryContext, DroidPolicy, EffectiveSkill, GrokAdapter,
-    HermesPolicy, MetadataProfile, OpenClawPolicy, OpenCodePolicy, PiAdapter, SkillScope, discover,
+    AgentContextEstimate, AgentId, ClaudeCodeAdapter, CodexAdapter, DiscoveryContext,
+    EffectiveSkill, GrokAdapter, MetadataProfile, OpenCodePolicy, PiAdapter, SkillScope, discover,
     estimate_skills, estimate_with_policy, estimate_with_profile, normalize_grok_name,
 };
 use crate::agent_plugins::{AgentRegistry, PluginDiagnostic};
@@ -168,14 +167,7 @@ fn grok_path_identity(skill: &EffectiveSkill) -> String {
         .unwrap_or_else(|| skill.id.clone())
 }
 
-legacy_adapter!(CursorAdapter, CursorPolicy);
 legacy_adapter!(OpenCodeAdapter, OpenCodePolicy);
-legacy_adapter!(CopilotAdapter, CopilotPolicy);
-legacy_adapter!(AntigravityAdapter, AntigravityPolicy);
-legacy_adapter!(AmpAdapter, AmpPolicy);
-legacy_adapter!(DroidAdapter, DroidPolicy);
-legacy_adapter!(OpenClawAdapter, OpenClawPolicy);
-legacy_adapter!(HermesAdapter, HermesPolicy);
 
 pub(super) fn inspect_project(
     registry: &AgentRegistry,
@@ -229,12 +221,7 @@ fn inspect_registry_agent(
     Some(Ok(match agent.as_str() {
         "codex" => CodexAdapter.inspect(context),
         "claude-code" => ClaudeCodeAdapter.inspect(context),
-        "cursor" => CursorAdapter.inspect(context),
         "opencode" => OpenCodeAdapter.inspect(context),
-        "copilot" => CopilotAdapter.inspect(context),
-        "antigravity" => AntigravityAdapter.inspect(context),
-        "amp" => AmpAdapter.inspect(context),
-        "droid" => DroidAdapter.inspect(context),
         "pi" => PiAdapter.inspect(context),
         "omp" => OmpAdapter.inspect(context),
         "dimagent" => DimAgentAdapter {
@@ -242,8 +229,6 @@ fn inspect_registry_agent(
         }
         .inspect(context),
         "grok" => GrokAdapter.inspect(context),
-        "openclaw" => OpenClawAdapter.inspect(context),
-        "hermes" => HermesAdapter.inspect(context),
         _ => return None,
     }))
 }
@@ -258,20 +243,51 @@ pub(super) fn inspect_dimagent(
 
 #[cfg(test)]
 pub(super) fn render_catalog(agent: &AgentId, skills: &[EffectiveSkill]) -> String {
+    if let Some(def) = AgentRegistry::global().agent(agent.as_str())
+        && let Some(spec) = &def.skills
+    {
+        if let Some(crate::agent_plugins::CatalogSpec::Custom(catalog)) = &spec.catalog {
+            let mut host = crate::agent_plugins::JsHost::new(crate::agent_plugins::HostContext {
+                home: Default::default(),
+                cwd: Default::default(),
+                repo_root: None,
+                is_global: false,
+            });
+            let entries = skills
+                .iter()
+                .enumerate()
+                .map(|(key, skill)| {
+                    serde_json::json!({
+                        "key": key, "id": skill.id, "name": skill.name,
+                        "description": skill.description, "whenToUse": skill.when_to_use,
+                        "file": skill.path, "dir": skill.path.parent(),
+                        "scope": skill.scope, "visibility": skill.visibility,
+                        "promptPath": skill.prompt_path,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let rendered = host
+                .call(
+                    &def.source,
+                    &catalog.render,
+                    Some(serde_json::json!(entries)),
+                )
+                .unwrap();
+            return rendered
+                .as_str()
+                .or_else(|| rendered["text"].as_str())
+                .unwrap()
+                .to_owned();
+        }
+        return super::render_name_description_catalog(skills);
+    }
     let policy: &dyn super::AgentSkillPolicy = match agent.as_str() {
         "codex" => &CodexAdapter,
         "claude-code" => &ClaudeCodeAdapter,
-        "cursor" => &CursorPolicy,
         "opencode" => &OpenCodePolicy,
-        "copilot" => &CopilotPolicy,
-        "antigravity" => &AntigravityPolicy,
-        "amp" => &AmpPolicy,
-        "droid" => &DroidPolicy,
         "pi" => &PiAdapter,
         "omp" => &OmpAdapter,
         "grok" => &GrokAdapter,
-        "openclaw" => &OpenClawPolicy,
-        "hermes" => &HermesPolicy,
         "dimagent" => &DimAgentAdapter {
             home: Default::default(),
         },

@@ -1,4 +1,4 @@
-import { defineAgent } from "kitter";
+import { defineAgent, standard } from "kitter";
 
 export default defineAgent({
   apiVersion: 1,
@@ -10,4 +10,8 @@ export default defineAgent({
     project: ".cursor/skills",
     global: "~/.cursor/skills",
   },
+  skills: standard.skills({
+    project: [".cursor/skills", ".agents/skills", ".claude/skills", ".codex/skills"],
+    user: ["~/.cursor/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+  }),
 });

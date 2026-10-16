@@ -17,6 +17,11 @@ pub struct HostContext {
 
 pub type NativeFn = fn(&HostContext, serde_json::Value) -> serde_json::Value;
 const NATIVES: &[(&str, NativeFn)] = &[
+    // Unstable, agent-specific plugin manifest discovery.
+    (
+        "openclawPluginRoots",
+        crate::effective_skills::openclaw_plugin_roots_native,
+    ),
     ("ompAgentDir", |ctx, _| {
         serde_json::json!(crate::agents::omp_agent_dir(&ctx.home))
     }),

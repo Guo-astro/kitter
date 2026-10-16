@@ -1,4 +1,4 @@
-import { defineAgent } from "kitter";
+import { defineAgent, standard } from "kitter";
 
 export default defineAgent({
   apiVersion: 1,
@@ -10,4 +10,9 @@ export default defineAgent({
     project: ".github/skills",
     global: "~/.copilot/skills",
   },
+  skills: standard.skills({
+    project: [".github/skills", ".agents/skills", ".claude/skills"],
+    user: ["~/.copilot/skills", "~/.agents/skills", "~/.claude/skills"],
+    envPaths: "COPILOT_SKILLS_DIRS",
+  }),
 });
