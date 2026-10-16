@@ -37,6 +37,12 @@ adoption:
     other: "%{count} references"
   references: "References"
 cli:
+  plugin_warning: "Warning: Some agent plugins could not be loaded. Run `kitter agents` for details."
+  plugin_directory: "Plugin directory: %{path}"
+  plugin_diagnostic: "  %{origin} %{id}: %{message}"
+  origin_builtin: "builtin"
+  origin_user: "user"
+  origin_override: "override"
   adopt_hint: "Run with --all or one or more --source paths to adopt"
   agent_summary: "  %{agent} %{discovered} discovered  %{visible} visible  ~%{tokens} tokens"
   agents: "Agents:"
@@ -369,6 +375,9 @@ projects:
     other: "%{count} user-level skills"
   user_skills_empty: "No user-level skills detected"
 settings:
+  agents: "Agents"
+  open_plugin_directory: "Open plugin directory"
+  plugin_directory_failed: "Could not open plugin directory: %{error}"
   appearance: "Appearance"
   appearance_hint: "Follow the system or use a fixed light or dark appearance."
   dark: "Dark"

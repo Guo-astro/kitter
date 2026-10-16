@@ -435,7 +435,65 @@ pub fn estimate_project_with_home(project: &Path, home: &Path) -> Vec<AgentConte
         home: home.to_path_buf(),
         repository_root: find_repository_root(project),
     };
-    adapters::inspect_project(&context, project == home)
+    adapters::inspect_project(
+        crate::agent_plugins::AgentRegistry::global(),
+        &context,
+        project == home,
+    )
+    .0
+}
+
+pub fn check_project(
+    registry: &crate::agent_plugins::AgentRegistry,
+    project: &Path,
+) -> (
+    Vec<AgentContextEstimate>,
+    Vec<crate::agent_plugins::PluginDiagnostic>,
+) {
+    let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
+    let context = DiscoveryContext {
+        cwd: project.to_path_buf(),
+        home: home.clone(),
+        repository_root: find_repository_root(project),
+    };
+    adapters::inspect_project(registry, &context, project == home)
+}
+
+#[cfg(test)]
+mod plugin_diagnostic_tests {
+    use super::*;
+    use crate::agent_plugins::{AgentRegistry, BUILTIN_PLUGINS, PluginOrigin};
+
+    #[test]
+    fn check_reports_throwing_filter_and_keeps_other_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.js");
+        std::fs::write(
+            &path,
+            r#"export default {
+            apiVersion: 1, id: 'broken', name: 'Broken',
+            skills: { roots: {}, filter() { throw new Error('filter failed'); } }
+        };"#,
+        )
+        .unwrap();
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, std::slice::from_ref(&path));
+        assert!(registry.diagnostics().is_empty());
+        let (estimates, diagnostics) = check_project(&registry, dir.path());
+        assert!(
+            estimates
+                .iter()
+                .any(|estimate| estimate.agent.as_str() == "codex")
+        );
+        assert!(
+            !estimates
+                .iter()
+                .any(|estimate| estimate.agent.as_str() == "broken")
+        );
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].id.as_deref(), Some("broken"));
+        assert_eq!(diagnostics[0].origin, PluginOrigin::User(path));
+        assert!(diagnostics[0].message.contains("filter failed"));
+    }
 }
 
 #[derive(Clone, Copy)]

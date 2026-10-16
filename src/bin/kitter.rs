@@ -12,6 +12,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use kitter::{
     InstallTarget, ProjectSkill, ProjectSkillInstallation, SkillGroup, SkillLibrary, SkillSummary,
     adoption,
+    agent_plugins::{AgentRegistry, BUILTIN_PLUGINS, PluginOrigin, plugin_dir},
     effective_skills::{self, AgentContextEstimate, AgentId, group_effective_skills},
     preset::{AgentsMdState, Preset, PresetStore, SkillFailure},
     project, source,
@@ -32,6 +33,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// List agents and plugin errors
+    Agents {
+        #[arg(long, global = true)]
+        json: bool,
+        #[command(subcommand)]
+        action: Option<AgentsAction>,
+    },
     /// List skills saved in Kitter
     List {
         /// Only show skills carrying this tag
@@ -141,6 +149,16 @@ enum Command {
         /// Change the skill library folder
         #[arg(long, value_name = "PATH")]
         set: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentsAction {
+    /// Check plugins and inspect effective skills
+    Check {
+        file: Option<PathBuf>,
+        #[arg(long)]
+        project: Option<PathBuf>,
     },
 }
 
@@ -464,8 +482,15 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     kitter::i18n::apply_language(kitter::config::Language::System);
     kitter::i18n::apply_language(kitter::AppConfig::load()?.language);
+    if let Command::Agents { json, action } = cli.command {
+        return inspect_agents(action, json);
+    }
+    if !AgentRegistry::global().diagnostics().is_empty() {
+        eprintln!("{}", t!("cli.plugin_warning"));
+    }
     let mut library = SkillLibrary::open()?;
     match cli.command {
+        Command::Agents { .. } => unreachable!(),
         Command::List { tag, json } => list_skills(&library, tag.as_deref(), json),
         Command::Show { skill, json } => show_skill(&library, &skill, json),
         Command::Files { skill } => {
@@ -985,6 +1010,119 @@ fn uninstall_skills(
     finish_batch("cli.removed_installations", report.removed, report.failures)
 }
 
+#[derive(Serialize)]
+struct AgentOutput<'a> {
+    id: &'a AgentId,
+    name: &'a str,
+    origin: &'static str,
+}
+
+#[derive(Serialize)]
+struct DiagnosticOutput<'a> {
+    origin: &'static str,
+    id: &'a Option<String>,
+    message: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentsOutput<'a> {
+    agents: Vec<AgentOutput<'a>>,
+    plugin_dir: PathBuf,
+    diagnostics: Vec<DiagnosticOutput<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimates: Option<&'a [AgentContextEstimate]>,
+}
+
+fn origin_name(origin: &PluginOrigin) -> &'static str {
+    match origin {
+        PluginOrigin::Builtin => "builtin",
+        PluginOrigin::User(_) => "user",
+        PluginOrigin::Override(_) => "override",
+    }
+}
+
+fn inspect_agents(action: Option<AgentsAction>, json: bool) -> Result<()> {
+    let selected_registry;
+    let (registry, project) = match action {
+        Some(AgentsAction::Check { file, project }) => {
+            let registry = if let Some(file) = file {
+                selected_registry = AgentRegistry::load(BUILTIN_PLUGINS, &[file]);
+                &selected_registry
+            } else {
+                AgentRegistry::global()
+            };
+            let path = project.map(Ok).unwrap_or_else(std::env::current_dir)?;
+            (registry, Some(canonical_project(&path)?))
+        }
+        None => (AgentRegistry::global(), None),
+    };
+    let (estimates, estimate_diagnostics) = project
+        .as_ref()
+        .map(|path| effective_skills::check_project(registry, path))
+        .unwrap_or_default();
+    let diagnostics = registry
+        .diagnostics()
+        .iter()
+        .chain(&estimate_diagnostics)
+        .collect::<Vec<_>>();
+    if json {
+        let output = AgentsOutput {
+            agents: registry
+                .agents()
+                .iter()
+                .map(|agent| AgentOutput {
+                    id: &agent.id,
+                    name: &agent.name,
+                    origin: origin_name(&agent.origin),
+                })
+                .collect(),
+            plugin_dir: plugin_dir(),
+            diagnostics: diagnostics
+                .iter()
+                .map(|diagnostic| DiagnosticOutput {
+                    origin: origin_name(&diagnostic.origin),
+                    id: &diagnostic.id,
+                    message: &diagnostic.message,
+                })
+                .collect(),
+            estimates: project.as_ref().map(|_| estimates.as_slice()),
+        };
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    } else {
+        println!(
+            "{}",
+            t!("cli.plugin_directory", path = plugin_dir().display())
+        );
+        for agent in registry.agents() {
+            let origin = t!(format!("cli.origin_{}", origin_name(&agent.origin))).to_string();
+            println!("  {:<18} {:<20} {}", agent.id.as_str(), agent.name, origin);
+        }
+        for diagnostic in diagnostics {
+            let origin = match &diagnostic.origin {
+                PluginOrigin::Builtin => t!("cli.origin_builtin").to_string(),
+                PluginOrigin::User(path) | PluginOrigin::Override(path) => {
+                    path.display().to_string()
+                }
+            };
+            println!(
+                "{}",
+                t!(
+                    "cli.plugin_diagnostic",
+                    origin = origin,
+                    id = diagnostic.id.as_deref().unwrap_or(""),
+                    message = &diagnostic.message
+                )
+            );
+        }
+        if let Some(path) = project {
+            println!("{}", t!("cli.project", path = path.display()));
+            print_effective(registry, &estimates);
+        }
+    }
+    Ok(())
+}
+
 fn inspect_project(
     library: &SkillLibrary,
     path: &Path,
@@ -1049,15 +1187,20 @@ fn inspect_project(
         };
         println!("  {:<28} {:<12} {targets}", skill.name, origin);
     }
+    print_effective(AgentRegistry::global(), &estimates);
+    Ok(())
+}
+
+fn print_effective(registry: &AgentRegistry, estimates: &[AgentContextEstimate]) {
     println!("{}", t!("cli.agents").to_string());
-    for estimate in &estimates {
+    for estimate in estimates {
         println!(
             "{}",
             t!(
                 "cli.agent_summary",
                 agent = format!(
                     "{:<18}",
-                    kitter::agent_plugins::AgentRegistry::global()
+                    registry
                         .agent(estimate.agent.as_str())
                         .unwrap()
                         .name
@@ -1084,13 +1227,7 @@ fn inspect_project(
         let agents = group
             .entries()
             .iter()
-            .map(|(agent, _)| {
-                kitter::agent_plugins::AgentRegistry::global()
-                    .agent(agent.as_str())
-                    .unwrap()
-                    .name
-                    .as_str()
-            })
+            .map(|(agent, _)| registry.agent(agent.as_str()).unwrap().name.as_str())
             .collect::<BTreeSet<_>>();
         let plugin = group
             .entries()
@@ -1108,7 +1245,6 @@ fn inspect_project(
             agents.into_iter().collect::<Vec<_>>().join(", ")
         );
     }
-    Ok(())
 }
 
 fn update_skills(library: &mut SkillLibrary, selectors: &[String], all: bool) -> Result<()> {
@@ -1674,6 +1810,49 @@ mod tests {
     #[test]
     fn command_tree_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn parses_agents_list_and_check() {
+        let cli = Cli::try_parse_from(["kitter", "agents", "--json"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Agents {
+                json: true,
+                action: None
+            }
+        ));
+        for args in [
+            vec![
+                "kitter",
+                "agents",
+                "check",
+                "custom.js",
+                "--project",
+                "/tmp/project",
+                "--json",
+            ],
+            vec![
+                "kitter",
+                "agents",
+                "--json",
+                "check",
+                "custom.js",
+                "--project",
+                "/tmp/project",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            let Command::Agents {
+                json: true,
+                action: Some(super::AgentsAction::Check { file, project }),
+            } = cli.command
+            else {
+                panic!("expected agents check");
+            };
+            assert_eq!(file.unwrap(), std::path::PathBuf::from("custom.js"));
+            assert_eq!(project.unwrap(), std::path::PathBuf::from("/tmp/project"));
+        }
     }
 
     #[test]

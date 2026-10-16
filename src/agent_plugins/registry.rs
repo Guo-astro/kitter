@@ -134,18 +134,44 @@ impl AgentDef {
     }
 }
 
+pub fn plugin_dir() -> PathBuf {
+    crate::config::app_data_dir().join("agents")
+}
+
+fn user_plugin_files(dir: &Path) -> (Vec<PathBuf>, Vec<PluginDiagnostic>) {
+    let mut paths = Vec::new();
+    let mut diagnostics = Vec::new();
+    match fs::read_dir(dir) {
+        Ok(entries) => paths.extend(
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == "js") && path.is_file()),
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => diagnostics.push(PluginDiagnostic {
+            origin: PluginOrigin::User(dir.into()),
+            id: None,
+            message: error.to_string(),
+        }),
+    }
+    paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    (paths, diagnostics)
+}
+
 impl AgentRegistry {
     pub fn global() -> &'static Self {
         static REGISTRY: OnceLock<AgentRegistry> = OnceLock::new();
         REGISTRY.get_or_init(|| {
-            Self::load(
-                BUILTIN_PLUGINS,
-                Some(&crate::config::app_data_dir().join("agents")),
-            )
+            let (paths, mut diagnostics) = user_plugin_files(&plugin_dir());
+            let mut registry = Self::load(BUILTIN_PLUGINS, &paths);
+            diagnostics.append(&mut registry.diagnostics);
+            registry.diagnostics = diagnostics;
+            registry
         })
     }
 
-    pub fn load(builtins: &[(&str, &str)], user_dir: Option<&Path>) -> Self {
+    pub fn load(builtins: &[(&str, &str)], user_files: &[PathBuf]) -> Self {
         let loader = SpecLoader::new();
         let mut slots = Vec::new();
         let mut diagnostics = Vec::new();
@@ -167,62 +193,42 @@ impl AgentRegistry {
                 }
             }
         }
-        if let Some(dir) = user_dir {
-            let mut paths = Vec::new();
-            match fs::read_dir(dir) {
-                Ok(entries) => paths.extend(
-                    entries
-                        .filter_map(Result::ok)
-                        .map(|entry| entry.path())
-                        .filter(|path| {
-                            path.extension().is_some_and(|ext| ext == "js") && path.is_file()
-                        }),
-                ),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => diagnostics.push(PluginDiagnostic {
-                    origin: PluginOrigin::User(dir.into()),
-                    id: None,
-                    message: error.to_string(),
-                }),
-            }
-            paths.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
-            for path in paths {
-                let id = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .filter(|id| valid_agent_id(id));
-                let position = id.and_then(|id| slots.iter().position(|(key, _)| key == id));
-                let origin = if position.is_some() {
-                    PluginOrigin::Override(path.clone())
-                } else {
-                    PluginOrigin::User(path.clone())
+        for path in user_files {
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .filter(|id| valid_agent_id(id));
+            let position = id.and_then(|id| slots.iter().position(|(key, _)| key == id));
+            let origin = if position.is_some() {
+                PluginOrigin::Override(path.clone())
+            } else {
+                PluginOrigin::User(path.clone())
+            };
+            let result = (|| {
+                let id = id.ok_or_else(|| "invalid plugin filename".to_string())?;
+                let source = PluginSource {
+                    name: path.to_string_lossy().into_owned(),
+                    code: Cow::Owned(fs::read_to_string(path).map_err(|e| e.to_string())?),
                 };
-                let result = (|| {
-                    let id = id.ok_or_else(|| "invalid plugin filename".to_string())?;
-                    let source = PluginSource {
-                        name: path.to_string_lossy().into_owned(),
-                        code: Cow::Owned(fs::read_to_string(&path).map_err(|e| e.to_string())?),
-                    };
-                    Self::load_agent(&loader, source, origin.clone(), id)
-                })();
-                match result {
-                    Ok(agent) => {
-                        if let Some(position) = position {
-                            slots[position].1 = Some(agent);
-                        } else {
-                            slots.push((agent.id.to_string(), Some(agent)));
-                        }
+                Self::load_agent(&loader, source, origin.clone(), id)
+            })();
+            match result {
+                Ok(agent) => {
+                    if let Some(position) = position {
+                        slots[position].1 = Some(agent);
+                    } else {
+                        slots.push((agent.id.to_string(), Some(agent)));
                     }
-                    Err(message) => {
-                        if let Some(position) = position {
-                            slots[position].1 = None;
-                        }
-                        diagnostics.push(PluginDiagnostic {
-                            origin,
-                            id: id.map(str::to_string),
-                            message,
-                        });
+                }
+                Err(message) => {
+                    if let Some(position) = position {
+                        slots[position].1 = None;
                     }
+                    diagnostics.push(PluginDiagnostic {
+                        origin,
+                        id: id.map(str::to_string),
+                        message,
+                    });
                 }
             }
         }
@@ -347,7 +353,7 @@ mod tests {
 
     #[test]
     fn builtin_plugins_load_without_diagnostics() {
-        let registry = AgentRegistry::load(BUILTIN_PLUGINS, None);
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &[]);
         assert!(
             registry.diagnostics().is_empty(),
             "{:?}",
@@ -370,7 +376,7 @@ mod tests {
         fs::write(dir.path().join("ignored.txt"), "invalid").unwrap();
         fs::create_dir(dir.path().join("nested")).unwrap();
         fs::write(dir.path().join("nested/ignored.js"), "invalid").unwrap();
-        let registry = AgentRegistry::load(BUILTIN_PLUGINS, Some(dir.path()));
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &user_plugin_files(dir.path()).0);
         assert!(registry.diagnostics().is_empty());
         assert_eq!(
             registry.agents()[15..]
@@ -386,11 +392,24 @@ mod tests {
     }
 
     #[test]
+    fn loads_only_the_selected_user_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("selected.js");
+        fs::write(&path, plugin("selected", "")).unwrap();
+        fs::write(dir.path().join("ignored.js"), "invalid").unwrap();
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &[path]);
+        assert!(registry.diagnostics().is_empty());
+        assert_eq!(registry.agents().len(), 16);
+        assert!(registry.agent("selected").is_some());
+        assert!(registry.agent("ignored").is_none());
+    }
+
+    #[test]
     fn user_override_replaces_the_whole_definition_in_place() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("codex.js");
         fs::write(&path, plugin("codex", "globalOnly:true")).unwrap();
-        let registry = AgentRegistry::load(BUILTIN_PLUGINS, Some(dir.path()));
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &user_plugin_files(dir.path()).0);
         let agent = &registry.agents()[0];
         assert_eq!(agent.id.as_str(), "codex");
         assert_eq!(agent.name, "Test");
@@ -417,7 +436,7 @@ mod tests {
             let path = dir.path().join("codex.js");
             fs::write(&path, code).unwrap();
             fs::write(dir.path().join("z-valid.js"), plugin("z-valid", "")).unwrap();
-            let registry = AgentRegistry::load(BUILTIN_PLUGINS, Some(dir.path()));
+            let registry = AgentRegistry::load(BUILTIN_PLUGINS, &user_plugin_files(dir.path()).0);
             assert!(registry.agent("codex").is_none());
             assert!(registry.agent("z-valid").is_some());
             let diagnostic = registry
@@ -436,7 +455,7 @@ mod tests {
         for filename in ["01-custom.js", "universal.js"] {
             fs::write(dir.path().join(filename), plugin("codex", "")).unwrap();
         }
-        let registry = AgentRegistry::load(BUILTIN_PLUGINS, Some(dir.path()));
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &user_plugin_files(dir.path()).0);
         assert_eq!(registry.agents().len(), 15);
         assert_eq!(registry.diagnostics().len(), 2);
         assert!(registry.diagnostics().iter().all(|d| d.id.is_none()));
@@ -458,7 +477,7 @@ mod tests {
             ),
         )
         .unwrap();
-        let registry = AgentRegistry::load(BUILTIN_PLUGINS, Some(dir.path()));
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &user_plugin_files(dir.path()).0);
         let agent = registry.agent("a-first").unwrap();
         assert_eq!(
             agent
@@ -489,7 +508,7 @@ mod tests {
             )
             .unwrap();
         }
-        let registry = AgentRegistry::load(&[], Some(dir.path()));
+        let registry = AgentRegistry::load(&[], &user_plugin_files(dir.path()).0);
         assert!(
             registry.diagnostics().is_empty(),
             "{:?}",
@@ -524,7 +543,7 @@ mod tests {
     #[test]
     fn omp_global_hook_matches_the_existing_profile_path() {
         let home = tempfile::tempdir().unwrap();
-        let registry = AgentRegistry::load(BUILTIN_PLUGINS, None);
+        let registry = AgentRegistry::load(BUILTIN_PLUGINS, &[]);
         let agent = registry.agent("omp").unwrap();
         let PathValue::Hook(hook) = &agent.install.as_ref().unwrap().global else {
             panic!("OMP must use a hook")
@@ -554,7 +573,7 @@ mod tests {
                 "test",
                 &format!("install:{{project:'.test',global:{expression}}}"),
             );
-            let registry = AgentRegistry::load(&[("test", &code)], None);
+            let registry = AgentRegistry::load(&[("test", &code)], &[]);
             assert!(registry.diagnostics().is_empty());
             assert!(
                 registry

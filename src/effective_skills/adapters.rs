@@ -14,7 +14,7 @@ use super::{
     HermesPolicy, MetadataProfile, OpenClawPolicy, OpenCodePolicy, PiAdapter, SkillScope, discover,
     estimate_skills, estimate_with_policy, estimate_with_profile, normalize_grok_name,
 };
-use crate::agent_plugins::AgentRegistry;
+use crate::agent_plugins::{AgentRegistry, PluginDiagnostic};
 
 trait AgentAdapter {
     fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate;
@@ -178,27 +178,55 @@ legacy_adapter!(OpenClawAdapter, OpenClawPolicy);
 legacy_adapter!(HermesAdapter, HermesPolicy);
 
 pub(super) fn inspect_project(
+    registry: &AgentRegistry,
     context: &DiscoveryContext,
     include_global_only: bool,
-) -> Vec<AgentContextEstimate> {
-    AgentRegistry::global()
+) -> (Vec<AgentContextEstimate>, Vec<PluginDiagnostic>) {
+    let mut estimates = Vec::new();
+    let mut diagnostics = Vec::new();
+    for agent in registry
         .agents()
         .iter()
         .filter(|agent| include_global_only || !agent.global_only)
-        .filter_map(|agent| inspect_agent(&agent.id, context))
-        .collect()
+    {
+        match inspect_registry_agent(registry, &agent.id, context) {
+            Some(Ok(estimate)) => estimates.push(estimate),
+            Some(Err(diagnostic)) => diagnostics.push(diagnostic),
+            None => {}
+        }
+    }
+    (estimates, diagnostics)
 }
 
 pub(super) fn inspect_agent(
     agent: &AgentId,
     context: &DiscoveryContext,
 ) -> Option<AgentContextEstimate> {
-    if let Some(def) = AgentRegistry::global().agent(agent.as_str())
+    inspect_registry_agent(AgentRegistry::global(), agent, context)?.ok()
+}
+
+fn inspect_registry_agent(
+    registry: &AgentRegistry,
+    agent: &AgentId,
+    context: &DiscoveryContext,
+) -> Option<Result<AgentContextEstimate, PluginDiagnostic>> {
+    if let Some(def) = registry.agent(agent.as_str())
         && let Some(skills) = &def.skills
     {
-        return super::engine::estimate(&def.id, skills, &def.source, context).ok();
+        return Some(
+            super::engine::estimate(&def.id, skills, &def.source, context).map_err(|error| {
+                PluginDiagnostic {
+                    origin: def.origin.clone(),
+                    id: Some(def.id.to_string()),
+                    message: match error.stack {
+                        Some(stack) => format!("{}\n{stack}", error.message),
+                        None => error.message,
+                    },
+                }
+            }),
+        );
     }
-    Some(match agent.as_str() {
+    Some(Ok(match agent.as_str() {
         "codex" => CodexAdapter.inspect(context),
         "claude-code" => ClaudeCodeAdapter.inspect(context),
         "cursor" => CursorAdapter.inspect(context),
@@ -217,7 +245,7 @@ pub(super) fn inspect_agent(
         "openclaw" => OpenClawAdapter.inspect(context),
         "hermes" => HermesAdapter.inspect(context),
         _ => return None,
-    })
+    }))
 }
 
 #[cfg(test)]

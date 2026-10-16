@@ -37,6 +37,12 @@ adoption:
     other: "%{count} 处引用"
   references: "引用位置"
 cli:
+  plugin_warning: "警告：部分 Agent 插件加载失败。运行 `kitter agents` 查看详情。"
+  plugin_directory: "插件目录：%{path}"
+  plugin_diagnostic: "  %{origin} %{id}: %{message}"
+  origin_builtin: "内置"
+  origin_user: "用户"
+  origin_override: "覆盖"
   adopt_hint: "使用 --all 或一个或多个 --source 路径进行托管"
   agent_summary: "  %{agent} %{discovered} 个已发现  %{visible} 个可见  ~%{tokens} tokens"
   agents: "Agent："
@@ -369,6 +375,9 @@ projects:
     other: "%{count} 个用户级技能"
   user_skills_empty: "没有检测到用户级生效的技能"
 settings:
+  agents: "Agent"
+  open_plugin_directory: "打开插件目录"
+  plugin_directory_failed: "无法打开插件目录：%{error}"
   appearance: "外观"
   appearance_hint: "跟随系统，或固定使用浅色与深色外观。"
   dark: "深色"

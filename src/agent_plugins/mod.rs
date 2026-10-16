@@ -15,6 +15,7 @@ pub use host::{JsHost, PluginError, PluginSource, load_spec};
 pub use id::{AgentId, InstallTarget};
 pub use registry::{
     AgentDef, AgentIcon, AgentRegistry, InstallDef, PathValue, PluginDiagnostic, PluginOrigin,
+    plugin_dir,
 };
 pub use spec::*;
 pub use template::expand_path;
