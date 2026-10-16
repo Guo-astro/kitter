@@ -349,3 +349,11 @@ fn exceptions_and_infinite_loops_are_plugin_errors_and_host_recovers() {
     assert!(start.elapsed().as_secs_f64() < 5.0);
     assert_eq!(call(&mut host, &plugin, "ok", None), 42);
 }
+
+#[test]
+fn top_level_infinite_loops_are_interrupted_while_loading() {
+    let start = Instant::now();
+    let error = load_spec(&source("loop.js", "while (true) {}\nexport default {};")).unwrap_err();
+    assert!(error.message.contains("interrupted"), "{error:?}");
+    assert!(start.elapsed().as_secs_f64() < 5.0);
+}

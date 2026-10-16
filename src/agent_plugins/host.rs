@@ -144,18 +144,16 @@ pub fn load_spec(source: &PluginSource) -> Result<AgentSpec, PluginError> {
 
 pub(crate) struct SpecLoader {
     context: Context,
-    _runtime: Runtime,
+    runtime: Runtime,
 }
 impl SpecLoader {
     pub(crate) fn new() -> Self {
         let runtime = runtime();
         let context = Context::full(&runtime).expect("create plugin context");
-        Self {
-            context,
-            _runtime: runtime,
-        }
+        Self { context, runtime }
     }
     pub(crate) fn load(&self, source: &PluginSource) -> Result<AgentSpec, PluginError> {
+        let _interrupt = Interrupt::start(&self.runtime);
         self.context.with(|ctx| {
             let result = (|| {
                 let def = load(&ctx, source)?;
@@ -197,10 +195,8 @@ impl JsHost {
         hook: &HookPath,
         input: Option<serde_json::Value>,
     ) -> Result<serde_json::Value, PluginError> {
-        let deadline = Instant::now() + Duration::from_secs(2);
-        self.runtime
-            .set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
-        let result = self.context.with(|ctx| {
+        let _interrupt = Interrupt::start(&self.runtime);
+        self.context.with(|ctx| {
             let result = (|| {
                 if !self.modules.contains_key(&plugin.name) {
                     let def: Object = Object::from_value(load(&ctx, plugin)?)?;
@@ -224,8 +220,21 @@ impl JsHost {
                 to_json(&ctx, output)
             })();
             result.map_err(|e| PluginError::caught(&ctx, e))
-        });
-        self.runtime.set_interrupt_handler(None);
-        result
+        })
+    }
+}
+
+/// Interrupts plugin code that runs longer than two seconds until dropped.
+struct Interrupt<'a>(&'a Runtime);
+impl<'a> Interrupt<'a> {
+    fn start(runtime: &'a Runtime) -> Self {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        runtime.set_interrupt_handler(Some(Box::new(move || Instant::now() >= deadline)));
+        Self(runtime)
+    }
+}
+impl Drop for Interrupt<'_> {
+    fn drop(&mut self) {
+        self.0.set_interrupt_handler(None);
     }
 }
