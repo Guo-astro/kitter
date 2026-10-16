@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-Kitter includes third-party fonts and icon artwork. Product names and brand marks remain the property of their respective owners and are used only to identify compatible tools.
+Kitter includes third-party fonts, icon artwork, and the QuickJS engine. Product names and brand marks remain the property of their respective owners and are used only to identify compatible tools.
 
 ## JetBrains Mono
 
@@ -149,6 +149,8 @@ Confirmed source files:
 - `assets/icons/crown.svg`
 - `assets/icons/house.svg`
 - `assets/icons/layers.svg`
+- `assets/icons/puzzle.svg`
+- `assets/icons/triangle-alert.svg`
 
 Several other interface icons are local variants. This notice is retained for any portions derived from Lucide or its Feather predecessors.
 
@@ -200,4 +202,43 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## QuickJS
+
+rquickjs 0.14.0 compiles the QuickJS C sources from `rquickjs-sys` into the Kitter binary.
+
+Source: https://github.com/quickjs-ng/quickjs
+
+Bundled source: https://docs.rs/crate/rquickjs-sys/0.14.0/source/quickjs/
+
+License: MIT
+
+The following text is copied from `rquickjs-sys-0.14.0/quickjs/LICENSE`.
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2017-2026 Fabrice Bellard
+Copyright (c) 2017-2024 Charlie Gordon
+Copyright (c) 2023-2026 Ben Noordhuis
+Copyright (c) 2023-2026 Saúl Ibarra Corretgé
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```

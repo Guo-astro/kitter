@@ -129,6 +129,10 @@ cargo run --release --locked --features desktop --bin kitter-desktop
 
 </details>
 
+## 自定义 Agent
+
+通过 JavaScript 插件添加 Agent，或覆盖内置 Agent。运行 `kitter agents` 查看可用 Agent、插件错误和插件目录。配置方法和示例见 [Agent 插件文档](./docs/agent-plugins.zh-CN.md)。
+
 ## 平台状态
 
 - **macOS（Apple Silicon / Intel）**——提供桌面应用和独立 CLI。

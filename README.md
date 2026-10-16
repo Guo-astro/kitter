@@ -129,6 +129,10 @@ cargo run --release --locked --features desktop --bin kitter-desktop
 
 </details>
 
+## Custom Agents
+
+Add an Agent or override a built-in Agent with a JavaScript plugin. Run `kitter agents` to see available Agents, plugin errors, and the plugin directory. See [Agent plugins](./docs/agent-plugins.md) for setup and examples.
+
 ## Platform status
 
 - **macOS (Apple Silicon / Intel)** — desktop application and standalone CLI.
