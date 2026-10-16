@@ -41,3 +41,20 @@ jobs:
         run: cargo test --locked
       - name: Check desktop app
         run: cargo check --locked --features desktop --bin kitter-desktop
+
+  windows-build:
+    name: Windows build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build desktop app and standalone CLI
+        run: cargo build --release --locked --features desktop --bin kitter-desktop --bin kitter
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kitter-windows-x86_64
+          path: |
+            target/release/kitter-desktop.exe
+            target/release/kitter.exe
+          if-no-files-found: error
