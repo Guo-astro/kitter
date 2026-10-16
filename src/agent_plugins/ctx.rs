@@ -25,6 +25,22 @@ const NATIVES: &[(&str, NativeFn)] = &[
     ("piPackageRoots", |_, input| {
         crate::effective_skills::pi_package_roots(input)
     }),
+    ("codexPluginRoots", |ctx, _| {
+        plugin_roots(crate::effective_skills::codex_plugin_roots(
+            &crate::effective_skills::codex_home(&discovery_context(ctx)),
+        ))
+    }),
+    ("claudePluginRoots", |ctx, _| {
+        plugin_roots(crate::effective_skills::claude_plugin_roots(
+            &discovery_context(ctx),
+        ))
+    }),
+    ("opencodeConfig", |ctx, _| {
+        serde_json::to_value(crate::effective_skills::opencode_config(
+            &discovery_context(ctx),
+        ))
+        .unwrap()
+    }),
     ("ompAgentDir", |ctx, _| {
         serde_json::json!(crate::agents::omp_agent_dir(&ctx.home))
     }),
@@ -34,6 +50,39 @@ const NATIVES: &[(&str, NativeFn)] = &[
         |ctx, input| serde_json::json!({"input": input, "cwd": ctx.cwd}),
     ),
 ];
+
+fn discovery_context(ctx: &HostContext) -> crate::effective_skills::DiscoveryContext {
+    crate::effective_skills::DiscoveryContext {
+        home: ctx.home.clone(),
+        cwd: ctx.cwd.clone(),
+        repository_root: ctx.repo_root.clone(),
+    }
+}
+
+fn plugin_roots(roots: Vec<crate::effective_skills::SkillRoot>) -> serde_json::Value {
+    serde_json::Value::Array(
+        roots
+            .into_iter()
+            .map(|root| {
+                let plugin = match root.source {
+                    crate::effective_skills::SkillSource::Plugin { id, display_name } => {
+                        serde_json::json!({ "id": id, "displayName": display_name })
+                    }
+                    _ => serde_json::Value::Null,
+                };
+                serde_json::json!({
+                    "path": root.path, "scope": root.scope, "exactFile": root.exact_skill_file,
+                    "plugin": plugin,
+                    "layout": if root.flat_markdown_only { "flatMarkdown" }
+                        else if root.direct_children_only { "directChildren" }
+                        else if root.include_root_markdown { "rootMarkdown" }
+                        else { "default" },
+                    "followSymlinks": root.follow_directory_symlinks,
+                })
+            })
+            .collect(),
+    )
+}
 
 impl HostContext {
     pub(crate) fn walk_up(&self) -> Vec<PathBuf> {

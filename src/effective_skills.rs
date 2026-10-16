@@ -22,6 +22,8 @@ mod golden;
 #[cfg(test)]
 mod plugin_tests_t5a;
 #[cfg(test)]
+mod plugin_tests_t5b;
+#[cfg(test)]
 mod plugin_tests_t5c;
 mod scanner;
 
@@ -225,7 +227,7 @@ pub(crate) struct DiscoveryContext {
 }
 
 #[derive(Clone, Debug)]
-struct SkillRoot {
+pub(crate) struct SkillRoot {
     pub path: PathBuf,
     pub scope: SkillScope,
     pub include_root_markdown: bool,
@@ -320,7 +322,6 @@ struct SkillMetadata {
 enum NameCollision {
     KeepAll,
     FirstWins,
-    LastWins,
 }
 
 /// Internal entry rules composed by the Agent adapters.
@@ -415,10 +416,6 @@ trait AgentSkillPolicy {
     }
     fn estimate_tokens(&self, rendered: &str) -> usize;
 }
-
-struct CodexAdapter;
-struct ClaudeCodeAdapter;
-struct OpenCodePolicy;
 
 pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
     let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
@@ -611,16 +608,6 @@ fn discover(
                 NameCollision::KeepAll => {}
                 NameCollision::FirstWins if !ids.insert(id.clone()) => continue,
                 NameCollision::FirstWins => {}
-                NameCollision::LastWins => {
-                    if ids.insert(id.clone()) {
-                        // First occurrence; nothing to replace.
-                    } else if let Some(index) = result
-                        .iter()
-                        .position(|skill: &EffectiveSkill| skill.id == id)
-                    {
-                        result.remove(index);
-                    }
-                }
             }
             let prompt_path =
                 policy.prompt_path_for_entry(&root, &skill_dir, &skill_file, &metadata, context);
@@ -641,432 +628,6 @@ fn discover(
     result
 }
 
-impl AgentSkillPolicy for CodexAdapter {
-    fn agent(&self) -> AgentId {
-        AgentId::from("codex")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let mut roots = Vec::new();
-        if !is_global_context(context) {
-            let project_config_root = context.repository_root.as_deref().unwrap_or(&context.cwd);
-            roots.push(SkillRoot::new(
-                project_config_root.join(".codex/skills"),
-                SkillScope::Repository,
-            ));
-            if project_config_root != context.cwd {
-                roots.push(SkillRoot::new(
-                    context.cwd.join(".codex/skills"),
-                    SkillScope::Local,
-                ));
-            }
-            for dir in cwd_to_boundary(&context.cwd, context.repository_root.as_deref()) {
-                roots.push(SkillRoot::new(
-                    dir.join(".agents/skills"),
-                    SkillScope::Repository,
-                ));
-            }
-        }
-        let codex_home = codex_home(context);
-        roots.push(SkillRoot::new(codex_home.join("skills"), SkillScope::User));
-        roots.push(SkillRoot::new(
-            context.home.join(".agents/skills"),
-            SkillScope::User,
-        ));
-        roots.push(
-            SkillRoot::new(codex_home.join("skills/.system"), SkillScope::System)
-                .without_directory_symlinks(),
-        );
-        #[cfg(unix)]
-        roots.push(SkillRoot::new(
-            PathBuf::from("/etc/codex/skills"),
-            SkillScope::System,
-        ));
-        roots.extend(codex_plugin_roots(&codex_home));
-        roots
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        if !metadata.has_explicit_description {
-            return false;
-        }
-        let disabled = codex_disabled_skills(&codex_home(context), &context.home);
-        let source_file = fs::canonicalize(&metadata.source_path)
-            .unwrap_or_else(|_| metadata.source_path.clone());
-        let source_dir = metadata
-            .source_path
-            .parent()
-            .map(|path| fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
-        !disabled.contains(&source_file) && !source_dir.is_some_and(|path| disabled.contains(&path))
-    }
-
-    fn prompt_path_for_entry(
-        &self,
-        _root: &SkillRoot,
-        _skill_dir: &Path,
-        skill_file: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> Option<String> {
-        Some(skill_file.display().to_string())
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::KeepAll
-    }
-
-    fn visibility(
-        &self,
-        skill_dir: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        if codex_manual_only(skill_dir) {
-            SkillVisibility::ManualOnly
-        } else {
-            SkillVisibility::Automatic
-        }
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        catalog::render_codex_listing(skills, 8_000).text
-    }
-
-    fn render_initial_catalog(&self, skills: &[EffectiveSkill]) -> catalog::CatalogRender {
-        catalog::render_codex_listing(skills, 8_000)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for ClaudeCodeAdapter {
-    fn agent(&self) -> AgentId {
-        AgentId::from("claude-code")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let mut roots = Vec::new();
-        #[cfg(target_os = "macos")]
-        {
-            let managed = PathBuf::from("/Library/Application Support/ClaudeCode/.claude");
-            roots.push(SkillRoot::new(managed.join("skills"), SkillScope::System));
-            roots
-                .push(SkillRoot::new(managed.join("commands"), SkillScope::System).flat_markdown());
-        }
-        #[cfg(all(unix, not(target_os = "macos")))]
-        roots.push(SkillRoot::new(
-            PathBuf::from("/etc/claude-code/.claude/skills"),
-            SkillScope::System,
-        ));
-        let user_config = claude_config_dir(context);
-        roots.push(SkillRoot::new(user_config.join("skills"), SkillScope::User));
-        roots.push(SkillRoot::new(user_config.join("commands"), SkillScope::User).flat_markdown());
-        if !is_global_context(context) {
-            for dir in cwd_to_boundary(&context.cwd, context.repository_root.as_deref()) {
-                roots.push(SkillRoot::new(
-                    dir.join(".claude/skills"),
-                    SkillScope::Repository,
-                ));
-                roots.push(
-                    SkillRoot::new(dir.join(".claude/commands"), SkillScope::Repository)
-                        .flat_markdown(),
-                );
-            }
-        }
-        roots.extend(claude_plugin_roots(context));
-        roots
-    }
-
-    fn effective_name(&self, skill_dir: &Path, metadata: &SkillMetadata) -> String {
-        let local_name = claude_local_name(skill_dir, metadata);
-        claude_plugin_name(skill_dir)
-            .map(|plugin| format!("{plugin}:{local_name}"))
-            .unwrap_or(local_name)
-    }
-
-    fn effective_name_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-    ) -> String {
-        let local_name = claude_local_name(skill_dir, metadata);
-        root.source
-            .plugin_display_name()
-            .map(|plugin| format!("{plugin}:{local_name}"))
-            .unwrap_or_else(|| self.effective_name(skill_dir, metadata))
-    }
-
-    fn is_enabled(
-        &self,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        if claude_plugin_name(skill_dir).is_some() {
-            return metadata.has_explicit_description || metadata.when_to_use.is_some();
-        }
-        claude_skill_override(context, &self.effective_name(skill_dir, metadata)).as_deref()
-            != Some("off")
-    }
-
-    fn is_enabled_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        if root.source.is_plugin() {
-            // Claude has no separate per-Skill plugin enable switch.  The
-            // plugin registry/settings already established enablement before
-            // this root was created; frontmatter only controls invocation.
-            metadata.has_explicit_description || metadata.when_to_use.is_some()
-        } else {
-            self.is_enabled(skill_dir, metadata, context)
-        }
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::KeepAll
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        if claude_plugin_name(_skill_dir).is_some() {
-            return frontmatter_visibility(metadata);
-        }
-        match claude_skill_override(context, &self.effective_name(_skill_dir, metadata)).as_deref()
-        {
-            Some("name-only") => SkillVisibility::NameOnly,
-            Some("user-invocable-only") => SkillVisibility::ManualOnly,
-            Some("on") => SkillVisibility::Automatic,
-            _ => frontmatter_visibility(metadata),
-        }
-    }
-
-    fn visibility_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        if root.source.is_plugin() {
-            frontmatter_visibility(metadata)
-        } else {
-            self.visibility(skill_dir, metadata, context)
-        }
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        if skills.is_empty() {
-            return String::new();
-        }
-        let entries = skills
-            .iter()
-            .map(|skill| -> (String, String) {
-                if skill.visibility == SkillVisibility::NameOnly {
-                    return (skill.name.clone(), String::new());
-                }
-                let description = match &skill.when_to_use {
-                    Some(when_to_use) if !when_to_use.is_empty() => {
-                        format!("{} - {when_to_use}", skill.description)
-                    }
-                    _ => skill.description.clone(),
-                };
-                (skill.name.clone(), truncate_chars(&description, 250))
-            })
-            .collect::<Vec<_>>();
-        format!(
-            "<system-reminder>\n{}\n</system-reminder>",
-            catalog::render_claude_listing(&entries, 8_000)
-        )
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for OpenCodePolicy {
-    fn agent(&self) -> AgentId {
-        AgentId::from("opencode")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let config_home = opencode_config_home(context);
-        let mut roots = Vec::new();
-        let ancestor_dirs = if is_global_context(context) {
-            Vec::new()
-        } else {
-            cwd_to_boundary(&context.cwd, context.repository_root.as_deref())
-        };
-        let disable_external = env_truthy("OPENCODE_DISABLE_EXTERNAL_SKILLS");
-        let disable_claude = env_truthy("OPENCODE_DISABLE_CLAUDE_CODE")
-            || env_truthy("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS");
-        if !disable_external {
-            if !disable_claude {
-                roots.push(
-                    SkillRoot::new(context.home.join(".claude/skills"), SkillScope::User)
-                        .with_root_markdown(),
-                );
-                for dir in ancestor_dirs.iter().rev() {
-                    roots.push(
-                        SkillRoot::new(dir.join(".claude/skills"), SkillScope::Repository)
-                            .with_root_markdown(),
-                    );
-                }
-            }
-            roots.push(
-                SkillRoot::new(context.home.join(".agents/skills"), SkillScope::User)
-                    .with_root_markdown(),
-            );
-            for dir in ancestor_dirs.iter().rev() {
-                roots.push(
-                    SkillRoot::new(dir.join(".agents/skills"), SkillScope::Repository)
-                        .with_root_markdown(),
-                );
-            }
-        }
-        for relative in ["skills", "skill"] {
-            roots.push(
-                SkillRoot::new(config_home.join(relative), SkillScope::User).with_root_markdown(),
-            );
-        }
-        for dir in ancestor_dirs.iter().rev() {
-            for relative in ["skills", "skill"] {
-                roots.push(
-                    SkillRoot::new(dir.join(".opencode").join(relative), SkillScope::Repository)
-                        .with_root_markdown(),
-                );
-            }
-        }
-        if let Some(custom) = env::var_os("OPENCODE_CONFIG_DIR").map(PathBuf::from) {
-            for relative in ["skill", "skills"] {
-                roots.push(
-                    SkillRoot::new(custom.join(relative), SkillScope::User).with_root_markdown(),
-                );
-            }
-        }
-        #[cfg(target_os = "macos")]
-        for relative in ["skill", "skills"] {
-            roots.push(
-                SkillRoot::new(
-                    PathBuf::from("/Library/Application Support/opencode").join(relative),
-                    SkillScope::System,
-                )
-                .with_root_markdown(),
-            );
-        }
-        roots.extend(
-            opencode_config(context)
-                .skill_paths
-                .into_iter()
-                .map(|(path, scope)| SkillRoot::new(path, scope).with_root_markdown()),
-        );
-        roots
-    }
-
-    fn builtins(&self, context: &DiscoveryContext) -> Vec<EffectiveSkill> {
-        if opencode_skill_permission(context, "customize-opencode") == "deny" {
-            return Vec::new();
-        }
-        vec![EffectiveSkill {
-            id: "customize-opencode".to_string(),
-            name: "customize-opencode".to_string(),
-            description: "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.".to_string(),
-            when_to_use: None,
-            path: PathBuf::from("<built-in>"),
-            root_path: None,
-            prompt_path: None,
-            scope: SkillScope::System,
-            visibility: SkillVisibility::Automatic,
-            source: SkillSource::Builtin,
-        }]
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        _metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        opencode_skill_permission(context, "*") != "deny"
-    }
-
-    fn is_enabled_for_entry(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        skill_file: &Path,
-        _metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        opencode_skill_permission(context, &path_derived_skill_id(root, skill_dir, skill_file))
-            != "deny"
-    }
-
-    fn effective_id_for_root(
-        &self,
-        root: &SkillRoot,
-        skill_dir: &Path,
-        skill_file: &Path,
-        _metadata: &SkillMetadata,
-    ) -> String {
-        path_derived_skill_id(root, skill_dir, skill_file)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::LastWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        opencode_visibility(metadata)
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        if skills.is_empty() {
-            return String::new();
-        }
-        let body = skills
-            .iter()
-            .map(|skill| {
-                format!(
-                    "  <skill>\n    <id>{}</id>\n    <name>{}</name>\n    <description>{}</description>\n  </skill>",
-                    xml_escape(&skill.id),
-                    xml_escape(&skill.name),
-                    xml_escape(&skill.description)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            "Skills provide specialized instructions and workflows for specific tasks.\nUse the skill tool to load a skill when a task matches its description.\n<available_skills>\n{body}\n</available_skills>"
-        )
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
 /// The desktop's Global project is represented by scanning `home` as the
 /// selected path. It must not be treated as an ordinary project whose parent
 /// directories contribute project-local compatibility roots.
@@ -1080,16 +641,10 @@ fn find_repository_root(path: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-fn codex_home(context: &DiscoveryContext) -> PathBuf {
+pub(crate) fn codex_home(context: &DiscoveryContext) -> PathBuf {
     env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| context.home.join(".codex"))
-}
-
-fn claude_config_dir(context: &DiscoveryContext) -> PathBuf {
-    env::var_os("CLAUDE_CONFIG_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| context.home.join(".claude"))
 }
 
 pub(crate) fn pi_package_roots(input: serde_json::Value) -> serde_json::Value {
@@ -1280,43 +835,6 @@ fn path_derived_skill_id(root: &SkillRoot, skill_dir: &Path, skill_file: &Path) 
         .unwrap_or_else(|| "SKILL".to_string())
 }
 
-fn opencode_visibility(metadata: &SkillMetadata) -> SkillVisibility {
-    if !metadata.has_explicit_description || metadata.description.trim().is_empty() {
-        return SkillVisibility::ManualOnly;
-    }
-    let Ok(content) = fs::read_to_string(&metadata.source_path) else {
-        return SkillVisibility::Automatic;
-    };
-    let Some(frontmatter) = yaml_frontmatter(&content) else {
-        return SkillVisibility::Automatic;
-    };
-    let Ok(parsed) = serde_yaml::from_str::<SkillFrontmatter>(frontmatter) else {
-        return SkillVisibility::Automatic;
-    };
-    if yaml_opencode_autoinvoke_disabled(parsed.metadata.as_ref()) {
-        SkillVisibility::ManualOnly
-    } else {
-        SkillVisibility::Automatic
-    }
-}
-
-fn yaml_opencode_autoinvoke_disabled(value: Option<&serde_yaml::Value>) -> bool {
-    let Some(value) = value else { return false };
-    if value
-        .get("opencode/autoinvoke")
-        .is_some_and(|value| value.as_bool() == Some(false) || value.as_str() == Some("false"))
-    {
-        return true;
-    }
-    let Some(opencode) = value.get("opencode") else {
-        return false;
-    };
-    let Some(autoinvoke) = opencode.get("autoinvoke") else {
-        return false;
-    };
-    autoinvoke.as_bool() == Some(false) || autoinvoke.as_str() == Some("false")
-}
-
 pub(crate) fn openclaw_plugin_roots_native(
     host: &crate::agent_plugins::HostContext,
     input: serde_json::Value,
@@ -1451,10 +969,6 @@ fn openclaw_plugin_roots(
     roots
 }
 
-fn claude_skill_override(context: &DiscoveryContext, name: &str) -> Option<String> {
-    claude_skill_overrides(context).remove(name)
-}
-
 fn claude_settings_files(context: &DiscoveryContext) -> Vec<PathBuf> {
     let project_root = context.repository_root.as_deref().unwrap_or(&context.cwd);
     let mut files = vec![context.home.join(".claude/settings.json")];
@@ -1471,31 +985,7 @@ fn claude_settings_files(context: &DiscoveryContext) -> Vec<PathBuf> {
     files
 }
 
-fn claude_skill_overrides(context: &DiscoveryContext) -> HashMap<String, String> {
-    let mut overrides = HashMap::new();
-    for file in claude_settings_files(context) {
-        let Ok(content) = fs::read_to_string(file) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
-            continue;
-        };
-        let Some(entries) = value
-            .get("skillOverrides")
-            .and_then(|value| value.as_object())
-        else {
-            continue;
-        };
-        for (name, state) in entries {
-            if let Some(state) = state.as_str() {
-                overrides.insert(name.clone(), state.to_string());
-            }
-        }
-    }
-    overrides
-}
-
-fn claude_plugin_roots(context: &DiscoveryContext) -> Vec<SkillRoot> {
+pub(crate) fn claude_plugin_roots(context: &DiscoveryContext) -> Vec<SkillRoot> {
     let mut enabled = HashSet::new();
     for file in claude_settings_files(context) {
         let Ok(content) = fs::read_to_string(file) else {
@@ -1573,33 +1063,9 @@ fn claude_plugin_roots(context: &DiscoveryContext) -> Vec<SkillRoot> {
     roots
 }
 
-fn claude_plugin_name(skill_dir: &Path) -> Option<String> {
-    let components = skill_dir
-        .components()
-        .map(|component| component.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>();
-    components
-        .windows(5)
-        .find(|parts| parts[0] == ".claude" && parts[1] == "plugins" && parts[2] == "cache")
-        .map(|parts| parts[4].clone())
-}
-
-fn claude_local_name(skill_dir: &Path, metadata: &SkillMetadata) -> String {
-    if metadata
-        .source_path
-        .file_name()
-        .is_some_and(|name| name != "SKILL.md")
-    {
-        return metadata.name.clone();
-    }
-    skill_dir
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| metadata.name.clone())
-}
-
-#[derive(Default)]
-struct OpenCodeConfigSnapshot {
+#[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OpenCodeConfigSnapshot {
     skill_paths: Vec<(PathBuf, SkillScope)>,
     permission_rules: Vec<(String, String)>,
 }
@@ -1611,16 +1077,7 @@ fn opencode_config_home(context: &DiscoveryContext) -> PathBuf {
         .join("opencode")
 }
 
-fn env_truthy(name: &str) -> bool {
-    env::var(name).ok().is_some_and(|value| {
-        matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        )
-    })
-}
-
-fn opencode_config(context: &DiscoveryContext) -> OpenCodeConfigSnapshot {
+pub(crate) fn opencode_config(context: &DiscoveryContext) -> OpenCodeConfigSnapshot {
     let config_home = opencode_config_home(context);
     let mut files = vec![
         (config_home.join("opencode.json"), SkillScope::User),
@@ -1748,16 +1205,6 @@ fn append_opencode_permission_rules(
             }
         }
     }
-}
-
-fn opencode_skill_permission(context: &DiscoveryContext, name: &str) -> String {
-    let mut action = "allow".to_string();
-    for (pattern, candidate) in opencode_config(context).permission_rules {
-        if wildcard_match(&pattern, name) {
-            action = candidate;
-        }
-    }
-    action
 }
 
 fn expand_user_path(value: &str, context: &DiscoveryContext) -> PathBuf {
@@ -2093,7 +1540,7 @@ fn codex_plugin_skill_roots(
     }
 }
 
-fn codex_plugin_roots(codex_home: &Path) -> Vec<SkillRoot> {
+pub(crate) fn codex_plugin_roots(codex_home: &Path) -> Vec<SkillRoot> {
     let Ok(config) = fs::read_to_string(codex_home.join("config.toml")) else {
         return Vec::new();
     };
@@ -2141,6 +1588,7 @@ fn enabled_plugin_ids(config: &str) -> Vec<String> {
     enabled
 }
 
+#[cfg(test)]
 fn codex_disabled_skills(codex_home: &Path, home: &Path) -> HashSet<PathBuf> {
     let Ok(config) = fs::read_to_string(codex_home.join("config.toml")) else {
         return HashSet::new();
@@ -2155,6 +1603,7 @@ fn codex_disabled_skills(codex_home: &Path, home: &Path) -> HashSet<PathBuf> {
         .collect()
 }
 
+#[cfg(test)]
 fn skill_config_entries(config: &str) -> Vec<(PathBuf, bool)> {
     let Ok(config) = toml::from_str::<toml::Value>(config) else {
         return Vec::new();
@@ -2351,7 +1800,6 @@ struct SkillFrontmatter {
     #[serde(default, rename = "disable-model-invocation")]
     disable_model_invocation: bool,
     paths: Option<serde_yaml::Value>,
-    metadata: Option<serde_yaml::Value>,
 }
 
 #[derive(Deserialize)]

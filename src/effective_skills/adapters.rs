@@ -1,60 +1,10 @@
-//! The production seam for effective-Skill inspection.
-//!
-//! Each Agent adapter owns the static scan and metadata profile used before
-//! its entry rules render the initial model catalog. Runtime loading is not
-//! part of this module.
+//! The production seam for effective-Skill inspection: every Agent is
+//! estimated by its plugin through the engine.
 
 #[cfg(test)]
 use super::EffectiveSkill;
-use super::scanner::ScanProfile;
-use super::{
-    AgentContextEstimate, AgentId, ClaudeCodeAdapter, CodexAdapter, DiscoveryContext,
-    MetadataProfile, OpenCodePolicy, estimate_with_policy, estimate_with_profile,
-};
+use super::{AgentContextEstimate, AgentId, DiscoveryContext};
 use crate::agent_plugins::{AgentRegistry, PluginDiagnostic};
-
-trait AgentAdapter {
-    fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate;
-}
-
-macro_rules! legacy_adapter {
-    ($adapter:ident, $policy:ident) => {
-        struct $adapter;
-        impl AgentAdapter for $adapter {
-            fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate {
-                estimate_with_policy(&$policy, context)
-            }
-        }
-    };
-}
-
-impl AgentAdapter for CodexAdapter {
-    fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate {
-        estimate_with_profile(
-            self,
-            context,
-            ScanProfile::Recursive {
-                max_depth: 6,
-                max_directories: 2_000,
-                max_entries: 20_000,
-            },
-            MetadataProfile::StrictFrontmatter,
-        )
-    }
-}
-
-impl AgentAdapter for ClaudeCodeAdapter {
-    fn inspect(&self, context: &DiscoveryContext) -> AgentContextEstimate {
-        estimate_with_profile(
-            self,
-            context,
-            ScanProfile::DirectChildren,
-            MetadataProfile::BodyFallback,
-        )
-    }
-}
-
-legacy_adapter!(OpenCodeAdapter, OpenCodePolicy);
 
 pub(super) fn inspect_project(
     registry: &AgentRegistry,
@@ -90,28 +40,20 @@ fn inspect_registry_agent(
     agent: &AgentId,
     context: &DiscoveryContext,
 ) -> Option<Result<AgentContextEstimate, PluginDiagnostic>> {
-    if let Some(def) = registry.agent(agent.as_str())
-        && let Some(skills) = &def.skills
-    {
-        return Some(
-            super::engine::estimate(&def.id, skills, &def.source, context).map_err(|error| {
-                PluginDiagnostic {
-                    origin: def.origin.clone(),
-                    id: Some(def.id.to_string()),
-                    message: match error.stack {
-                        Some(stack) => format!("{}\n{stack}", error.message),
-                        None => error.message,
-                    },
-                }
-            }),
-        );
-    }
-    Some(Ok(match agent.as_str() {
-        "codex" => CodexAdapter.inspect(context),
-        "claude-code" => ClaudeCodeAdapter.inspect(context),
-        "opencode" => OpenCodeAdapter.inspect(context),
-        _ => return None,
-    }))
+    let def = registry.agent(agent.as_str())?;
+    let skills = def.skills.as_ref()?;
+    Some(
+        super::engine::estimate(&def.id, skills, &def.source, context).map_err(|error| {
+            PluginDiagnostic {
+                origin: def.origin.clone(),
+                id: Some(def.id.to_string()),
+                message: match error.stack {
+                    Some(stack) => format!("{}\n{stack}", error.message),
+                    None => error.message,
+                },
+            }
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -132,49 +74,43 @@ pub(super) fn inspect_dimagent(
 
 #[cfg(test)]
 pub(super) fn render_catalog(agent: &AgentId, skills: &[EffectiveSkill]) -> String {
-    if let Some(def) = AgentRegistry::global().agent(agent.as_str())
-        && let Some(spec) = &def.skills
-    {
-        if let Some(crate::agent_plugins::CatalogSpec::Custom(catalog)) = &spec.catalog {
-            let mut host = crate::agent_plugins::JsHost::new(crate::agent_plugins::HostContext {
-                home: Default::default(),
-                cwd: Default::default(),
-                repo_root: None,
-                is_global: false,
-            });
-            let entries = skills
-                .iter()
-                .enumerate()
-                .map(|(key, skill)| {
-                    serde_json::json!({
-                        "key": key, "id": skill.id, "name": skill.name,
-                        "description": skill.description, "whenToUse": skill.when_to_use,
-                        "file": skill.path, "dir": skill.path.parent(),
-                        "scope": skill.scope, "visibility": skill.visibility,
-                        "promptPath": skill.prompt_path,
-                    })
-                })
-                .collect::<Vec<_>>();
-            let rendered = host
-                .call(
-                    &def.source,
-                    &catalog.render,
-                    Some(serde_json::json!(entries)),
-                )
-                .unwrap();
-            return rendered
-                .as_str()
-                .or_else(|| rendered["text"].as_str())
-                .unwrap()
-                .to_owned();
-        }
+    let def = AgentRegistry::global().agent(agent.as_str()).unwrap();
+    let Some(crate::agent_plugins::CatalogSpec::Custom(catalog)) = def
+        .skills
+        .as_ref()
+        .and_then(|skills| skills.catalog.as_ref())
+    else {
         return super::render_name_description_catalog(skills);
-    }
-    let policy: &dyn super::AgentSkillPolicy = match agent.as_str() {
-        "codex" => &CodexAdapter,
-        "claude-code" => &ClaudeCodeAdapter,
-        "opencode" => &OpenCodePolicy,
-        _ => return String::new(),
     };
-    policy.render_initial_catalog(skills).text
+    let entries = skills
+        .iter()
+        .enumerate()
+        .map(|(key, skill)| {
+            serde_json::json!({
+                "key": key, "id": skill.id, "name": skill.name,
+                "description": skill.description, "whenToUse": skill.when_to_use,
+                "file": skill.path, "dir": skill.path.parent(),
+                "scope": skill.scope, "promptPath": skill.prompt_path,
+                "visibility": super::engine::plugin_visibility(skill.visibility),
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut host = crate::agent_plugins::JsHost::new(crate::agent_plugins::HostContext {
+        home: Default::default(),
+        cwd: Default::default(),
+        repo_root: None,
+        is_global: false,
+    });
+    let rendered = host
+        .call(
+            &def.source,
+            &catalog.render,
+            Some(serde_json::json!(entries)),
+        )
+        .unwrap();
+    rendered
+        .as_str()
+        .or_else(|| rendered["text"].as_str())
+        .unwrap()
+        .to_owned()
 }

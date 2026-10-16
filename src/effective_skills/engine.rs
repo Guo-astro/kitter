@@ -312,7 +312,7 @@ fn skill_scope(scope: spec::Scope) -> SkillScope {
         spec::Scope::System => SkillScope::System,
     }
 }
-fn plugin_visibility(visibility: SkillVisibility) -> spec::Visibility {
+pub(super) fn plugin_visibility(visibility: SkillVisibility) -> spec::Visibility {
     match visibility {
         SkillVisibility::Automatic => spec::Visibility::Automatic,
         SkillVisibility::NameOnly => spec::Visibility::NameOnly,
