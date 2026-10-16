@@ -12,6 +12,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 mod adapters;
+#[cfg(test)]
 mod additional_agents;
 mod catalog;
 #[allow(dead_code)] // Used when plugin dispatch is connected after the registry migration.
@@ -20,6 +21,8 @@ mod engine;
 mod golden;
 #[cfg(test)]
 mod plugin_tests_t5a;
+#[cfg(test)]
+mod plugin_tests_t5c;
 mod scanner;
 
 pub use crate::agent_plugins::AgentId;
@@ -416,8 +419,6 @@ trait AgentSkillPolicy {
 struct CodexAdapter;
 struct ClaudeCodeAdapter;
 struct OpenCodePolicy;
-struct PiAdapter;
-struct GrokAdapter;
 
 pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
     let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
@@ -1066,236 +1067,6 @@ impl AgentSkillPolicy for OpenCodePolicy {
     }
 }
 
-impl AgentSkillPolicy for PiAdapter {
-    fn agent(&self) -> AgentId {
-        AgentId::from("pi")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let project_trusted = !is_global_context(context) && pi_project_is_trusted(context);
-        let (project_configured, user_configured) =
-            pi_configured_skill_roots(context, project_trusted);
-        let mut roots = Vec::new();
-        roots.extend(project_configured);
-        if project_trusted {
-            roots.push(
-                SkillRoot::new(context.cwd.join(".pi/skills"), SkillScope::Local)
-                    .with_root_markdown(),
-            );
-            let dirs = context
-                .repository_root
-                .as_deref()
-                .map(|root| cwd_to_boundary(&context.cwd, Some(root)))
-                .unwrap_or_else(|| context.cwd.ancestors().map(Path::to_path_buf).collect());
-            let user_agents = fs::canonicalize(context.home.join(".agents/skills"))
-                .unwrap_or_else(|_| context.home.join(".agents/skills"));
-            for dir in dirs {
-                let path = dir.join(".agents/skills");
-                let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-                if canonical == user_agents {
-                    continue;
-                }
-                roots.push(SkillRoot::new(path, SkillScope::Repository));
-            }
-        }
-        roots.extend(user_configured);
-        roots.push(
-            SkillRoot::new(pi_agent_dir(context).join("skills"), SkillScope::User)
-                .with_root_markdown(),
-        );
-        roots.push(SkillRoot::new(
-            context.home.join(".agents/skills"),
-            SkillScope::User,
-        ));
-        if project_trusted {
-            roots.extend(pi_package_skill_roots(
-                &context.cwd.join(".pi/settings.json"),
-                &context.cwd.join(".pi/npm/node_modules"),
-                SkillScope::Repository,
-            ));
-        }
-        roots.extend(pi_package_skill_roots(
-            &pi_agent_dir(context).join("settings.json"),
-            &pi_agent_dir(context).join("npm/node_modules"),
-            SkillScope::User,
-        ));
-        roots
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> bool {
-        metadata.has_explicit_description && !metadata.description.trim().is_empty()
-    }
-
-    fn prompt_path_for_entry(
-        &self,
-        _root: &SkillRoot,
-        _skill_dir: &Path,
-        skill_file: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> Option<String> {
-        Some(skill_file.display().to_string())
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::FirstWins
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        if frontmatter_visibility(metadata) == SkillVisibility::ManualOnly {
-            SkillVisibility::ManualOnly
-        } else {
-            SkillVisibility::Automatic
-        }
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        if skills.is_empty() {
-            return String::new();
-        }
-        let mut lines = vec![
-            "".to_string(),
-            "".to_string(),
-            "The following skills provide specialized instructions for specific tasks.".to_string(),
-            "Use the read tool to load a skill's file when the task matches its description.".to_string(),
-            "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.".to_string(),
-            "".to_string(),
-            "<available_skills>".to_string(),
-        ];
-        for skill in skills {
-            lines.push("  <skill>".to_string());
-            lines.push(format!("    <name>{}</name>", xml_escape(&skill.name)));
-            lines.push(format!(
-                "    <description>{}</description>",
-                xml_escape(&skill.description)
-            ));
-            lines.push(format!(
-                "    <location>{}</location>",
-                xml_escape(skill.prompt_path.as_deref().unwrap_or_default())
-            ));
-            lines.push("  </skill>".to_string());
-        }
-        lines.push("</available_skills>".to_string());
-        lines.join("\n")
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
-impl AgentSkillPolicy for GrokAdapter {
-    fn agent(&self) -> AgentId {
-        AgentId::from("grok")
-    }
-
-    fn roots(&self, context: &DiscoveryContext) -> Vec<SkillRoot> {
-        let mut roots = Vec::new();
-        if !is_global_context(context) {
-            for dir in cwd_to_boundary(&context.cwd, context.repository_root.as_deref()) {
-                let scope = if dir == context.cwd {
-                    SkillScope::Local
-                } else {
-                    SkillScope::Repository
-                };
-                for config in [".grok", ".agents", ".claude", ".cursor"] {
-                    roots.push(SkillRoot::new(dir.join(config).join("skills"), scope));
-                    roots.push(
-                        SkillRoot::new(dir.join(config).join("commands"), scope).flat_markdown(),
-                    );
-                }
-            }
-        }
-        for config_root in [
-            grok_home(context),
-            context.home.join(".agents"),
-            context.home.join(".claude"),
-            context.home.join(".cursor"),
-        ] {
-            roots.push(SkillRoot::new(config_root.join("skills"), SkillScope::User));
-            roots.push(
-                SkillRoot::new(config_root.join("commands"), SkillScope::User).flat_markdown(),
-            );
-        }
-        roots.extend(grok_configured_skill_roots(context));
-        roots
-    }
-
-    fn effective_name(&self, _skill_dir: &Path, metadata: &SkillMetadata) -> String {
-        normalize_grok_name(&metadata.name)
-    }
-
-    fn name_collision(&self) -> NameCollision {
-        NameCollision::KeepAll
-    }
-
-    fn is_enabled(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> bool {
-        let canonical = fs::canonicalize(&metadata.source_path)
-            .unwrap_or_else(|_| metadata.source_path.clone());
-        !grok_config_values(context, "ignore")
-            .into_iter()
-            .map(|value| resolve_agent_path(&value, &context.home, &grok_home(context)))
-            .map(|path| fs::canonicalize(&path).unwrap_or(path))
-            .any(|ignored| canonical.starts_with(ignored))
-    }
-
-    fn prompt_path_for_entry(
-        &self,
-        _root: &SkillRoot,
-        _skill_dir: &Path,
-        skill_file: &Path,
-        _metadata: &SkillMetadata,
-        _context: &DiscoveryContext,
-    ) -> Option<String> {
-        Some(skill_file.display().to_string())
-    }
-
-    fn visibility(
-        &self,
-        _skill_dir: &Path,
-        metadata: &SkillMetadata,
-        context: &DiscoveryContext,
-    ) -> SkillVisibility {
-        if grok_config_values(context, "disabled")
-            .iter()
-            .any(|name| normalize_grok_name(name) == normalize_grok_name(&metadata.name))
-        {
-            return SkillVisibility::ManualOnly;
-        }
-        frontmatter_visibility(metadata)
-    }
-
-    fn render_visible_metadata(&self, skills: &[EffectiveSkill]) -> String {
-        if skills.is_empty() {
-            return String::new();
-        }
-        catalog::render_grok_listing(skills, 400_000).text
-    }
-
-    fn render_initial_catalog(&self, skills: &[EffectiveSkill]) -> catalog::CatalogRender {
-        catalog::render_grok_listing(skills, 400_000)
-    }
-
-    fn estimate_tokens(&self, rendered: &str) -> usize {
-        approx_token_count(rendered)
-    }
-}
-
 /// The desktop's Global project is represented by scanning `home` as the
 /// selected path. It must not be treated as an ordinary project whose parent
 /// directories contribute project-local compatibility roots.
@@ -1321,135 +1092,38 @@ fn claude_config_dir(context: &DiscoveryContext) -> PathBuf {
         .unwrap_or_else(|| context.home.join(".claude"))
 }
 
-fn grok_home(context: &DiscoveryContext) -> PathBuf {
-    env::var_os("GROK_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| context.home.join(".grok"))
-}
-
-fn grok_configured_skill_roots(context: &DiscoveryContext) -> Vec<SkillRoot> {
-    let grok_home = grok_home(context);
-    grok_config_values(context, "paths")
+pub(crate) fn pi_package_roots(input: serde_json::Value) -> serde_json::Value {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Input {
+        settings: PathBuf,
+        install_root: PathBuf,
+        scope: crate::agent_plugins::Scope,
+    }
+    let Ok(input) = serde_json::from_value::<Input>(input) else {
+        return serde_json::json!([]);
+    };
+    serde_json::Value::Array(
+        pi_package_skill_roots(
+            &input.settings,
+            &input.install_root,
+            match input.scope {
+                crate::agent_plugins::Scope::Repository => SkillScope::Repository,
+                crate::agent_plugins::Scope::User => SkillScope::User,
+                crate::agent_plugins::Scope::Local => SkillScope::Local,
+                crate::agent_plugins::Scope::System => SkillScope::System,
+            },
+        )
         .into_iter()
-        .map(|value| resolve_agent_path(&value, &context.home, &grok_home))
-        .map(|path| {
-            if path.is_file() {
-                SkillRoot::exact(path, SkillScope::User)
-            } else {
-                SkillRoot::new(path, SkillScope::User)
-            }
+        .map(|root| {
+            serde_json::json!({
+                "path": root.path, "scope": root.scope,
+                "layout": if root.include_root_markdown { "rootMarkdown" } else { "default" },
+                "exactFile": root.exact_skill_file,
+            })
         })
-        .collect()
-}
-
-fn grok_config_values(context: &DiscoveryContext, key: &str) -> Vec<String> {
-    let Ok(config) = fs::read_to_string(grok_home(context).join("config.toml")) else {
-        return Vec::new();
-    };
-    let mut in_skills = false;
-    let mut values = Vec::new();
-    for raw_line in config.lines() {
-        let line = raw_line.trim();
-        if line == "[skills]" {
-            in_skills = true;
-            continue;
-        }
-        if line.starts_with('[') {
-            in_skills = false;
-            continue;
-        }
-        if !in_skills
-            || !line
-                .split_once('=')
-                .is_some_and(|(candidate, _)| candidate.trim() == key)
-        {
-            continue;
-        }
-        let Some((_, value)) = line.split_once('=') else {
-            continue;
-        };
-        values.extend(
-            value
-                .trim()
-                .trim_start_matches('[')
-                .trim_end_matches(']')
-                .split(',')
-                .map(str::trim)
-                .filter_map(|value| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
-                .map(str::to_string),
-        );
-    }
-    values
-}
-
-fn normalize_grok_name(name: &str) -> String {
-    let mut normalized = String::new();
-    let mut previous_dash = false;
-    for character in name.trim().to_ascii_lowercase().chars() {
-        if character.is_ascii_alphanumeric() {
-            normalized.push(character);
-            previous_dash = false;
-        } else if !previous_dash && !normalized.is_empty() {
-            normalized.push('-');
-            previous_dash = true;
-        }
-    }
-    normalized.trim_end_matches('-').chars().take(64).collect()
-}
-
-fn pi_agent_dir(context: &DiscoveryContext) -> PathBuf {
-    env::var_os("PI_CODING_AGENT_DIR")
-        .map(|value| resolve_agent_path(&value.to_string_lossy(), &context.home, &context.home))
-        .unwrap_or_else(|| context.home.join(".pi/agent"))
-}
-
-fn pi_project_is_trusted(context: &DiscoveryContext) -> bool {
-    let Ok(content) = fs::read_to_string(pi_agent_dir(context).join("trust.json")) else {
-        return true;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return true;
-    };
-    let Some(entries) = value.as_object() else {
-        return true;
-    };
-    let mut current = fs::canonicalize(&context.cwd).unwrap_or_else(|_| context.cwd.clone());
-    loop {
-        if let Some(decision) = entries.get(&current.to_string_lossy().to_string()) {
-            return decision.as_bool().unwrap_or(true);
-        }
-        let Some(parent) = current.parent() else {
-            return true;
-        };
-        if parent == current {
-            return true;
-        }
-        current = parent.to_path_buf();
-    }
-}
-
-fn pi_configured_skill_roots(
-    context: &DiscoveryContext,
-    project_trusted: bool,
-) -> (Vec<SkillRoot>, Vec<SkillRoot>) {
-    let mut project_roots = Vec::new();
-    let mut user_roots = Vec::new();
-    if project_trusted {
-        project_roots.extend(pi_settings_skill_roots(
-            &context.cwd.join(".pi/settings.json"),
-            &context.cwd.join(".pi"),
-            context,
-            SkillScope::Repository,
-        ));
-    }
-    let agent_dir = pi_agent_dir(context);
-    user_roots.extend(pi_settings_skill_roots(
-        &agent_dir.join("settings.json"),
-        &agent_dir,
-        context,
-        SkillScope::User,
-    ));
-    (project_roots, user_roots)
+        .collect(),
+    )
 }
 
 fn pi_package_skill_roots(
@@ -1516,46 +1190,6 @@ fn pi_npm_package_name(source: &str) -> Option<&str> {
     } else {
         Some(source.split('@').next().unwrap_or(source))
     }
-}
-
-fn pi_settings_skill_roots(
-    settings_path: &Path,
-    relative_base: &Path,
-    context: &DiscoveryContext,
-    scope: SkillScope,
-) -> Vec<SkillRoot> {
-    let Ok(content) = fs::read_to_string(settings_path) else {
-        return Vec::new();
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&normalize_jsonc(&content)) else {
-        return Vec::new();
-    };
-    let Some(entries) = value.get("skills") else {
-        return Vec::new();
-    };
-    let entries = entries
-        .as_array()
-        .cloned()
-        .or_else(|| {
-            entries
-                .get("customDirectories")
-                .and_then(|value| value.as_array())
-                .cloned()
-        })
-        .unwrap_or_default();
-    entries
-        .iter()
-        .filter_map(|entry| entry.as_str())
-        .filter(|entry| !entry.starts_with('!'))
-        .map(|entry| {
-            let path = resolve_agent_path(entry, &context.home, relative_base);
-            if path.extension().is_some_and(|extension| extension == "md") {
-                SkillRoot::exact(path, scope)
-            } else {
-                SkillRoot::new(path, scope).with_root_markdown()
-            }
-        })
-        .collect()
 }
 
 fn resolve_agent_path(value: &str, home: &Path, relative_base: &Path) -> PathBuf {

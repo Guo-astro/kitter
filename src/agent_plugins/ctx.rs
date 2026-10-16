@@ -22,6 +22,9 @@ const NATIVES: &[(&str, NativeFn)] = &[
         "openclawPluginRoots",
         crate::effective_skills::openclaw_plugin_roots_native,
     ),
+    ("piPackageRoots", |_, input| {
+        crate::effective_skills::pi_package_roots(input)
+    }),
     ("ompAgentDir", |ctx, _| {
         serde_json::json!(crate::agents::omp_agent_dir(&ctx.home))
     }),
