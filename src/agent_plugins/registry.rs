@@ -6,9 +6,9 @@ use std::{
 };
 
 use super::{
-    AgentId, AgentSpec, HookPath, HostContext, IconSpec, InstallTarget, InstructionsSpec, JsHost,
-    PathTemplate, PluginSource, SkillsSpec, builtin::BUILTIN_PLUGINS, expand_path,
-    host::SpecLoader, id::canonical_id, spec::valid_agent_id,
+    AgentId, AgentSpec, HookPath, HostContext, IconSpec, InstallTarget, JsHost, PathTemplate,
+    PluginSource, SkillsSpec, builtin::BUILTIN_PLUGINS, expand_path, host::SpecLoader,
+    id::canonical_id, spec::valid_agent_id,
 };
 
 const UNIVERSAL_PROJECT: &str = ".agents/skills";
@@ -60,7 +60,6 @@ pub struct AgentDef {
     pub reads: Vec<InstallTarget>,
     pub install: Option<InstallDef>,
     pub skills: Option<SkillsSpec>,
-    pub instructions: Option<InstructionsSpec>,
     pub origin: PluginOrigin,
     pub source: PluginSource,
 }
@@ -129,7 +128,6 @@ impl AgentDef {
                 },
             }),
             skills: spec.skills,
-            instructions: spec.instructions,
             origin,
             source,
         })
@@ -356,9 +354,12 @@ mod tests {
             registry.diagnostics()
         );
         assert_eq!(registry.agents().len(), 15);
-        assert!(registry.agents().iter().all(|agent| agent.skills.is_none()
-            && agent.instructions.is_none()
-            && agent.origin == PluginOrigin::Builtin));
+        assert!(
+            registry
+                .agents()
+                .iter()
+                .all(|agent| agent.skills.is_none() && agent.origin == PluginOrigin::Builtin)
+        );
     }
 
     #[test]

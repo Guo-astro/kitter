@@ -15,7 +15,6 @@ export const standard = {
       catalog: catalog.xml(), ...overrides,
     };
   },
-  instructions({ global, project = ["AGENTS.md"] } = {}) { return { global, project }; },
   roots(ctx, { project = [], user = [], envPaths } = {}) {
     return __native.roots({ project, user, envPaths }, ctx);
   },

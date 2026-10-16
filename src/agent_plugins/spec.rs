@@ -58,7 +58,6 @@ pub struct AgentSpec {
     pub reads: Vec<String>,
     pub install: Option<InstallSpec>,
     pub skills: Option<SkillsSpec>,
-    pub instructions: Option<InstructionsSpec>,
 }
 impl AgentSpec {
     pub(crate) fn validate(&self) -> Result<(), String> {
@@ -99,13 +98,6 @@ pub struct InstallSpec {
     pub project: String,
     pub global: PathTemplate,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InstructionsSpec {
-    pub global: Option<PathTemplate>,
-    pub project: Option<Vec<String>>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsSpec {

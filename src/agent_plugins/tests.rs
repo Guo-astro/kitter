@@ -36,7 +36,6 @@ fn parses_declarations_and_hook_paths() {
 import { defineAgent, standard } from 'kitter';
 export default defineAgent({apiVersion: 1, id: 'test-agent', name: 'Test', reads: ['universal'],
   install: {project: '.test/skills', global: ctx => ctx.path('~/.test/skills')},
-  instructions: standard.instructions({global: '~/.test/AGENTS.md'}),
   skills: standard.skills({project: ['.test/skills'], user: ['.test/skills'],
     filter: (entries, ctx) => entries,
     catalog: {render: (entries, ctx) => 'text'}
@@ -54,7 +53,6 @@ export default defineAgent({apiVersion: 1, id: 'test-agent', name: 'Test', reads
     assert!(
         matches!(skills.catalog, Some(CatalogSpec::Custom(ref c)) if c.render.0 == "skills.catalog.render")
     );
-    assert_eq!(spec.instructions.unwrap().project.unwrap(), ["AGENTS.md"]);
 }
 
 #[test]
