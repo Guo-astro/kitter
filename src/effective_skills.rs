@@ -422,41 +422,7 @@ pub(crate) fn codex_home(context: &DiscoveryContext) -> PathBuf {
         .unwrap_or_else(|| context.home.join(".codex"))
 }
 
-pub(crate) fn pi_package_roots(input: serde_json::Value) -> serde_json::Value {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Input {
-        settings: PathBuf,
-        install_root: PathBuf,
-        scope: crate::agent_plugins::Scope,
-    }
-    let Ok(input) = serde_json::from_value::<Input>(input) else {
-        return serde_json::json!([]);
-    };
-    serde_json::Value::Array(
-        pi_package_skill_roots(
-            &input.settings,
-            &input.install_root,
-            match input.scope {
-                crate::agent_plugins::Scope::Repository => SkillScope::Repository,
-                crate::agent_plugins::Scope::User => SkillScope::User,
-                crate::agent_plugins::Scope::Local => SkillScope::Local,
-                crate::agent_plugins::Scope::System => SkillScope::System,
-            },
-        )
-        .into_iter()
-        .map(|root| {
-            serde_json::json!({
-                "path": root.path, "scope": root.scope,
-                "layout": if root.include_root_markdown { "rootMarkdown" } else { "default" },
-                "exactFile": root.exact_skill_file,
-            })
-        })
-        .collect(),
-    )
-}
-
-fn pi_package_skill_roots(
+pub(crate) fn pi_package_skill_roots(
     settings_path: &Path,
     install_root: &Path,
     scope: SkillScope,
@@ -610,34 +576,7 @@ fn path_derived_skill_id(root: &SkillRoot, skill_dir: &Path, skill_file: &Path) 
         .unwrap_or_else(|| "SKILL".to_string())
 }
 
-pub(crate) fn openclaw_plugin_roots_native(
-    host: &crate::agent_plugins::HostContext,
-    input: serde_json::Value,
-) -> serde_json::Value {
-    let context = DiscoveryContext {
-        home: host.home.clone(),
-        cwd: host.cwd.clone(),
-        repository_root: host.repo_root.clone(),
-    };
-    let state_dir = Path::new(input["stateDir"].as_str().unwrap());
-    serde_json::Value::Array(
-        openclaw_plugin_roots(&input["config"], state_dir, &context)
-            .into_iter()
-            .map(|root| {
-                let SkillSource::Plugin { id, display_name } = root.source else {
-                    unreachable!()
-                };
-                serde_json::json!({
-                    "path": root.path,
-                    "scope": root.scope,
-                    "plugin": { "id": id, "displayName": display_name },
-                })
-            })
-            .collect(),
-    )
-}
-
-fn openclaw_plugin_roots(
+pub(crate) fn openclaw_plugin_roots(
     config: &serde_json::Value,
     state_dir: &Path,
     context: &DiscoveryContext,

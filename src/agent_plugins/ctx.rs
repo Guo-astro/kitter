@@ -1,5 +1,8 @@
 use rquickjs::{Ctx, Function, Object, Value, function::Opt, object::Property};
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use super::{
     expand_path,
@@ -17,13 +20,23 @@ pub struct HostContext {
 
 pub type NativeFn = fn(&HostContext, serde_json::Value) -> serde_json::Value;
 const NATIVES: &[(&str, NativeFn)] = &[
-    // Unstable, agent-specific plugin manifest discovery.
-    (
-        "openclawPluginRoots",
-        crate::effective_skills::openclaw_plugin_roots_native,
-    ),
+    ("openclawPluginRoots", |ctx, input| {
+        plugin_roots(crate::effective_skills::openclaw_plugin_roots(
+            &input["config"],
+            Path::new(input["stateDir"].as_str().unwrap_or_default()),
+            &discovery_context(ctx),
+        ))
+    }),
     ("piPackageRoots", |_, input| {
-        crate::effective_skills::pi_package_roots(input)
+        let scope = match input["scope"].as_str() {
+            Some("repository") => crate::effective_skills::SkillScope::Repository,
+            _ => crate::effective_skills::SkillScope::User,
+        };
+        plugin_roots(crate::effective_skills::pi_package_skill_roots(
+            Path::new(input["settings"].as_str().unwrap_or_default()),
+            Path::new(input["installRoot"].as_str().unwrap_or_default()),
+            scope,
+        ))
     }),
     ("codexPluginRoots", |ctx, _| {
         plugin_roots(crate::effective_skills::codex_plugin_roots(
