@@ -567,31 +567,16 @@ pub(super) fn avatar(p: Palette, path: &'static str) -> Div {
 }
 
 pub(super) fn agent_avatar(p: Palette, agent: &crate::agent_plugins::AgentDef) -> Div {
-    match agent.icon {
-        crate::agent_plugins::AgentIcon::Builtin(path) => div()
-            .size(px(AVATAR))
-            .flex_none()
-            .rounded_full()
-            .bg(p.avatar)
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(KitterApp::brand_icon(
-                path,
-                KitterApp::brand_icon_size(path, ICON_MD),
-                p.dark,
-            )),
-        crate::agent_plugins::AgentIcon::Monogram => div()
-            .size(px(AVATAR))
-            .flex_none()
-            .rounded_full()
-            .bg(p.avatar)
-            .text_color(p.text)
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(agent.name.chars().next().unwrap_or_default().to_string()),
-    }
+    div()
+        .size(px(AVATAR))
+        .flex_none()
+        .rounded_full()
+        .bg(p.avatar)
+        .text_color(p.text)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(KitterApp::brand_icon(agent, ICON_MD, p.dark))
 }
 
 /// Rounded-square tile behind a functional icon (not an identity mark).

@@ -62,17 +62,13 @@ pub struct AgentSpec {
 }
 impl AgentSpec {
     pub(crate) fn validate(&self) -> Result<(), String> {
-        let id = self.id.as_bytes();
-        if !(1..=32).contains(&id.len())
-            || !id[0].is_ascii_lowercase()
-            || !id
-                .iter()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
-        {
-            return Err("invalid agent id".into());
+        if !valid_agent_id(&self.id) {
+            return Err("invalid or reserved agent id".into());
         }
-        if self.id == "universal" {
-            return Err("universal is a reserved agent id".into());
+        if let Some(install) = &self.install
+            && !std::path::Path::new(&install.project).is_relative()
+        {
+            return Err("install.project must be a relative path".into());
         }
         if self.api_version != 1 {
             return Err("apiVersion must be 1".into());
@@ -100,8 +96,8 @@ impl AgentSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallSpec {
-    pub project: Option<PathTemplate>,
-    pub global: Option<PathTemplate>,
+    pub project: String,
+    pub global: PathTemplate,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -316,4 +312,14 @@ pub fn expand_roots(decl: &RootsDecl, ctx: &HostContext) -> Vec<RootSpec> {
         );
     }
     roots
+}
+
+pub(crate) fn valid_agent_id(value: &str) -> bool {
+    let id = value.as_bytes();
+    (1..=32).contains(&id.len())
+        && id[0].is_ascii_lowercase()
+        && id
+            .iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+        && value != "universal"
 }

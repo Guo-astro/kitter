@@ -46,7 +46,7 @@ export default defineAgent({apiVersion: 1, id: 'test-agent', name: 'Test', reads
     let spec = load_spec(&plugin).unwrap();
     assert!(!spec.global_only);
     assert!(
-        matches!(spec.install.unwrap().global, Some(PathTemplate::Hook(HookPath(ref p))) if p == "install.global")
+        matches!(spec.install.unwrap().global, PathTemplate::Hook(HookPath(ref p)) if p == "install.global")
     );
     let skills = spec.skills.unwrap();
     assert_eq!(skills.filter, Some(HookPath("skills.filter".into())));
@@ -65,6 +65,10 @@ fn rejects_invalid_specs_and_reports_syntax_locations() {
         "apiVersion:1,id:'universal',name:'X'",
         "apiVersion:2,id:'x',name:'X'",
         "apiVersion:1,id:'x',name:'X',skills:{roots:{oops:[]}}",
+        "apiVersion:1,id:'x',name:'X',install:{global:'~/.test'}",
+        "apiVersion:1,id:'x',name:'X',install:{project:'.test'}",
+        "apiVersion:1,id:'x',name:'X',install:{project:'/absolute',global:'~/.test'}",
+        "apiVersion:1,id:'x',name:'X',install:{project:ctx=>'.test',global:'~/.test'}",
     ] {
         assert!(
             load_spec(&source("invalid.js", &format!("export default {{{body}}}"))).is_err(),

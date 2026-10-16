@@ -12,6 +12,7 @@ use std::{
 use super::{AgentSpec, HookPath, HostContext, RootsDecl, expand_roots};
 use crate::effective_skills::{truncate_chars, xml_escape};
 
+#[derive(Clone, Debug)]
 pub struct PluginSource {
     pub name: String,
     pub code: Cow<'static, str>,
@@ -138,20 +139,36 @@ fn load<'js>(ctx: &Ctx<'js>, source: &PluginSource) -> rquickjs::Result<Value<'j
 }
 
 pub fn load_spec(source: &PluginSource) -> Result<AgentSpec, PluginError> {
-    let rt = runtime();
-    let context = Context::full(&rt).expect("create plugin context");
-    context.with(|ctx| {
-        let result = (|| {
-            let def = load(&ctx, source)?;
-            let kitter: Object = Module::import(&ctx, "kitter")?.finish()?;
-            let describe: Function = kitter.get("__describe")?;
-            to_json(&ctx, describe.call((def,))?)
-        })()
-        .map_err(|e| PluginError::caught(&ctx, e))?;
-        let spec: AgentSpec = serde_json::from_value(result).map_err(PluginError::message)?;
-        spec.validate().map_err(PluginError::message)?;
-        Ok(spec)
-    })
+    SpecLoader::new().load(source)
+}
+
+pub(crate) struct SpecLoader {
+    context: Context,
+    _runtime: Runtime,
+}
+impl SpecLoader {
+    pub(crate) fn new() -> Self {
+        let runtime = runtime();
+        let context = Context::full(&runtime).expect("create plugin context");
+        Self {
+            context,
+            _runtime: runtime,
+        }
+    }
+    pub(crate) fn load(&self, source: &PluginSource) -> Result<AgentSpec, PluginError> {
+        self.context.with(|ctx| {
+            let result = (|| {
+                let def = load(&ctx, source)?;
+                let kitter: Object = Module::import(&ctx, "kitter")?.finish()?;
+                let describe: Function = kitter.get("__describe")?;
+                to_json(&ctx, describe.call((def,))?)
+            })()
+            .map_err(|e| PluginError::caught(&ctx, e))?;
+            let spec: AgentSpec = serde_json::from_value(result).map_err(PluginError::message)?;
+            spec.validate().map_err(PluginError::message)?;
+            Ok(spec)
+        })
+    }
 }
 
 pub struct JsHost {

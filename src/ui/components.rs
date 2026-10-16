@@ -2,7 +2,8 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use super::*;
 
-static BRAND_IMAGES: LazyLock<Mutex<HashMap<String, Arc<RenderImage>>>> =
+type BrandImageCache = HashMap<(crate::agent_plugins::AgentId, bool), Arc<RenderImage>>;
+static BRAND_IMAGES: LazyLock<Mutex<BrandImageCache>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 impl KitterApp {
@@ -40,30 +41,56 @@ impl KitterApp {
             .icon(Icon::default().path("icons/trash.svg").text_color(danger))
     }
 
-    pub(super) fn brand_icon(path: &'static str, size: f32, dark: bool) -> AnyElement {
+    pub(super) fn brand_icon(
+        agent: &crate::agent_plugins::AgentDef,
+        size: f32,
+        dark: bool,
+    ) -> AnyElement {
+        use crate::agent_plugins::AgentIcon;
+        let (path, inline, size) = match &agent.icon {
+            AgentIcon::Builtin(path) => (Some(*path), None, Self::brand_icon_size(path, size)),
+            AgentIcon::Inline {
+                light,
+                dark: dark_svg,
+            } => (
+                None,
+                Some(
+                    if dark {
+                        dark_svg.as_ref().unwrap_or(light)
+                    } else {
+                        light
+                    }
+                    .clone(),
+                ),
+                size,
+            ),
+            AgentIcon::Monogram => {
+                return div()
+                    .child(agent.name.chars().next().unwrap_or_default().to_string())
+                    .into_any_element();
+            }
+        };
+        let key = (agent.id.clone(), dark);
         img(ImageSource::Custom(Arc::new(move |_, cx| {
-            let dark_path = format!("{}.dark.svg", path.trim_end_matches(".svg"));
-            let (path, bytes) = if let Some(bytes) = dark
-                .then(|| cx.asset_source().load(&dark_path).ok().flatten())
-                .flatten()
-            {
-                (dark_path, bytes)
-            } else {
-                (
-                    path.to_string(),
-                    cx.asset_source().load(path).ok().flatten()?,
-                )
-            };
             let mut cache = BRAND_IMAGES.lock().unwrap();
-            if let Some(image) = cache.get(&path) {
+            if let Some(image) = cache.get(&key) {
                 return Some(Ok(image.clone()));
             }
+            let bytes = if let Some(bytes) = &inline {
+                std::borrow::Cow::Borrowed(bytes.as_ref())
+            } else {
+                let path = path?;
+                let dark_path = format!("{}.dark.svg", path.trim_end_matches(".svg"));
+                dark.then(|| cx.asset_source().load(&dark_path).ok().flatten())
+                    .flatten()
+                    .or_else(|| cx.asset_source().load(path).ok().flatten())?
+            };
             let image = cx
                 .svg_renderer()
                 .render_single_frame(bytes.as_ref(), 2.0)
                 .map_err(ImageCacheError::from);
             if let Ok(image) = &image {
-                cache.insert(path, image.clone());
+                cache.insert(key.clone(), image.clone());
             }
             Some(image)
         })))
@@ -205,26 +232,8 @@ impl KitterApp {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .child(match definition.icon {
-                                        crate::agent_plugins::AgentIcon::Builtin(icon) => {
-                                            Self::brand_icon(
-                                                icon,
-                                                Self::brand_icon_size(icon, 18.),
-                                                p.dark,
-                                            )
-                                        }
-                                        crate::agent_plugins::AgentIcon::Monogram => div()
-                                            .text_color(p.text)
-                                            .child(
-                                                definition
-                                                    .name
-                                                    .chars()
-                                                    .next()
-                                                    .unwrap_or_default()
-                                                    .to_string(),
-                                            )
-                                            .into_any_element(),
-                                    }),
+                                    .text_color(p.text)
+                                    .child(Self::brand_icon(definition, 18., p.dark)),
                             )
                             .child(definition.name.as_str()),
                     )

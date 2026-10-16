@@ -17,6 +17,9 @@ pub struct HostContext {
 
 pub type NativeFn = fn(&HostContext, serde_json::Value) -> serde_json::Value;
 const NATIVES: &[(&str, NativeFn)] = &[
+    ("ompAgentDir", |ctx, _| {
+        serde_json::json!(crate::agents::omp_agent_dir(&ctx.home))
+    }),
     #[cfg(test)]
     (
         "testEcho",
