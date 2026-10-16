@@ -99,8 +99,8 @@ fn t5b_codex_directory_disable_and_yaml_policy() {
 #[test]
 fn t5b_opencode_flat_autoinvoke_and_agent_permissions() {
     let temp = tempdir().unwrap();
-    let home = temp.path().join("home");
-    let root = home.join(".config/opencode");
+    let project = temp.path().join("project");
+    let root = project.join(".opencode");
     write(
         &root.join("skills/root.md"),
         "---\nname: Display\ndescription: 中文 🦀\nmetadata:\n  opencode/autoinvoke: 'false'\n---\nBody\n",
@@ -110,13 +110,13 @@ fn t5b_opencode_flat_autoinvoke_and_agent_permissions() {
         "---\nname: denied\ndescription: Denied\n---\nBody\n",
     );
     write(
-        &root.join("opencode.jsonc"),
+        &project.join("opencode.jsonc"),
         r#"{ "default_agent": "review", "agents": { "review": { "permission": { "skill": { "denied": "deny" } } } } }"#,
     );
     let context = DiscoveryContext {
-        cwd: home.clone(),
-        home,
-        repository_root: None,
+        cwd: project.clone(),
+        home: temp.path().join("home"),
+        repository_root: Some(project),
     };
     let estimate = adapters::inspect_agent(&AgentId::from("opencode"), &context).unwrap();
     let skill = estimate.skills.iter().find(|s| s.id == "root").unwrap();
