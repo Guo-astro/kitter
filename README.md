@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-3f8997" alt="Apache-2.0 license"></a>
+  <a href="https://github.com/what1f/kitter/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.0-blue" alt="Release v0.2.0"></a>
   <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows%20%7C%20Linux-15191a" alt="macOS, Windows, and Linux desktop app">
   <img src="https://img.shields.io/badge/built_with-Rust-b8aaa0" alt="Built with Rust">
 </p>
@@ -16,37 +17,75 @@
 
 Kitter is a desktop app and CLI for managing Agent Skills across projects. Keep your skills in one library, install the right combination for each project, and update them in one place.
 
-Built entirely in Rust with GPUI, Kitter pairs a straightforward interface with a small footprint and smooth native performance.
+Built entirely in Rust with GPUI, Kitter pairs a clean, responsive interface with instant startup, microscopic memory usage, and 60+ FPS native performance even when managing hundreds of skills.
 
 <p align="center">
   <img src="./assets/readme/skill-workflow.png" width="100%" alt="Kitter maintains one skill library and links selected skills to projects and user-level installations">
 </p>
 
-## Why Kitter
+---
 
-Working across projects often means maintaining several copies of the same skill and keeping track of what each agent can use. Kitter keeps those connections visible:
+## Key Highlights
 
-- **Maintain once** — projects link to the same skill source, so one update reaches every linked installation.
-- **Choose per project** — give each project its own skill set, with user-level installation for skills you use everywhere.
-- **See what is active** — inspect the skills each agent discovers, including installations outside Kitter, along with their sources and estimated context cost.
+- **Maintain once, zero drift** — Projects link directly to maintained skill sources via managed links (symlinks/junctions). Update a skill once, and every project reflects the change immediately.
+- **15+ built-in agents and open plugin engine** — Out-of-the-box support for mainstream AI coding agents, powered by an embedded QuickJS engine. Add or override any agent using simple single-file JavaScript plugins.
+- **Effective skills and token cost auditing** — Automatically inspect project, parent directory, user-level, and plugin capabilities. Estimate prompt context token consumption per agent to keep your context lean.
+- **Presets and non-destructive AGENTS.md** — Bundle curated skills and instruction rules into reusable presets. Injects instructions into `AGENTS.md` inside managed comment blocks without touching user notes.
+- **Multi-source import and adoption** — Add skills from GitHub, skills.sh-compatible sources, Claude plugins, or local directories. Use `adopt` to scan and manage scattered pre-existing skills in place.
+- **Native performance** — 100% Rust with a lightweight GPUI desktop interface and a dedicated standalone CLI built for terminals and CI automation.
+
+---
+
+## Supported Agent Ecosystem
+
+Kitter natively respects the distinctive discovery rules, target directories, frontmatter schemas, and catalog token estimation formats of each agent:
+
+| Category | Agents / Platforms |
+| --- | --- |
+| **Built-in Support** | **Claude Code** · **Cursor** · **Codex** · **OpenCode** · **GitHub Copilot** · **Antigravity** · **Grok** · **Pi** · **Oh My Pi (omp)** · **DimAgent** · **OpenClaw** · **Hermes** · **Droid** · **Amp** · **Trae** |
+| **Universal Target** | `.agents/skills` (standard multi-agent shared directory) |
+| **Custom Plugins** | Extendable to any proprietary or emerging agent via lightweight JavaScript plugins |
+
+<p align="center">
+  <img src="./assets/readme/settings-agents.en.png" width="100%" alt="Kitter Agent management in Settings, supporting 15+ built-in agents and custom plugins">
+</p>
+
+### Extensible Agent Plugins
+
+Easily define support for custom in-house agents or community tools (see the [Agent Plugins Guide](./docs/agent-plugins.md)):
+
+```js
+import { defineAgent, standard } from "kitter";
+
+export default defineAgent({
+  apiVersion: 1,
+  id: "my-agent",
+  name: "My Agent",
+  reads: ["my-agent", "universal"],
+  install: { project: ".my-agent/skills", global: "~/.my-agent/skills" },
+  skills: standard.skills({
+    project: [".my-agent/skills", ".agents/skills"],
+    user: ["~/.my-agent/skills", "~/.agents/skills"],
+  }),
+});
+```
+
+Manage agents directly from desktop **Settings** or via `kitter agents` (add, remove, update, enable/disable, and reorder).
+
+---
 
 ## Install Kitter
 
-Download the app for your platform from [GitHub Releases](https://github.com/what1f/kitter/releases/latest).
+Download the prebuilt application from [GitHub Releases](https://github.com/what1f/kitter/releases/latest):
 
-- **macOS (Apple Silicon / Intel)** — choose the `macos-arm64.dmg` (Apple Silicon) or `macos-x86_64.dmg` (Intel) download, open the `.dmg` and drag `Kitter.app` into `Applications`.
-- **Windows (x64)** — download `Kitter-<version>-desktop-windows-x86_64.exe` and run it directly.
-- **Linux (x64)** — extract `Kitter-<version>-desktop-linux-x86_64.tar.gz` and run `./Kitter` from the extracted `Kitter` directory.
+- **macOS (Apple Silicon / Intel)** — choose `macos-arm64.dmg` (Apple Silicon) or `macos-x86_64.dmg` (Intel), open the `.dmg` and drag `Kitter.app` into `Applications`.
+  *(If macOS blocks first launch, confirm it was downloaded from the official release, then go to **System Settings → Privacy & Security → Open Anyway**, or run `xattr -dr com.apple.quarantine /Applications/Kitter.app`)*
+- **Windows (x64)** — download `Kitter-<version>-desktop-windows-x86_64.exe` and run it directly (statically linked MSVC runtime, zero dependencies).
+- **Linux (x64)** — extract `Kitter-<version>-desktop-linux-x86_64.tar.gz` and run `./Kitter` from the extracted directory.
 
-Kitter is not yet signed with an Apple Developer ID. If macOS blocks the first launch, confirm that you downloaded it from the official release, then go to **System Settings → Privacy & Security → Open Anyway** and follow the prompts. See [Apple’s instructions](https://support.apple.com/102445).
+> **Standalone CLI**: The desktop app and CLI share the same core but are released as separate artifacts. Standalone `kitter` CLI binaries for macOS, Windows, and Linux are available directly on the Releases page.
 
-You can also run the following command, then open Kitter again:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Kitter.app
-```
-
-The desktop app and CLI are separate release artifacts built on the same core. Standalone CLI packages for macOS, Windows, and Linux are available from [GitHub Releases](https://github.com/what1f/kitter/releases/latest). The built-in Kitter skill resolves that standalone CLI and guides you through downloading it when needed.
+---
 
 ## Manage your skills with Kitter
 
@@ -62,15 +101,11 @@ Kitter keeps one maintained source for each skill. Open its **Installs** tab to 
 
 ### 2. Install only where needed
 
-Select a skill, choose a project, then install it into the shared `.agents/skills` directory or an agent-specific directory. Kitter creates managed links instead of independent copies, so projects can use different combinations without creating update drift.
-
-DimAgent uses the shared install option. For Oh My Pi (omp), choose the shared option or its own `.omp/skills` target (`--target omp` in the CLI). User-level omp installs use `~/.omp/agent/skills` by default.
+Select a skill, choose a project, then install it into the shared `.agents/skills` directory or an agent-specific directory. Kitter creates managed links instead of independent copies, so projects can use different combinations without creating update drift. Skills you use across all projects can also be installed at the user level.
 
 <p align="center">
   <img src="./assets/readme/install-skill.en.png" width="100%" alt="Kitter installation dialog for selecting a project and agent targets">
 </p>
-
-Skills you use across all projects can also be installed at the user level.
 
 ### 3. Verify what is actually active
 
@@ -84,9 +119,13 @@ The per-agent token estimate helps you spot skills that add unnecessary context 
 
 ### 4. Reuse a setup with presets
 
-A preset bundles skills with optional AGENTS.md instructions. Open **Presets** to build one, then install it into a project in one step. Kitter appends the preset's instructions to the project's `AGENTS.md` inside a managed block and leaves your own content untouched.
+A preset bundles skills with optional `AGENTS.md` instructions. Open **Presets** to build one, then install it into a project in one step. Kitter appends the preset's instructions to the project's `AGENTS.md` inside a managed block and leaves your own content untouched.
 
 When you change a preset, its projects show that they need a sync, and you choose when to apply it. Removing a preset from a project removes only what it installed.
+
+<p align="center">
+  <img src="./assets/readme/presets.en.png" width="100%" alt="Kitter Presets page for bundling skills with AGENTS.md instructions">
+</p>
 
 ```bash
 kitter preset create frontend
@@ -99,14 +138,36 @@ kitter preset sync frontend
 
 Run **Check for updates** from the desktop app or use `kitter check` and `kitter update`. Every managed project continues to use the same maintained source.
 
-The equivalent CLI workflow is intentionally small:
+---
+
+## CLI Quick Reference
 
 ```bash
-kitter add npx https://github.com/owner/repository --skill skill-a
-kitter install skill-a --project /path/to/project --target universal
-kitter project /path/to/project
-kitter update skill-a
+# 1. Skill Library Management
+kitter add npx https://github.com/owner/repository --skill skill-a  # Add skill from repository
+kitter list                                                        # List managed skills
+kitter update --all                                                # Update all skills
+kitter adopt --all                                                 # Discover & adopt scattered skills
+
+# 2. Project Installation
+kitter install skill-a --project /path/to/project --target universal # Install to project
+kitter project /path/to/project                                      # Inspect effective skills & tokens
+kitter uninstall skill-a --project /path/to/project                 # Remove skill installation
+
+# 3. Presets
+kitter preset create frontend                                      # Create a preset
+kitter preset add frontend react typescript                        # Add skills to preset
+kitter preset install frontend --project /path/to/project          # Install preset to project
+kitter preset sync frontend                                        # Sync preset changes
+
+# 4. Agent Plugins Management
+kitter agents                                                      # List agents & plugin health
+kitter agents add https://github.com/owner/repo                    # Add agent plugin from git
+kitter agents enable <id> / disable <id>                           # Enable or disable an agent
+kitter agents move <id> --before <other-id>                        # Reorder agents
 ```
+
+---
 
 ## Standalone CLI and agent skill
 
@@ -118,26 +179,7 @@ npx skills add what1f/kitter --skill kitter
 
 The skill lets an agent inspect the current machine, add or adopt skill sources, install the right project combination, and verify the result through the standalone `kitter` CLI. If the CLI is missing, the skill can guide you through downloading it from an official Release.
 
-<details>
-<summary><strong>Build from source</strong></summary>
-
-```bash
-git clone https://github.com/what1f/kitter.git
-cd kitter
-cargo run --release --locked --features desktop --bin kitter-desktop
-```
-
-</details>
-
-## Custom Agents
-
-Add an Agent or override a built-in Agent with a JavaScript plugin. Run `kitter agents` to see available Agents, plugin errors, and the plugin directory. See [Agent plugins](./docs/agent-plugins.md) for setup and examples.
-
-## Platform status
-
-- **macOS (Apple Silicon / Intel)** — desktop application and standalone CLI.
-- **Windows (x64)** — desktop application and standalone CLI, tested on Windows with platform-specific startup and performance fixes.
-- **Linux (x64)** — standalone CLI and desktop build available; the desktop app still needs validation on real systems.
+---
 
 ## Local data
 
@@ -145,11 +187,33 @@ Kitter stores configuration and source records in the operating system's applica
 
 | Platform | Default skill library |
 | --- | --- |
-| macOS | `~/Library/Application Support/Kitter/skills` |
-| Windows | `%LOCALAPPDATA%\Kitter\skills` |
-| Linux | `$XDG_DATA_HOME/Kitter/skills` or `~/.local/share/Kitter/skills` |
+| **macOS** | `~/Library/Application Support/Kitter/skills` |
+| **Windows** | `%LOCALAPPDATA%\Kitter\skills` |
+| **Linux** | `$XDG_DATA_HOME/Kitter/skills` or `~/.local/share/Kitter/skills` |
 
 View or change the location with `kitter library` and `kitter library --set /absolute/path`.
+
+---
+
+## Build from source
+
+<details>
+<summary><strong>Build instructions</strong></summary>
+
+```bash
+git clone https://github.com/what1f/kitter.git
+cd kitter
+
+# Launch desktop app
+cargo run --release --locked --features desktop --bin kitter-desktop
+
+# Build standalone CLI
+cargo build --release --locked --bin kitter
+```
+
+</details>
+
+---
 
 ## Contributing
 
