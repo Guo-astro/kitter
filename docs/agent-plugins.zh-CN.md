@@ -6,7 +6,31 @@
 
 运行 `kitter agents` 查看可用 Agent、插件错误和插件目录（`<Kitter 数据目录>/agents`；设置 `KITTER_HOME` 后为 `$KITTER_HOME/agents`）。将 ES module 直接放在该目录下；不扫描子目录。文件名必须为 `<id>.js`。
 
-用户插件与内置插件同 id 时，会替换整个内置定义。覆盖插件加载失败后，该 Agent 被禁用，不会回退到内置版本。修改插件后需要重启桌面端；每次执行 CLI 命令都会重新加载。
+用户插件与内置插件同 id 时，会替换整个内置定义。覆盖插件加载失败后，该 Agent 被禁用，不会回退到内置版本。手动编辑插件文件后需要重启桌面端。通过管理功能所做的改动立即生效。每次执行 CLI 命令都会重新加载。
+
+## 管理 Agent
+
+可以在设置页中操作，也可以用以下命令添加、移除、更新、启用、停用和排序：
+
+```bash
+kitter agents [--json]
+kitter agents add https://github.com/owner/repo [--only maki]
+kitter agents add /path/to/plugins
+kitter agents add /path/to/maki.js
+kitter agents remove maki
+kitter agents update [maki]
+kitter agents enable maki
+kitter agents disable maki
+kitter agents move maki --before codex
+kitter agents move maki --after codex
+kitter agents check
+```
+
+重复使用 `--only <id>` 可选择多个 Agent。GitHub 链接必须指向仓库，不支持 `owner/repo` 简写或子目录链接。来源中有 `agents/` 目录时，扫描 `agents/*.js`；否则扫描来源根目录的 `*.js`。两者都不递归。来源文件名可以与 Agent id 不同；添加后保存为 `<id>.js`。
+
+不带 id 的 `update` 会检查 GitHub 来源，只更新有新提交的 Agent，同时刷新全部本地来源。带 id 时直接刷新该 Agent。只有通过管理功能添加的 Agent 才能移除或更新。移除覆盖插件后会恢复内置 Agent。
+
+停用的 Agent 仍保留在管理列表中，但不参与 Skill 发现，也不能作为安装目标。重新启用后即可使用。设置页提供相同操作，改动立即生效。
 
 ## 最小插件
 

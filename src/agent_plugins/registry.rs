@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::{Arc, OnceLock, RwLock},
 };
 
 use super::{
@@ -36,6 +36,8 @@ const BUILTIN_ICONS: &[(&str, &str)] = &[
 pub struct AgentRegistry {
     agents: Vec<AgentDef>,
     diagnostics: Vec<PluginDiagnostic>,
+    all_agents: Vec<AgentDef>,
+    generation: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,6 +54,7 @@ pub struct PluginDiagnostic {
     pub message: String,
 }
 
+#[derive(Clone)]
 pub struct AgentDef {
     pub id: AgentId,
     pub name: String,
@@ -64,6 +67,7 @@ pub struct AgentDef {
     pub source: PluginSource,
 }
 
+#[derive(Clone)]
 pub enum AgentIcon {
     Builtin(&'static str),
     Inline {
@@ -73,18 +77,20 @@ pub enum AgentIcon {
     Monogram,
 }
 
+#[derive(Clone)]
 pub struct InstallDef {
     pub project: String,
     pub global: PathValue,
 }
 
+#[derive(Clone)]
 pub enum PathValue {
     Template(String),
     Hook(HookPath),
 }
 
 impl AgentDef {
-    fn from_spec(
+    pub(super) fn from_spec(
         spec: AgentSpec,
         origin: PluginOrigin,
         source: PluginSource,
@@ -159,16 +165,56 @@ fn user_plugin_files(dir: &Path) -> (Vec<PathBuf>, Vec<PluginDiagnostic>) {
     (paths, diagnostics)
 }
 
+fn current_registry() -> &'static RwLock<&'static AgentRegistry> {
+    static REGISTRY: OnceLock<RwLock<&'static AgentRegistry>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        RwLock::new(Box::leak(Box::new(AgentRegistry::load_from_paths(
+            BUILTIN_PLUGINS,
+            &plugin_dir(),
+            &super::manage::settings_path(),
+        ))))
+    })
+}
+
 impl AgentRegistry {
     pub fn global() -> &'static Self {
-        static REGISTRY: OnceLock<AgentRegistry> = OnceLock::new();
-        REGISTRY.get_or_init(|| {
-            let (paths, mut diagnostics) = user_plugin_files(&plugin_dir());
-            let mut registry = Self::load(BUILTIN_PLUGINS, &paths);
-            diagnostics.append(&mut registry.diagnostics);
-            registry.diagnostics = diagnostics;
-            registry
-        })
+        *current_registry().read().unwrap()
+    }
+
+    pub(super) fn load_from_paths(
+        builtins: &[(&str, &str)],
+        dir: &Path,
+        settings_path: &Path,
+    ) -> Self {
+        let (paths, mut diagnostics) = user_plugin_files(dir);
+        let mut registry = Self::load(builtins, &paths);
+        match super::manage::read_settings(settings_path) {
+            Ok(settings) => registry.apply_settings(&settings),
+            Err(error) => diagnostics.push(PluginDiagnostic {
+                origin: PluginOrigin::User(settings_path.into()),
+                id: None,
+                message: error.to_string(),
+            }),
+        }
+        diagnostics.append(&mut registry.diagnostics);
+        registry.diagnostics = diagnostics;
+        registry
+    }
+
+    pub(super) fn apply_settings(&mut self, settings: &super::manage::AgentSettings) {
+        self.all_agents.sort_by_key(|agent| {
+            settings
+                .order
+                .iter()
+                .position(|id| id == agent.id.as_str())
+                .unwrap_or(usize::MAX)
+        });
+        self.agents = self
+            .all_agents
+            .iter()
+            .filter(|agent| !settings.disabled.contains(agent.id.as_str()))
+            .cloned()
+            .collect();
     }
 
     pub fn load(builtins: &[(&str, &str)], user_files: &[PathBuf]) -> Self {
@@ -249,8 +295,10 @@ impl AgentRegistry {
             }
         }
         Self {
+            all_agents: agents.clone(),
             agents,
             diagnostics,
+            generation: 0,
         }
     }
 
@@ -268,6 +316,45 @@ impl AgentRegistry {
             return Err("plugin id must match its filename".into());
         }
         AgentDef::from_spec(spec, origin, source)
+    }
+
+    /// Reloads plugins and `agents.json`, replacing what `global()` returns.
+    pub fn reload() -> &'static Self {
+        Self::reload_from_paths(
+            current_registry(),
+            BUILTIN_PLUGINS,
+            &plugin_dir(),
+            &super::manage::settings_path(),
+        )
+    }
+
+    pub(super) fn reload_from_paths(
+        current: &RwLock<&'static Self>,
+        builtins: &[(&str, &str)],
+        dir: &Path,
+        path: &Path,
+    ) -> &'static Self {
+        let mut registry = Self::load_from_paths(builtins, dir, path);
+        let mut current = current.write().unwrap();
+        registry.generation = current.generation + 1;
+        // Keep old snapshots alive so existing callers can retain static references.
+        *current = Box::leak(Box::new(registry));
+        *current
+    }
+
+    /// Increments on every `reload()`; lets the UI invalidate cached views.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// Enabled and disabled Agents in user order, for management views.
+    /// `agents()` returns only the enabled ones.
+    pub fn all_agents(&self) -> &[AgentDef] {
+        &self.all_agents
+    }
+
+    pub fn is_enabled(&self, id: &str) -> bool {
+        self.agent(id).is_some()
     }
 
     pub fn diagnostics(&self) -> &[PluginDiagnostic] {

@@ -5,6 +5,7 @@ mod builtin;
 mod ctx;
 mod host;
 mod id;
+pub mod manage;
 mod registry;
 mod spec;
 mod template;

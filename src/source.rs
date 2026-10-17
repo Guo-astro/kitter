@@ -730,7 +730,11 @@ fn same_tree(left: &Path, right: &Path) -> Result<bool> {
     Ok(collect(left)? == collect(right)?)
 }
 
-fn run(command: &mut Command) -> Result<()> {
+pub(crate) fn run(command: &mut Command) -> Result<()> {
+    run_output(command).map(|_| ())
+}
+
+pub(crate) fn run_output(command: &mut Command) -> Result<std::process::Output> {
     let program = command.get_program().to_string_lossy().into_owned();
     let output = command.output().with_context(|| {
         crate::user_error!("errors.tool_unavailable")
@@ -749,10 +753,10 @@ fn run(command: &mut Command) -> Result<()> {
                 .detail(t!("errors.command_failed", detail = detail).to_string())
         );
     }
-    Ok(())
+    Ok(output)
 }
 
-fn tool_command(name: &str) -> Command {
+pub(crate) fn tool_command(name: &str) -> Command {
     let executable = find_tool(name).unwrap_or_else(|| PathBuf::from(name));
     let mut command = Command::new(&executable);
     if let Some(bin_dir) = executable.parent() {

@@ -6,7 +6,31 @@
 
 Run `kitter agents` to see available Agents, plugin errors, and the plugin directory (`<Kitter data directory>/agents`, or `$KITTER_HOME/agents` when set). Put ES modules directly in that directory; subdirectories are not scanned. The file must be named `<id>.js`.
 
-A user plugin with a built-in id replaces the whole built-in definition. If that override fails to load, Kitter disables that Agent; it does not fall back to the built-in. Restart the desktop app after editing plugins. Each CLI command loads them again.
+A user plugin with a built-in id replaces the whole built-in definition. If that override fails to load, Kitter disables that Agent; it does not fall back to the built-in. Restart the desktop app after manually editing plugin files. Changes made through Agent management take effect immediately. Each CLI command loads plugins again.
+
+## Manage Agents
+
+Use the settings page or these commands to add, remove, update, enable, disable, and reorder Agents:
+
+```bash
+kitter agents [--json]
+kitter agents add https://github.com/owner/repo [--only maki]
+kitter agents add /path/to/plugins
+kitter agents add /path/to/maki.js
+kitter agents remove maki
+kitter agents update [maki]
+kitter agents enable maki
+kitter agents disable maki
+kitter agents move maki --before codex
+kitter agents move maki --after codex
+kitter agents check
+```
+
+Repeat `--only <id>` to select several Agents. GitHub URLs must point to a repository; `owner/repo` shorthand and subdirectory URLs are not supported. If the source has an `agents/` directory, Kitter scans `agents/*.js`; otherwise it scans `*.js` at the source root. Neither scan includes nested directories. Source filenames can differ from Agent ids; added files are saved as `<id>.js`.
+
+`update` without an id checks GitHub sources and updates those with new commits. It also refreshes all local sources. With an id, it refreshes that Agent directly. Only Agents added through management can be removed or updated. Removing an override restores the built-in Agent.
+
+Disabled Agents stay in the management list but are excluded from Skill discovery and installation targets. Enable them to use them again. Settings offers the same operations, and changes take effect immediately.
 
 ## Minimal plugin
 

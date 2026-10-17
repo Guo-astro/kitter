@@ -12,7 +12,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use kitter::{
     InstallTarget, ProjectSkill, ProjectSkillInstallation, SkillGroup, SkillLibrary, SkillSummary,
     adoption,
-    agent_plugins::{AgentRegistry, BUILTIN_PLUGINS, PluginOrigin, plugin_dir},
+    agent_plugins::{
+        AgentRegistry, BUILTIN_PLUGINS, PluginOrigin,
+        manage::{self, CandidateStatus, SourceRecord},
+        plugin_dir,
+    },
     effective_skills::{self, AgentContextEstimate, AgentId, group_effective_skills},
     preset::{AgentsMdState, Preset, PresetStore, SkillFailure},
     project, source,
@@ -154,6 +158,28 @@ enum Command {
 
 #[derive(Subcommand)]
 enum AgentsAction {
+    /// Add agents from a GitHub URL or local path
+    Add {
+        source: String,
+        #[arg(long)]
+        only: Vec<String>,
+    },
+    /// Remove a managed agent
+    Remove { id: String },
+    /// Update managed agents
+    Update { id: Option<String> },
+    /// Enable an agent
+    Enable { id: String },
+    /// Disable an agent
+    Disable { id: String },
+    /// Move an agent before or after another agent
+    Move {
+        id: String,
+        #[arg(long, required_unless_present = "after", conflicts_with = "after")]
+        before: Option<String>,
+        #[arg(long, required_unless_present = "before")]
+        after: Option<String>,
+    },
     /// Check plugins and inspect effective skills
     Check {
         file: Option<PathBuf>,
@@ -1015,6 +1041,9 @@ struct AgentOutput<'a> {
     id: &'a AgentId,
     name: &'a str,
     origin: &'static str,
+    enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<&'a SourceRecord>,
 }
 
 #[derive(Serialize)]
@@ -1056,6 +1085,7 @@ fn inspect_agents(action: Option<AgentsAction>, json: bool) -> Result<()> {
             (registry, Some(canonical_project(&path)?))
         }
         None => (AgentRegistry::global(), None),
+        Some(action) => return manage_agents(action),
     };
     let (estimates, estimate_diagnostics) = project
         .as_ref()
@@ -1066,15 +1096,22 @@ fn inspect_agents(action: Option<AgentsAction>, json: bool) -> Result<()> {
         .iter()
         .chain(&estimate_diagnostics)
         .collect::<Vec<_>>();
+    let settings = manage::settings();
+    let listed = if project.is_some() {
+        registry.agents()
+    } else {
+        registry.all_agents()
+    };
     if json {
         let output = AgentsOutput {
-            agents: registry
-                .agents()
+            agents: listed
                 .iter()
                 .map(|agent| AgentOutput {
                     id: &agent.id,
                     name: &agent.name,
                     origin: origin_name(&agent.origin),
+                    enabled: registry.is_enabled(agent.id.as_str()),
+                    source: settings.sources.get(agent.id.as_str()),
                 })
                 .collect(),
             plugin_dir: plugin_dir(),
@@ -1094,9 +1131,20 @@ fn inspect_agents(action: Option<AgentsAction>, json: bool) -> Result<()> {
             "{}",
             t!("cli.plugin_directory", path = plugin_dir().display())
         );
-        for agent in registry.agents() {
+        for agent in listed {
             let origin = t!(format!("cli.origin_{}", origin_name(&agent.origin))).to_string();
-            println!("  {:<18} {:<20} {}", agent.id.as_str(), agent.name, origin);
+            let disabled = if registry.is_enabled(agent.id.as_str()) {
+                String::new()
+            } else {
+                format!("  {}", t!("agent_manage.disabled"))
+            };
+            println!(
+                "  {:<18} {:<20} {}{}",
+                agent.id.as_str(),
+                agent.name,
+                origin,
+                disabled
+            );
         }
         for diagnostic in diagnostics {
             let origin = match &diagnostic.origin {
@@ -1119,6 +1167,100 @@ fn inspect_agents(action: Option<AgentsAction>, json: bool) -> Result<()> {
             println!("{}", t!("cli.project", path = path.display()));
             print_effective(registry, &estimates);
         }
+    }
+    Ok(())
+}
+
+fn manage_agents(action: AgentsAction) -> Result<()> {
+    match action {
+        AgentsAction::Add { source, only } => {
+            let fetched = manage::fetch(manage::parse_source(&source)?)?;
+            for candidate in &fetched.candidates {
+                let reason = match &candidate.status {
+                    CandidateStatus::AlreadyAdded => {
+                        Some(t!("agent_manage.already_added").to_string())
+                    }
+                    CandidateStatus::Invalid(error) => Some(error.clone()),
+                    _ => None,
+                };
+                if let Some(reason) = reason {
+                    eprintln!(
+                        "{}",
+                        t!("agent_manage.skipped", id = &candidate.id, reason = reason)
+                    );
+                }
+            }
+            let ids = if only.is_empty() {
+                fetched
+                    .candidates
+                    .iter()
+                    .filter(|candidate| {
+                        matches!(
+                            candidate.status,
+                            CandidateStatus::Ready | CandidateStatus::Override
+                        )
+                    })
+                    .map(|candidate| candidate.id.clone())
+                    .collect()
+            } else {
+                only
+            };
+            if ids.is_empty() {
+                bail!(t!("agent_manage.none_added"));
+            }
+            manage::add(&fetched, &ids)?;
+            for id in ids {
+                println!("{}", t!("agent_manage.added", id = id));
+            }
+        }
+        AgentsAction::Remove { id } => {
+            manage::remove(&id)?;
+            println!("{}", t!("agent_manage.removed", id = id));
+        }
+        AgentsAction::Update { id } => {
+            let mut check_failed = false;
+            let ids =
+                if let Some(id) = id {
+                    vec![id]
+                } else {
+                    let (mut ids, failures) = manage::check_updates_with_failures()?;
+                    check_failed = !failures.is_empty();
+                    for (repo, error) in failures {
+                        eprintln!(
+                            "{}",
+                            t!("agent_manage.update_failed", repo = repo, error = error)
+                        );
+                    }
+                    ids.extend(manage::settings().sources.into_iter().filter_map(
+                        |(id, source)| matches!(source, SourceRecord::Local { .. }).then_some(id),
+                    ));
+                    ids
+                };
+            let mut updated = false;
+            for id in ids {
+                if manage::refresh(&id)? {
+                    updated = true;
+                    println!("{}", t!("agent_manage.updated", id = id));
+                }
+            }
+            if !updated && !check_failed {
+                println!("{}", t!("agent_manage.up_to_date"));
+            }
+        }
+        AgentsAction::Enable { id } => {
+            manage::set_enabled(&id, true)?;
+            println!("{}", t!("agent_manage.enabled_agent", id = id));
+        }
+        AgentsAction::Disable { id } => {
+            manage::set_enabled(&id, false)?;
+            println!("{}", t!("agent_manage.disabled_agent", id = id));
+        }
+        AgentsAction::Move { id, before, after } => {
+            let is_after = after.is_some();
+            manage::move_agent(&id, before.as_ref().or(after.as_ref()).unwrap(), is_after)?;
+            println!("{}", t!("agent_manage.moved", id = id));
+        }
+        AgentsAction::Check { .. } => unreachable!(),
     }
     Ok(())
 }
