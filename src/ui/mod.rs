@@ -66,7 +66,9 @@ mod state;
 mod tags_groups_actions;
 mod theme;
 
-use effective_view::{EffectivePluginGroup, EffectiveSkillRow, same_file};
+use effective_view::{
+    EffectivePluginGroup, EffectiveSkillRow, ProjectRenderSnapshot, ProjectSnapshot,
+};
 use gpui_component::resizable::ResizableState;
 use skill_selection::SkillSelection;
 use state::*;
@@ -114,21 +116,6 @@ fn unique_external_sources(kinds: &[project::RemovalKind]) -> Vec<String> {
             _ => None,
         })
         .collect()
-}
-
-fn effective_plugin_groups(
-    estimates: &[AgentContextEstimate],
-    selected_agent: Option<AgentId>,
-) -> Vec<EffectivePluginGroup> {
-    effective_view::plugin_groups(estimates, selected_agent)
-}
-
-fn effective_skill_rows(
-    estimates: &[AgentContextEstimate],
-    project_skills: &[ProjectSkill],
-    selected_agent: Option<AgentId>,
-) -> Vec<EffectiveSkillRow> {
-    effective_view::skill_rows(estimates, project_skills, selected_agent)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -440,7 +427,7 @@ const CONTEXT_ESTIMATE_CACHE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 #[derive(Clone)]
 struct ContextEstimateCache {
     scanned_at: Instant,
-    estimates: Vec<AgentContextEstimate>,
+    snapshot: Arc<ProjectRenderSnapshot>,
 }
 
 struct SpinnerView {
@@ -781,6 +768,8 @@ impl KitterApp {
                 skill_search,
                 content_snapshot: RefCell::new(None),
                 content_scroll: ScrollHandle::new(),
+                list: ListState::new(0, ListAlignment::Top, px(100.)),
+                list_rows: RefCell::new(Arc::from([])),
                 selectable_text_handles: RefCell::new(BTreeMap::new()),
                 known_groups,
                 collapsed_groups,
@@ -1053,7 +1042,7 @@ impl KitterApp {
         &self,
         path: &PathBuf,
         cx: &mut Context<Self>,
-    ) -> Option<Vec<ProjectSkill>> {
+    ) -> Option<Arc<ProjectSnapshot>> {
         if let Some(snapshot) = self.projects_view.project_snapshots.borrow().get(path) {
             return Some(snapshot.clone());
         }
@@ -1089,6 +1078,7 @@ impl KitterApp {
         }
 
         let library_dir = self.model.library.config.library_dir.clone();
+        let library_skills = self.model.skills.clone();
         cx.spawn(async move |this, cx| {
             let snapshots = cx
                 .background_executor()
@@ -1097,7 +1087,10 @@ impl KitterApp {
                         .into_iter()
                         .map(|path| {
                             let snapshot = project::list(&path, &library_dir).unwrap_or_default();
-                            (path, snapshot)
+                            (
+                                path,
+                                Arc::new(ProjectSnapshot::new(snapshot, &library_skills)),
+                            )
                         })
                         .collect::<Vec<_>>()
                 })
@@ -1137,7 +1130,7 @@ impl KitterApp {
         &self,
         path: &PathBuf,
         cx: &mut Context<Self>,
-    ) -> Option<Vec<AgentContextEstimate>> {
+    ) -> Option<Arc<ProjectRenderSnapshot>> {
         let cached = self
             .projects_view
             .context_estimates
@@ -1148,7 +1141,7 @@ impl KitterApp {
             .as_ref()
             .is_some_and(|cache| cache.scanned_at.elapsed() < CONTEXT_ESTIMATE_CACHE_TTL)
         {
-            return cached.map(|cache| cache.estimates);
+            return cached.map(|cache| cache.snapshot);
         }
 
         let generation = self.projects_view.scan_generation;
@@ -1159,6 +1152,7 @@ impl KitterApp {
             .get(path)
             .is_some_and(|running| *running == generation)
         {
+            let project = self.project_snapshot(path, cx)?;
             self.projects_view
                 .context_estimate_tasks
                 .borrow_mut()
@@ -1166,9 +1160,14 @@ impl KitterApp {
             let path = path.clone();
             cx.spawn(async move |this, cx| {
                 let worker_path = path.clone();
-                let estimates = cx
+                let snapshot = cx
                     .background_executor()
-                    .spawn(async move { effective_skills::estimate_project(&worker_path) })
+                    .spawn(async move {
+                        Arc::new(ProjectRenderSnapshot::new(
+                            effective_skills::estimate_project(&worker_path),
+                            &project,
+                        ))
+                    })
                     .await;
                 let _ = this.update(cx, |this, cx| {
                     let is_current = this.projects_view.scan_generation == generation
@@ -1189,7 +1188,7 @@ impl KitterApp {
                         path,
                         ContextEstimateCache {
                             scanned_at: Instant::now(),
-                            estimates,
+                            snapshot,
                         },
                     );
                     cx.notify();
@@ -1198,7 +1197,7 @@ impl KitterApp {
             .detach();
         }
 
-        cached.map(|cache| cache.estimates)
+        cached.map(|cache| cache.snapshot)
     }
 
     fn refresh_context_estimate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
@@ -1211,6 +1210,14 @@ impl KitterApp {
             .context_estimates
             .borrow_mut()
             .remove(&path);
+        self.projects_view
+            .project_snapshots
+            .borrow_mut()
+            .remove(&path);
+        self.projects_view
+            .project_snapshot_tasks
+            .borrow_mut()
+            .clear();
         cx.notify();
     }
 
@@ -1760,6 +1767,154 @@ mod e2e_tests {
         cx.run_until_parked();
         cx.refresh().unwrap();
         assert!(cx.debug_bounds("project-skill-fixture-skill-180").is_some());
+    }
+
+    #[test]
+    fn three_hundred_library_skills_virtualize_scroll_search_and_groups() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut cx = TestAppContext::single();
+        init(&mut cx);
+        let temp = tempfile::tempdir().unwrap();
+        let (app, cx) = cx.add_window_view({
+            let data_dir = temp.path().join("data");
+            move |window, cx| KitterApp::new_in(data_dir, window, cx)
+        });
+        let group = app.update(cx, |app, cx| {
+            for index in 1..=300 {
+                let name = format!("fixture-skill-{index:03}");
+                let path = app.model.library.config.library_dir.join(&name);
+                fs::create_dir_all(&path).unwrap();
+                fs::write(
+                    path.join("SKILL.md"),
+                    format!("---\nname: {name}\ndescription: Fixture\n---\n"),
+                )
+                .unwrap();
+            }
+            let group = app.model.library.create_group("Fixture").unwrap().id;
+            app.refresh(cx);
+            for skill in &mut app.model.skills {
+                if matches!(
+                    skill.record.name.as_str(),
+                    "fixture-skill-001" | "fixture-skill-002"
+                ) {
+                    skill.record.group_id = Some(group.clone());
+                }
+            }
+            app.skills_view.collapsed_groups.clear();
+            group
+        });
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("skill-fixture-skill-001").is_some());
+        assert!(cx.debug_bounds("skill-fixture-skill-300").is_none());
+        let first = cx.debug_bounds("skill-fixture-skill-001").unwrap();
+        cx.simulate_click(first.center(), Modifiers::none());
+        cx.read_entity(&app, |app, _| {
+            assert_eq!(
+                app.skills_view.selection.primary(),
+                Some("fixture-skill-001")
+            )
+        });
+        let group_selector: &'static str = format!("sort-group-{group}").leak();
+        let header = cx.debug_bounds(group_selector).unwrap();
+        cx.simulate_click(header.center(), Modifiers::none());
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("skill-fixture-skill-001").is_none());
+        app.update(cx, |app, cx| {
+            app.skills_view.list.scroll_to_end();
+            cx.notify();
+        });
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("skill-fixture-skill-300").is_some());
+        assert!(cx.debug_bounds("skill-fixture-skill-003").is_none());
+        app.update_in(cx, |app, window, cx| {
+            app.skills_view.skill_search.update(cx, |input, cx| {
+                input.set_value("fixture-skill-002", window, cx)
+            });
+        });
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("skill-fixture-skill-002").is_some());
+        assert!(cx.debug_bounds("skill-fixture-skill-300").is_none());
+        cx.read_entity(&app, |app, _| {
+            assert!(app.skills_view.collapsed_groups.contains(&group))
+        });
+    }
+
+    #[test]
+    fn refresh_drops_pending_project_scans_from_the_previous_generation() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut cx = TestAppContext::single();
+        init(&mut cx);
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        let path = project.join(".agents/skills/fixture");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(
+            path.join("SKILL.md"),
+            "---\nname: fixture\ndescription: Fixture\n---\n",
+        )
+        .unwrap();
+        let (app, cx) = cx.add_window_view({
+            let data_dir = temp.path().join("data");
+            move |window, cx| KitterApp::new_in(data_dir, window, cx)
+        });
+        app.update(cx, |app, cx| {
+            assert!(app.context_estimate_snapshot(&project, cx).is_none());
+            assert!(
+                !app.projects_view
+                    .context_estimate_tasks
+                    .borrow()
+                    .contains_key(&project)
+            );
+            app.refresh(cx);
+        });
+        cx.run_until_parked();
+        cx.read_entity(&app, |app, _| {
+            assert!(
+                !app.projects_view
+                    .project_snapshots
+                    .borrow()
+                    .contains_key(&project)
+            );
+            assert!(
+                !app.projects_view
+                    .context_estimates
+                    .borrow()
+                    .contains_key(&project)
+            );
+        });
+        app.update(cx, |app, cx| {
+            app.project_snapshot(&project, cx);
+        });
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            app.context_estimate_snapshot(&project, cx);
+        });
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            let first = app.context_estimate_snapshot(&project, cx).unwrap();
+            let next = app.context_estimate_snapshot(&project, cx).unwrap();
+            assert!(std::sync::Arc::ptr_eq(&first, &next));
+            let rows = first.view(None).rows;
+            assert!(std::sync::Arc::ptr_eq(&rows, &next.view(None).rows));
+            app.refresh_context_estimate(project.clone(), cx);
+            assert!(
+                !app.projects_view
+                    .project_snapshots
+                    .borrow()
+                    .contains_key(&project)
+            );
+            assert!(
+                !app.projects_view
+                    .context_estimates
+                    .borrow()
+                    .contains_key(&project)
+            );
+        });
     }
 
     #[test]

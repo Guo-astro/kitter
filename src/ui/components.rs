@@ -348,7 +348,7 @@ impl KitterApp {
 
     pub(super) fn effective_plugins_list(
         &self,
-        groups: Vec<EffectivePluginGroup>,
+        groups: &[EffectivePluginGroup],
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let p = self.palette();
@@ -372,7 +372,7 @@ impl KitterApp {
         }
         let mut card = kit::card(p);
         let last = groups.len() - 1;
-        for (index, group) in groups.into_iter().enumerate() {
+        for (index, group) in groups.iter().enumerate() {
             let expanded = self
                 .projects_view
                 .expanded_project_plugins
@@ -443,7 +443,7 @@ impl KitterApp {
                     })),
             );
             if expanded {
-                for skill in group.skills {
+                for skill in &group.skills {
                     card = card.child(
                         kit::card_row(p, false)
                             .min_h(px(ROW_1 + 4.))
@@ -456,7 +456,7 @@ impl KitterApp {
                                     .font_family(MONO)
                                     .text_size(px(FS_SMALL))
                                     .truncate()
-                                    .child(skill),
+                                    .child(skill.clone()),
                             ),
                     );
                 }

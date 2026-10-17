@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SkillListRow {
+    Skill(usize, bool),
+    Group(usize, bool),
+}
+
 fn installable_skills_by_group(
     skills: &[SkillSummary],
     group_ids: &HashSet<&str>,
@@ -24,6 +30,8 @@ impl KitterApp {
         skill: &SkillSummary,
         nested: bool,
         visible_order: Arc<[String]>,
+        selected_keys: Arc<[String]>,
+        protected_selection: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette();
@@ -31,18 +39,10 @@ impl KitterApp {
         let built_in = skill.record.origin.is_builtin();
         let storage_name = skill_storage_name(skill).to_string();
         let context_app = cx.entity().downgrade();
-        let selection_count = self.selected_skill_keys().len();
+        let selection_count = selected_keys.len();
         let selected = self.skills_view.selection.contains(&storage_name);
         let multi_selection = selected && selection_count > 1;
-        let protected_selection = built_in
-            || (multi_selection
-                && self.model.skills.iter().any(|skill| {
-                    skill.record.origin.is_builtin()
-                        && self
-                            .skills_view
-                            .selection
-                            .contains(skill_storage_name(skill))
-                }));
+        let protected_selection = built_in || (multi_selection && protected_selection);
         let install_label = if multi_selection {
             t!("skills.install_selection_count", count = selection_count).to_string()
         } else {
@@ -80,7 +80,7 @@ impl KitterApp {
         let trigger_label = t!("skills.trigger_timing").to_string();
         let preset_label = t!("skills.add_to_preset").to_string();
         let selected_names = if multi_selection {
-            self.selected_skill_keys()
+            selected_keys.to_vec()
         } else {
             Vec::new()
         };
@@ -752,6 +752,199 @@ impl KitterApp {
         })
     }
 
+    fn skill_group_row(
+        &self,
+        group: &SkillGroup,
+        collapsed: bool,
+        install_group_skills: Vec<String>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let p = self.palette();
+        let group_id = group.id.clone();
+        let group_label = group.name.clone();
+        let toggle_key = group_id.clone();
+        let drop_group_id = group_id.clone();
+        let context_app = cx.entity().downgrade();
+        let rename_group_label = t!("common.rename").to_string();
+        let delete_group_label = t!("skills.delete_group").to_string();
+        let rename_group_id = group_id.clone();
+        let delete_group_id = group_id.clone();
+        let delete_group_menu_color = p.danger;
+        let install_group_count = install_group_skills.len();
+        let preset_label = t!("skills.add_to_preset").to_string();
+        let preset_choices = self
+            .presets_view
+            .store
+            .presets()
+            .iter()
+            .map(|preset| {
+                let included = install_group_skills
+                    .iter()
+                    .all(|name| preset.skills.contains(name));
+                (preset.id.clone(), preset.name.clone(), included)
+            })
+            .collect::<Vec<_>>();
+        let install_group_label = crate::i18n::tn(
+            "skills.install_group_count",
+            install_group_count,
+            &[("count", (install_group_count).to_string())],
+        );
+        let row = kit::list_row(
+            p,
+            ElementId::Name(format!("skill-group-{group_id}").into()),
+            false,
+        )
+        .h(px(ROW_1))
+        .mt(px(4.))
+        .text_color(p.secondary)
+        .when(true, |row| {
+            self.sortable_group_row(
+                row,
+                group_id.clone(),
+                group_label.clone(),
+                GroupDragScope::List,
+                cx,
+            )
+        })
+        .child(Self::icon(
+            if collapsed {
+                "icons/chevron-right.svg"
+            } else {
+                "icons/chevron-down.svg"
+            },
+            ICON_SM,
+            p.muted,
+        ))
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .font_family(MONO)
+                .text_size(px(FS_BODY))
+                .font_weight(FontWeight::MEDIUM)
+                .truncate()
+                .child(group_label),
+        )
+        .drag_over::<SkillDrag>(move |style, _, _, _| style.bg(p.selected))
+        .on_drop(cx.listener(move |this, drag: &SkillDrag, _, cx| {
+            this.assign_skill_group(drag.name.clone(), Some(drop_group_id.clone()), cx);
+        }))
+        .on_click(cx.listener(move |this, _, _, cx| {
+            if !this.skills_view.collapsed_groups.remove(&toggle_key) {
+                this.skills_view.collapsed_groups.insert(toggle_key.clone());
+            }
+            this.persist_collapsed_groups();
+            cx.notify();
+        }))
+        .context_menu(move |menu, window, menu_cx| {
+            let install_app = context_app.clone();
+            let preset_app = context_app.clone();
+            let preset_skills = install_group_skills.clone();
+            let preset_choices = preset_choices.clone();
+            let rename_app = context_app.clone();
+            let delete_app = context_app.clone();
+            let install_group_skills = install_group_skills.clone();
+            let rename_group_id = rename_group_id.clone();
+            let delete_group_id = delete_group_id.clone();
+            let delete_menu_item =
+                Self::danger_menu_item(delete_group_label.clone(), delete_group_menu_color)
+                    .on_click(move |_, _, cx| {
+                        let _ = delete_app.update(cx, |this, cx| {
+                            this.open_group_delete_dialog(delete_group_id.clone(), cx);
+                        });
+                    });
+            menu.min_w(px(190.))
+                .when(!install_group_skills.is_empty(), |menu| {
+                    menu.item(
+                        PopupMenuItem::new(install_group_label.clone())
+                            .icon(Icon::default().path("icons/download.svg"))
+                            .on_click(move |_, window, cx| {
+                                let _ = install_app.update(cx, |this, cx| {
+                                    let primary = this
+                                        .skills_view
+                                        .selection
+                                        .select_all(&install_group_skills);
+                                    this.set_detail_selection(primary);
+                                    this.open_install_dialog(window, cx);
+                                });
+                            }),
+                    )
+                })
+                .when(
+                    !preset_skills.is_empty() && !preset_choices.is_empty(),
+                    |menu| {
+                        menu.submenu_with_icon(
+                            Some(Icon::default().path("icons/layers.svg")),
+                            preset_label.clone(),
+                            window,
+                            menu_cx,
+                            move |submenu, _, _| {
+                                preset_choices.iter().fold(
+                                    submenu,
+                                    |submenu, (id, name, included)| {
+                                        let app = preset_app.clone();
+                                        let id = id.clone();
+                                        let skills = preset_skills.clone();
+                                        let included = *included;
+                                        submenu.item(
+                                            PopupMenuItem::new(name.clone())
+                                                .checked(included)
+                                                .on_click(move |_, _, cx| {
+                                                    let _ = app.update(cx, |this, cx| {
+                                                        this.toggle_skills_in_preset(
+                                                            &id, &skills, included, cx,
+                                                        );
+                                                    });
+                                                }),
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
+                .item(
+                    PopupMenuItem::new(rename_group_label.clone())
+                        .icon(Icon::default().path("icons/pencil.svg"))
+                        .on_click(move |_, window, cx| {
+                            let _ = rename_app.update(cx, |this, cx| {
+                                this.open_group_dialog(cx);
+                                this.start_group_edit(
+                                    GroupEdit::Rename(rename_group_id.clone()),
+                                    window,
+                                    cx,
+                                );
+                            });
+                        }),
+                )
+                .item(delete_menu_item)
+        });
+        row.into_any_element()
+    }
+
+    fn sync_skill_list_rows(&self, rows: Vec<SkillListRow>) -> Arc<[SkillListRow]> {
+        let mut previous = self.skills_view.list_rows.borrow_mut();
+        if previous.as_ref() != rows.as_slice() {
+            let prefix = previous
+                .iter()
+                .zip(&rows)
+                .take_while(|(a, b)| a == b)
+                .count();
+            let suffix = previous[prefix..]
+                .iter()
+                .rev()
+                .zip(rows[prefix..].iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+            self.skills_view.list.splice(
+                prefix..previous.len() - suffix,
+                rows.len() - prefix - suffix,
+            );
+            *previous = rows.into();
+        }
+        Arc::clone(&previous)
+    }
+
     pub(super) fn skills_page(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = self.palette();
         let query = self
@@ -781,8 +974,7 @@ impl KitterApp {
             .iter()
             .map(|group| group.id.as_str())
             .collect::<HashSet<_>>();
-        let mut installable_group_skills =
-            installable_skills_by_group(&self.model.skills, &group_ids);
+        let installable_group_skills = installable_skills_by_group(&self.model.skills, &group_ids);
         let mut grouped = BTreeMap::<String, Vec<&SkillSummary>>::new();
         let mut pinned = Vec::new();
         let mut ungrouped = Vec::new();
@@ -936,196 +1128,85 @@ impl KitterApp {
                         ),
                 )
             });
-        let mut rows = div()
-            .id("skill-groups-scroll")
-            .flex_1()
-            .min_h_0()
-            .px(px(8.))
-            .pb(px(8.))
-            .overflow_y_scroll();
-        for skill in pinned {
-            rows = rows.child(self.skill_list_row(skill, false, Arc::clone(&selection_order), cx));
-        }
-        for group in configured_groups {
-            let group_id = group.id.clone();
-            let group_label = group.name.clone();
-            let skills = grouped.remove(&group_id).unwrap_or_default();
-            let collapsed =
-                query.is_empty() && self.skills_view.collapsed_groups.contains(&group_id);
-            let toggle_key = group_id.clone();
-            let drop_group_id = group_id.clone();
-            let context_app = cx.entity().downgrade();
-            let rename_group_label = t!("common.rename").to_string();
-            let delete_group_label = t!("skills.delete_group").to_string();
-            let rename_group_id = group_id.clone();
-            let delete_group_id = group_id.clone();
-            let delete_group_menu_color = p.danger;
-            let install_group_skills = installable_group_skills
-                .remove(&group_id)
-                .unwrap_or_default();
-            let install_group_count = install_group_skills.len();
-            let preset_label = t!("skills.add_to_preset").to_string();
-            let preset_choices = self
-                .presets_view
-                .store
-                .presets()
+        let skill_indices = self
+            .model
+            .skills
+            .iter()
+            .enumerate()
+            .map(|(index, skill)| (skill_storage_name(skill), index))
+            .collect::<std::collections::HashMap<_, _>>();
+        let mut flat_rows = Vec::new();
+        flat_rows.extend(
+            pinned
                 .iter()
-                .map(|preset| {
-                    let included = install_group_skills
-                        .iter()
-                        .all(|name| preset.skills.contains(name));
-                    (preset.id.clone(), preset.name.clone(), included)
-                })
-                .collect::<Vec<_>>();
-            let install_group_label = crate::i18n::tn(
-                "skills.install_group_count",
-                install_group_count,
-                &[("count", (install_group_count).to_string())],
-            );
-            rows = rows.child(
-                kit::list_row(
-                    p,
-                    ElementId::Name(format!("skill-group-{group_id}").into()),
-                    false,
-                )
-                .h(px(ROW_1))
-                .mt(px(4.))
-                .text_color(p.secondary)
-                .when(true, |row| {
-                    self.sortable_group_row(
-                        row,
-                        group_id.clone(),
-                        group_label.clone(),
-                        GroupDragScope::List,
+                .map(|skill| SkillListRow::Skill(skill_indices[skill_storage_name(skill)], false)),
+        );
+        for (index, group) in configured_groups.iter().enumerate() {
+            let collapsed =
+                query.is_empty() && self.skills_view.collapsed_groups.contains(&group.id);
+            flat_rows.push(SkillListRow::Group(index, collapsed));
+            if !collapsed && let Some(skills) = grouped.get(&group.id) {
+                flat_rows.extend(skills.iter().map(|skill| {
+                    SkillListRow::Skill(skill_indices[skill_storage_name(skill)], true)
+                }));
+            }
+        }
+        flat_rows.extend(
+            ungrouped
+                .iter()
+                .map(|skill| SkillListRow::Skill(skill_indices[skill_storage_name(skill)], false)),
+        );
+        let rows = self.sync_skill_list_rows(flat_rows);
+        let groups: Arc<[SkillGroup]> = configured_groups.into();
+        let selected_keys: Arc<[String]> = self.selected_skill_keys().into();
+        let protected_selection = self.model.skills.iter().any(|skill| {
+            skill.record.origin.is_builtin()
+                && self
+                    .skills_view
+                    .selection
+                    .contains(skill_storage_name(skill))
+        });
+        let virtual_list = gpui::list(
+            self.skills_view.list.clone(),
+            cx.processor(move |this, index, _, cx| {
+                let row = match rows[index] {
+                    SkillListRow::Skill(index, nested) => this.skill_list_row(
+                        &this.model.skills[index],
+                        nested,
+                        Arc::clone(&selection_order),
+                        Arc::clone(&selected_keys),
+                        protected_selection,
                         cx,
-                    )
-                })
-                .child(Self::icon(
-                    if collapsed {
-                        "icons/chevron-right.svg"
-                    } else {
-                        "icons/chevron-down.svg"
-                    },
-                    ICON_SM,
-                    p.muted,
-                ))
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .font_family(MONO)
-                        .text_size(px(FS_BODY))
-                        .font_weight(FontWeight::MEDIUM)
-                        .truncate()
-                        .child(group_label),
-                )
-                .drag_over::<SkillDrag>(move |style, _, _, _| style.bg(p.selected))
-                .on_drop(cx.listener(move |this, drag: &SkillDrag, _, cx| {
-                    this.assign_skill_group(drag.name.clone(), Some(drop_group_id.clone()), cx);
-                }))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    if !this.skills_view.collapsed_groups.remove(&toggle_key) {
-                        this.skills_view.collapsed_groups.insert(toggle_key.clone());
+                    ),
+                    SkillListRow::Group(index, collapsed) => {
+                        let group = &groups[index];
+                        this.skill_group_row(
+                            group,
+                            collapsed,
+                            installable_group_skills
+                                .get(&group.id)
+                                .cloned()
+                                .unwrap_or_default(),
+                            cx,
+                        )
                     }
-                    this.persist_collapsed_groups();
-                    cx.notify();
-                }))
-                .context_menu(move |menu, window, menu_cx| {
-                    let install_app = context_app.clone();
-                    let preset_app = context_app.clone();
-                    let preset_skills = install_group_skills.clone();
-                    let preset_choices = preset_choices.clone();
-                    let rename_app = context_app.clone();
-                    let delete_app = context_app.clone();
-                    let install_group_skills = install_group_skills.clone();
-                    let rename_group_id = rename_group_id.clone();
-                    let delete_group_id = delete_group_id.clone();
-                    let delete_menu_item =
-                        Self::danger_menu_item(delete_group_label.clone(), delete_group_menu_color)
-                            .on_click(move |_, _, cx| {
-                                let _ = delete_app.update(cx, |this, cx| {
-                                    this.open_group_delete_dialog(delete_group_id.clone(), cx);
-                                });
-                            });
-                    menu.min_w(px(190.))
-                        .when(!install_group_skills.is_empty(), |menu| {
-                            menu.item(
-                                PopupMenuItem::new(install_group_label.clone())
-                                    .icon(Icon::default().path("icons/download.svg"))
-                                    .on_click(move |_, window, cx| {
-                                        let _ = install_app.update(cx, |this, cx| {
-                                            let primary = this
-                                                .skills_view
-                                                .selection
-                                                .select_all(&install_group_skills);
-                                            this.set_detail_selection(primary);
-                                            this.open_install_dialog(window, cx);
-                                        });
-                                    }),
-                            )
-                        })
-                        .when(
-                            !preset_skills.is_empty() && !preset_choices.is_empty(),
-                            |menu| {
-                                menu.submenu_with_icon(
-                                    Some(Icon::default().path("icons/layers.svg")),
-                                    preset_label.clone(),
-                                    window,
-                                    menu_cx,
-                                    move |submenu, _, _| {
-                                        preset_choices.iter().fold(
-                                            submenu,
-                                            |submenu, (id, name, included)| {
-                                                let app = preset_app.clone();
-                                                let id = id.clone();
-                                                let skills = preset_skills.clone();
-                                                let included = *included;
-                                                submenu.item(
-                                                    PopupMenuItem::new(name.clone())
-                                                        .checked(included)
-                                                        .on_click(move |_, _, cx| {
-                                                            let _ = app.update(cx, |this, cx| {
-                                                                this.toggle_skills_in_preset(
-                                                                    &id, &skills, included, cx,
-                                                                );
-                                                            });
-                                                        }),
-                                                )
-                                            },
-                                        )
-                                    },
-                                )
-                            },
-                        )
-                        .item(
-                            PopupMenuItem::new(rename_group_label.clone())
-                                .icon(Icon::default().path("icons/pencil.svg"))
-                                .on_click(move |_, window, cx| {
-                                    let _ = rename_app.update(cx, |this, cx| {
-                                        this.open_group_dialog(cx);
-                                        this.start_group_edit(
-                                            GroupEdit::Rename(rename_group_id.clone()),
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                }),
-                        )
-                        .item(delete_menu_item)
-                }),
-            );
-            if collapsed {
-                continue;
-            }
-            for skill in skills {
-                rows =
-                    rows.child(self.skill_list_row(skill, true, Arc::clone(&selection_order), cx));
-            }
-        }
-        for skill in ungrouped {
-            rows = rows.child(self.skill_list_row(skill, false, Arc::clone(&selection_order), cx));
-        }
-        list = list.child(rows);
+                };
+                div().w_full().child(row).into_any_element()
+            }),
+        )
+        .w_full()
+        .h_full();
+        list = list.child(
+            div()
+                .id("skill-groups-scroll")
+                .debug_selector(|| "skill-groups-scroll".into())
+                .flex_1()
+                .min_h_0()
+                .px(px(8.))
+                .pb(px(8.))
+                .overflow_hidden()
+                .child(virtual_list),
+        );
         layout::content(
             &self.shell.content_layout,
             self.content_pane_width(window, cx),
@@ -1627,25 +1708,9 @@ impl KitterApp {
         root: &PathBuf,
         cx: &mut Context<Self>,
     ) -> Vec<ProjectSkillInstallation> {
-        if !self
-            .projects_view
-            .project_snapshots
-            .borrow()
-            .contains_key(root)
-        {
-            self.project_snapshot(root, cx);
-        }
-        self.projects_view
-            .project_snapshots
-            .borrow()
-            .get(root)
-            .into_iter()
-            .flat_map(|snapshot| snapshot.iter())
-            .filter(|installed| installed.name == skill.record.name)
-            .flat_map(|installed| installed.installations.iter())
-            .filter(|installation| same_file(&installation.path, &skill.path))
-            .cloned()
-            .collect()
+        self.project_snapshot(root, cx)
+            .map(|snapshot| snapshot.installations_for(skill).to_vec())
+            .unwrap_or_default()
     }
 
     pub(super) fn skill_installed_at(
@@ -1654,7 +1719,8 @@ impl KitterApp {
         root: &PathBuf,
         cx: &mut Context<Self>,
     ) -> bool {
-        !self.skill_installations_at(skill, root, cx).is_empty()
+        self.project_snapshot(root, cx)
+            .is_some_and(|snapshot| !snapshot.installations_for(skill).is_empty())
     }
 
     pub(super) fn installs_tab(

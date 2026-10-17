@@ -4,7 +4,7 @@
 //! static discovery profiles; scanner and catalog modules are internal primitives.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
 };
@@ -154,68 +154,242 @@ impl<'a> EffectiveSkillGroup<'a> {
 pub fn group_effective_skills<'a>(
     entries: impl IntoIterator<Item = (AgentId, &'a EffectiveSkill)>,
 ) -> Vec<EffectiveSkillGroup<'a>> {
-    struct Candidate<'a> {
-        agent: AgentId,
-        skill: &'a EffectiveSkill,
-        filesystem_path: Option<PathBuf>,
+    let mut paths = HashMap::<PathBuf, PathBuf>::new();
+    group_effective_skills_with_paths(entries, |path| {
+        paths
+            .entry(path.to_path_buf())
+            .or_insert_with(|| path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
+            .clone()
+    })
+}
+
+pub(crate) fn group_effective_skills_with_paths<'a>(
+    entries: impl IntoIterator<Item = (AgentId, &'a EffectiveSkill)>,
+    mut canonical_path: impl FnMut(&Path) -> PathBuf,
+) -> Vec<EffectiveSkillGroup<'a>> {
+    struct Node<'a> {
+        parent: usize,
+        children: Vec<usize>,
+        entry: (AgentId, &'a EffectiveSkill),
     }
 
-    let mut groups = Vec::<Vec<Candidate<'a>>>::new();
+    fn root(nodes: &mut [Node<'_>], mut index: usize) -> usize {
+        let start = index;
+        while nodes[index].parent != index {
+            index = nodes[index].parent;
+        }
+        let root = index;
+        index = start;
+        while nodes[index].parent != index {
+            let next = nodes[index].parent;
+            nodes[index].parent = root;
+            index = next;
+        }
+        root
+    }
+
+    let mut names = HashMap::<&str, usize>::new();
+    let mut paths = HashMap::<PathBuf, usize>::new();
+    let mut nodes = Vec::<Node<'a>>::new();
     for (agent, skill) in entries {
-        let filesystem_path = matches!(skill.source, SkillSource::Filesystem).then(|| {
-            skill
-                .path
-                .canonicalize()
-                .unwrap_or_else(|_| skill.path.clone())
+        let path =
+            matches!(skill.source, SkillSource::Filesystem).then(|| canonical_path(&skill.path));
+        let mut matching = Vec::with_capacity(2);
+        if let Some(&index) = names.get(skill.name.as_str()) {
+            matching.push(root(&mut nodes, index));
+        }
+        if let Some(index) = path.as_ref().and_then(|path| paths.get(path)).copied() {
+            matching.push(root(&mut nodes, index));
+        }
+        // Live groups were previously removed and appended on each match.
+        // Their latest node indexes preserve that order, including a late
+        // name/path alias that joins two previously separate groups.
+        matching.sort_unstable();
+        matching.dedup();
+        let index = nodes.len();
+        for &matched in &matching {
+            nodes[matched].parent = index;
+        }
+        nodes.push(Node {
+            parent: index,
+            children: matching,
+            entry: (agent, skill),
         });
-        let candidate = Candidate {
-            agent,
-            skill,
-            filesystem_path,
-        };
-        let matching = groups
-            .iter()
-            .enumerate()
-            .filter_map(|(index, group)| {
-                group
-                    .iter()
-                    .any(|entry| {
-                        entry.skill.name == candidate.skill.name
-                            || entry
-                                .filesystem_path
-                                .as_ref()
-                                .zip(candidate.filesystem_path.as_ref())
-                                .is_some_and(|(left, right)| left == right)
-                    })
-                    .then_some(index)
-            })
-            .collect::<Vec<_>>();
-        if matching.is_empty() {
-            groups.push(vec![candidate]);
+        names.insert(&skill.name, index);
+        if let Some(path) = path {
+            paths.insert(path, index);
+        }
+    }
+
+    let mut result = Vec::new();
+    for (index, node) in nodes.iter().enumerate() {
+        if node.parent != index {
             continue;
         }
-
-        let mut merged = Vec::new();
-        for index in matching.into_iter().rev() {
-            let mut group = groups.remove(index);
-            group.append(&mut merged);
-            merged = group;
+        // Flatten once instead of copying a growing group on every match.
+        let mut entries = Vec::new();
+        let mut stack = vec![(index, false)];
+        while let Some((index, emit)) = stack.pop() {
+            if emit {
+                entries.push(nodes[index].entry.clone());
+            } else {
+                stack.push((index, true));
+                stack.extend(
+                    nodes[index]
+                        .children
+                        .iter()
+                        .rev()
+                        .map(|&child| (child, false)),
+                );
+            }
         }
-        merged.push(candidate);
-        groups.push(merged);
+        result.push(EffectiveSkillGroup { entries });
     }
-
-    let mut result = groups
-        .into_iter()
-        .map(|group| EffectiveSkillGroup {
-            entries: group
-                .into_iter()
-                .map(|entry| (entry.agent, entry.skill))
-                .collect(),
-        })
-        .collect::<Vec<_>>();
     result.sort_by(|left, right| left.name().cmp(right.name()));
     result
+}
+
+#[cfg(test)]
+mod grouping_regression_tests {
+    use super::*;
+    fn reference<'a>(
+        entries: impl IntoIterator<Item = (AgentId, &'a EffectiveSkill)>,
+    ) -> Vec<EffectiveSkillGroup<'a>> {
+        struct Candidate<'a> {
+            agent: AgentId,
+            skill: &'a EffectiveSkill,
+            filesystem_path: Option<PathBuf>,
+        }
+
+        let mut groups = Vec::<Vec<Candidate<'a>>>::new();
+        for (agent, skill) in entries {
+            let filesystem_path = matches!(skill.source, SkillSource::Filesystem).then(|| {
+                skill
+                    .path
+                    .canonicalize()
+                    .unwrap_or_else(|_| skill.path.clone())
+            });
+            let candidate = Candidate {
+                agent,
+                skill,
+                filesystem_path,
+            };
+            let matching = groups
+                .iter()
+                .enumerate()
+                .filter_map(|(index, group)| {
+                    group
+                        .iter()
+                        .any(|entry| {
+                            entry.skill.name == candidate.skill.name
+                                || entry
+                                    .filesystem_path
+                                    .as_ref()
+                                    .zip(candidate.filesystem_path.as_ref())
+                                    .is_some_and(|(left, right)| left == right)
+                        })
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+            if matching.is_empty() {
+                groups.push(vec![candidate]);
+                continue;
+            }
+
+            let mut merged = Vec::new();
+            for index in matching.into_iter().rev() {
+                let mut group = groups.remove(index);
+                group.append(&mut merged);
+                merged = group;
+            }
+            merged.push(candidate);
+            groups.push(merged);
+        }
+
+        let mut result = groups
+            .into_iter()
+            .map(|group| EffectiveSkillGroup {
+                entries: group
+                    .into_iter()
+                    .map(|entry| (entry.agent, entry.skill))
+                    .collect(),
+            })
+            .collect::<Vec<_>>();
+        result.sort_by(|left, right| left.name().cmp(right.name()));
+        result
+    }
+
+    #[test]
+    fn indexed_grouping_preserves_transitive_aliases_and_entry_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let files = (0..8)
+            .map(|i| {
+                let path = temp.path().join(format!("file-{i}"));
+                if i % 2 == 0 {
+                    fs::write(&path, "fixture").unwrap();
+                }
+                path
+            })
+            .collect::<Vec<_>>();
+        let mut seed = 17u64;
+        for _ in 0..48 {
+            let skills = (0..40)
+                .map(|i| {
+                    seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    EffectiveSkill {
+                        id: i.to_string(),
+                        name: format!("name-{}", (seed >> 20) % 9),
+                        description: String::new(),
+                        when_to_use: None,
+                        path: files[((seed >> 30) % 8) as usize].clone(),
+                        root_path: None,
+                        prompt_path: None,
+                        scope: SkillScope::Local,
+                        visibility: SkillVisibility::Automatic,
+                        source: match seed % 7 {
+                            0 => SkillSource::Builtin,
+                            1 => SkillSource::Plugin {
+                                id: "plugin".into(),
+                                display_name: "Plugin".into(),
+                            },
+                            _ => SkillSource::Filesystem,
+                        },
+                    }
+                })
+                .collect::<Vec<_>>();
+            let entries = || {
+                skills.iter().enumerate().map(|(i, skill)| {
+                    (
+                        if i % 2 == 0 {
+                            AgentId::from("codex")
+                        } else {
+                            AgentId::from("claude-code")
+                        },
+                        skill,
+                    )
+                })
+            };
+            let signature = |groups: Vec<EffectiveSkillGroup<'_>>| {
+                groups
+                    .into_iter()
+                    .map(|group| {
+                        (
+                            group.name().to_string(),
+                            group
+                                .entries()
+                                .iter()
+                                .map(|(agent, skill)| (agent.clone(), skill.id.clone()))
+                                .collect::<Vec<_>>(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                signature(group_effective_skills(entries())),
+                signature(reference(entries()))
+            );
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

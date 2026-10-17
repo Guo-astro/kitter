@@ -14,30 +14,6 @@ fn selected_project_skills(
 }
 
 impl KitterApp {
-    fn matches_project_skill_filter(&self, row: &EffectiveSkillRow) -> bool {
-        let Some(filter) = self.projects_view.batch_filter.as_ref() else {
-            return true;
-        };
-        self.model.skills.iter().any(|skill| {
-            skill.record.name == row.name
-                && row.direct_installations.iter().any(|installation| {
-                    same_file(
-                        &installation.path.join("SKILL.md"),
-                        &skill.path.join("SKILL.md"),
-                    )
-                })
-                && match filter {
-                    ProjectSkillFilter::Group(group) => {
-                        skill.record.group_id.as_ref() == Some(group)
-                    }
-                    ProjectSkillFilter::Tag(tag) => self
-                        .tags_flow
-                        .skills
-                        .matches_filter(skill_storage_name(skill), *tag),
-                }
-        })
-    }
-
     fn project_skill_filter_control(&self, cx: &mut Context<Self>) -> Popover {
         let p = self.palette();
         let app = cx.entity().downgrade();
@@ -166,14 +142,17 @@ impl KitterApp {
         &self,
         open_project: &Path,
         all_rows: &[EffectiveSkillRow],
-        visible_rows: &[EffectiveSkillRow],
+        visible_indices: Option<&[usize]>,
         cx: &mut Context<Self>,
     ) -> Div {
         let p = self.palette();
         let selected = selected_project_skills(all_rows, &self.projects_view.batch_selected);
         let selected_count = selected.len();
+        let visible_rows: Box<dyn Iterator<Item = &EffectiveSkillRow>> = match visible_indices {
+            Some(indices) => Box::new(indices.iter().map(|&index| &all_rows[index])),
+            None => Box::new(all_rows.iter()),
+        };
         let selectable_names = visible_rows
-            .iter()
             .filter(|row| !row.direct_installations.is_empty())
             .map(|row| row.name.clone())
             .collect::<Vec<_>>();
@@ -476,7 +455,7 @@ impl KitterApp {
         let global_skills = global_root
             .as_ref()
             .and_then(|path| self.project_snapshot(path, cx));
-        let global_skill_count = global_skills.as_ref().map(Vec::len);
+        let global_skill_count = global_skills.as_ref().map(|skills| skills.len());
         let projects = self
             .model
             .library
@@ -704,12 +683,12 @@ impl KitterApp {
             } else {
                 self.project_snapshot(open_project, cx)
             };
-            let estimates = project_skills
+            let snapshot = project_skills
                 .as_ref()
                 .and_then(|_| self.context_estimate_snapshot(open_project, cx));
-            let loading = project_skills.is_none() || estimates.is_none();
-            let project_skills = project_skills.unwrap_or_default();
-            let estimates = estimates.unwrap_or_default();
+            let loading = snapshot.is_none();
+            let snapshot = snapshot.unwrap_or_default();
+            let view = snapshot.view(self.projects_view.selected_project_agent.clone());
             let context_panel = if loading {
                 div()
                     .h(px(86.))
@@ -722,28 +701,46 @@ impl KitterApp {
                     .child(self.shell.spinner_accent.clone())
                     .child(t!("projects.scanning_project").to_string())
             } else {
-                self.context_estimate_panel(open_project, &estimates, cx)
+                self.context_estimate_panel(open_project, &snapshot.estimates, cx)
             };
-            let all_effective_rows = effective_skill_rows(
-                &estimates,
-                &project_skills,
-                self.projects_view.selected_project_agent.clone(),
-            );
+            let all_effective_rows = view.rows;
             let batch_mode = self.projects_view.batch_project.as_deref() == Some(open_project);
-            let can_batch = batch_mode
-                || all_effective_rows
-                    .iter()
-                    .any(|row| !row.direct_installations.is_empty());
-            let visible_rows = if batch_mode {
-                all_effective_rows
-                    .iter()
-                    .filter(|row| self.matches_project_skill_filter(row))
-                    .cloned()
-                    .collect::<Vec<_>>()
+            let can_batch = batch_mode || view.can_batch;
+            let visible_indices: Option<Arc<[usize]>> = if batch_mode {
+                self.projects_view.batch_filter.as_ref().map(|filter| {
+                    let keys = self
+                        .model
+                        .skills
+                        .iter()
+                        .filter(|skill| match filter {
+                            ProjectSkillFilter::Group(group) => {
+                                skill.record.group_id.as_ref() == Some(group)
+                            }
+                            ProjectSkillFilter::Tag(tag) => self
+                                .tags_flow
+                                .skills
+                                .matches_filter(skill_storage_name(skill), *tag),
+                        })
+                        .map(skill_storage_name)
+                        .collect::<HashSet<_>>();
+                    all_effective_rows
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, row)| {
+                            row.library_keys
+                                .iter()
+                                .any(|key| keys.contains(key.as_str()))
+                                .then_some(index)
+                        })
+                        .collect::<Vec<_>>()
+                        .into()
+                })
             } else {
-                all_effective_rows.clone()
+                None
             };
-            let effective_rows = Arc::new(visible_rows);
+            let row_count = visible_indices
+                .as_ref()
+                .map_or(all_effective_rows.len(), |indices| indices.len());
             let mut skills = div()
                 .id("project-skills-scroll")
                 .debug_selector(|| "project-skills-scroll".into())
@@ -754,7 +751,7 @@ impl KitterApp {
                 .px(px(0.))
                 .pt(px(14.))
                 .pb(px(28.));
-            if effective_rows.is_empty() && !loading {
+            if row_count == 0 && !loading {
                 let selected_agent = self
                     .projects_view
                     .selected_project_agent
@@ -779,16 +776,21 @@ impl KitterApp {
                     .mt(px(56.)),
                 );
             }
-            if !effective_rows.is_empty() {
-                let rows = Arc::clone(&effective_rows);
+            if row_count > 0 {
+                let rows = Arc::clone(&all_effective_rows);
+                let indices = visible_indices.clone();
                 let project = open_project.clone();
                 skills = skills.child(
                     uniform_list(
                         "project-skills-virtual-list",
-                        rows.len(),
+                        row_count,
                         cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                             range
-                                .map(|index| this.project_skill_row(&rows[index], &project, cx))
+                                .map(|index| {
+                                    let index =
+                                        indices.as_ref().map_or(index, |indices| indices[index]);
+                                    this.project_skill_row(&rows[index], &project, cx)
+                                })
                                 .collect()
                         }),
                     )
@@ -797,17 +799,14 @@ impl KitterApp {
                     .min_h_0(),
                 );
             }
-            let plugin_groups = effective_plugin_groups(
-                &estimates,
-                self.projects_view.selected_project_agent.clone(),
-            );
+
             let mut tabs = self.project_skills_tabs(cx).child(div().flex_1());
             if can_batch && self.projects_view.project_skills_tab == ProjectSkillsTab::Skills {
                 if batch_mode {
                     tabs = tabs.child(self.project_batch_controls(
                         open_project,
                         &all_effective_rows,
-                        &effective_rows,
+                        visible_indices.as_deref(),
                         cx,
                     ));
                 } else {
@@ -838,7 +837,7 @@ impl KitterApp {
             }
             let skills = match self.projects_view.project_skills_tab {
                 ProjectSkillsTab::Skills => skills,
-                ProjectSkillsTab::Plugins => self.effective_plugins_list(plugin_groups, cx),
+                ProjectSkillsTab::Plugins => self.effective_plugins_list(&view.plugins, cx),
                 ProjectSkillsTab::Presets => self.project_presets_list(open_project, cx),
             };
             div()
@@ -966,6 +965,7 @@ mod tests {
             built_in: false,
             agents: Vec::new(),
             manual_only: false,
+            library_keys: Vec::new(),
             direct_installations: paths
                 .iter()
                 .map(|path| ProjectSkillInstallation {

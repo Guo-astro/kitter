@@ -14,7 +14,7 @@ use gpui_component::{
 };
 
 use crate::{
-    InstallTarget, ProjectSkill, SkillLibrary, SkillSummary, adoption,
+    InstallTarget, SkillLibrary, SkillSummary, adoption,
     preset::{PresetStatus, PresetStore},
     source,
     tags::TagState,
@@ -58,6 +58,8 @@ pub(super) struct SkillsState {
     pub skill_search: Entity<InputState>,
     pub content_snapshot: RefCell<Option<ContentSnapshot>>,
     pub content_scroll: ScrollHandle,
+    pub list: ListState,
+    pub list_rows: RefCell<Arc<[super::skills_page::SkillListRow]>>,
     pub selectable_text_handles: RefCell<BTreeMap<String, TextSelectionHandle>>,
     pub collapsed_groups: HashSet<String>,
     pub known_groups: HashSet<String>,
@@ -76,7 +78,7 @@ pub(super) struct ProjectsState {
     pub expanded_project_plugins: HashSet<String>,
     pub project_search: Entity<InputState>,
     pub project_select: Entity<SelectState<Vec<ProjectChoice>>>,
-    pub project_snapshots: RefCell<BTreeMap<PathBuf, Vec<ProjectSkill>>>,
+    pub project_snapshots: RefCell<BTreeMap<PathBuf, Arc<super::ProjectSnapshot>>>,
     pub project_snapshot_tasks: RefCell<BTreeMap<PathBuf, u64>>,
     pub context_estimates: RefCell<BTreeMap<PathBuf, ContextEstimateCache>>,
     pub context_estimate_tasks: RefCell<BTreeMap<PathBuf, u64>>,
