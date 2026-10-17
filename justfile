@@ -22,6 +22,10 @@ build:
 macos-icon:
     "{{root}}/scripts/export-macos-icon.sh"
 
+# Regenerate the committed Windows icon from the original artwork (requires Pillow).
+windows-icon:
+    python3 "{{root}}/scripts/export-windows-icon.py"
+
 app: build
     rm -rf "{{app_dir}}"
     rm -rf "{{release_dir}}/logo.iconset"
