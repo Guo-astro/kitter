@@ -22,6 +22,7 @@ impl KitterApp {
             cancel.store(true, Ordering::Relaxed);
             self.add_flow.task = None;
         }
+        self.agents_settings.cancel_add();
         self.install_flow.modal = false;
         self.delete_flow.confirmation = None;
         self.delete_flow.selected.clear();

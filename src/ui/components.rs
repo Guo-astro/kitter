@@ -761,3 +761,8 @@ impl KitterApp {
             })
     }
 }
+
+/// Reloaded definitions may contain different artwork for an existing Agent id.
+pub(super) fn clear_agent_images() {
+    BRAND_IMAGES.lock().unwrap().clear();
+}

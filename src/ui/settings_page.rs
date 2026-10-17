@@ -1,7 +1,7 @@
 use super::*;
 
 impl KitterApp {
-    pub(super) fn settings_page(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+    pub(super) fn settings_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let p = self.palette();
         let language_label = match self.model.library.config.language {
             Language::System => t!("settings.system").to_string(),
@@ -128,79 +128,7 @@ impl KitterApp {
             ),
         );
 
-        let registry = crate::agent_plugins::AgentRegistry::global();
-        let mut agents_group = kit::card(p);
-        let mut rows = 0;
-        for agent in registry.agents() {
-            rows += 1;
-            agents_group = agents_group.child(
-                kit::card_row(p, rows == 1)
-                    .child(kit::agent_avatar(p, agent))
-                    .child(agent.name.clone())
-                    .when(
-                        !matches!(agent.origin, crate::agent_plugins::PluginOrigin::Builtin),
-                        |row| row.child(Self::icon("icons/puzzle.svg", ICON_SM, p.muted)),
-                    ),
-            );
-        }
-        let mut listed = std::collections::HashSet::new();
-        for diagnostic in registry.diagnostics() {
-            let Some(id) = &diagnostic.id else {
-                continue;
-            };
-            if registry.agent(id).is_some() || !listed.insert(id.clone()) {
-                continue;
-            }
-            let message = diagnostic.message.clone();
-            rows += 1;
-            agents_group = agents_group.child(
-                kit::card_row(p, rows == 1)
-                    .child(
-                        div()
-                            .size(px(AVATAR))
-                            .flex_none()
-                            .rounded_full()
-                            .bg(p.avatar)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(p.text)
-                            .child(id.chars().next().unwrap_or_default().to_string()),
-                    )
-                    .child(id.clone())
-                    .child(
-                        div()
-                            .id(ElementId::Name(format!("agent-error-{id}").into()))
-                            .child(Self::icon("icons/triangle-alert.svg", ICON_SM, p.secondary))
-                            .tooltip(move |window, cx| {
-                                Tooltip::new(message.clone()).build(window, cx)
-                            }),
-                    ),
-            );
-        }
-        agents_group = agents_group.child(
-            kit::card_row(p, rows == 0).child(
-                kit::button(
-                    p,
-                    "open-plugin-directory",
-                    kit::ButtonKind::Secondary,
-                    kit::Size::Sm,
-                    true,
-                )
-                .child(Self::icon("icons/folder.svg", ICON_SM, p.secondary))
-                .child(t!("settings.open_plugin_directory").to_string())
-                .on_click(cx.listener(|this, _, _, cx| {
-                    let path = crate::agent_plugins::plugin_dir();
-                    match std::fs::create_dir_all(&path) {
-                        Ok(()) => cx.reveal_path(&path),
-                        Err(error) => this.show_notice(
-                            t!("settings.plugin_directory_failed", error = error).to_string(),
-                            cx,
-                        ),
-                    }
-                })),
-            ),
-        );
+        self.check_agent_updates(cx);
 
         div()
             .relative()
@@ -223,8 +151,7 @@ impl KitterApp {
                     .child(appearance_group)
                     .child(kit::section_title(t!("settings.skill_library").to_string()).mt(px(32.)))
                     .child(library_group)
-                    .child(kit::section_title(t!("settings.agents").to_string()).mt(px(32.)))
-                    .child(agents_group),
+                    .child(self.agent_settings(cx)),
             )
             .child(self.window_drag_strip("settings-window-drag", 20., cx))
     }

@@ -900,3 +900,64 @@ pub(super) fn detail_header(
                 .child(actions),
         )
 }
+
+/// Avatar for fetched candidates which do not yet have a registry definition.
+pub(super) fn agent_icon_avatar(
+    p: Palette,
+    icon: &crate::agent_plugins::AgentIcon,
+    name: &str,
+) -> Div {
+    use crate::agent_plugins::AgentIcon;
+    let mark = match icon {
+        AgentIcon::Monogram => div()
+            .child(name.chars().next().unwrap_or_default().to_string())
+            .into_any_element(),
+        AgentIcon::Builtin(path) => {
+            let path = *path;
+            let dark = p.dark;
+            img(ImageSource::Custom(Arc::new(move |_, cx| {
+                let dark_path = format!("{}.dark.svg", path.trim_end_matches(".svg"));
+                let bytes = dark
+                    .then(|| cx.asset_source().load(&dark_path).ok().flatten())
+                    .flatten()
+                    .or_else(|| cx.asset_source().load(path).ok().flatten())?;
+                Some(
+                    cx.svg_renderer()
+                        .render_single_frame(bytes.as_ref(), 2.0)
+                        .map_err(ImageCacheError::from),
+                )
+            })))
+            .size(px(KitterApp::brand_icon_size(path, ICON_MD)))
+            .flex_none()
+            .into_any_element()
+        }
+        AgentIcon::Inline { light, dark } => {
+            let bytes = if p.dark {
+                dark.as_ref().unwrap_or(light)
+            } else {
+                light
+            }
+            .clone();
+            img(ImageSource::Custom(Arc::new(move |_, cx| {
+                Some(
+                    cx.svg_renderer()
+                        .render_single_frame(bytes.as_ref(), 2.0)
+                        .map_err(ImageCacheError::from),
+                )
+            })))
+            .size(px(ICON_MD))
+            .flex_none()
+            .into_any_element()
+        }
+    };
+    div()
+        .size(px(AVATAR))
+        .flex_none()
+        .rounded_full()
+        .bg(p.avatar)
+        .text_color(p.text)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(mark)
+}

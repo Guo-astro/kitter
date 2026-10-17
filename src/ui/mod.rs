@@ -41,6 +41,7 @@ fn quit(_: &Quit, cx: &mut App) {
 mod add_actions;
 mod add_flow;
 mod adoption_list;
+mod agents_settings;
 mod badges;
 mod components;
 mod effective_view;
@@ -220,6 +221,8 @@ enum DialogKind {
     PresetName,
     PresetSkills,
     PresetConfirm,
+    AgentAdd,
+    AgentSource,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -447,6 +450,7 @@ impl Render for SpinnerView {
 
 pub struct KitterApp {
     model: AppModel,
+    agents_settings: agents_settings::AgentsSettings,
     shell: ShellState,
     skills_view: SkillsState,
     projects_view: ProjectsState,
@@ -739,7 +743,9 @@ impl KitterApp {
         } else {
             known_groups.clone()
         };
+        let agents_settings = agents_settings::AgentsSettings::new(window, cx);
         Self {
+            agents_settings,
             model: AppModel {
                 library,
                 skills,
@@ -1335,6 +1341,8 @@ impl KitterApp {
 impl Render for DialogBody {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.app.update(cx, |app, app_cx| match self.kind {
+            DialogKind::AgentAdd => app.agent_add_modal(app_cx),
+            DialogKind::AgentSource => app.agent_source_modal(app_cx),
             DialogKind::Add => app.add_skill_modal(window, app_cx),
             DialogKind::Install => app.install_modal(window, app_cx),
             DialogKind::Delete => app.delete_confirmation_modal(window, app_cx),
@@ -1442,6 +1450,8 @@ impl Render for KitterApp {
         }
         if let Some(body) = self.shell.dialog_body.clone() {
             let width = match body.read(cx).kind {
+                DialogKind::AgentAdd => px(520.),
+                DialogKind::AgentSource => px(420.),
                 DialogKind::Add => px(520.),
                 DialogKind::Install => px(600.),
                 DialogKind::Delete => px(420.),
