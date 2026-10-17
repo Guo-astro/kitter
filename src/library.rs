@@ -21,6 +21,8 @@ const KITTER_SKILL_MD: &str = include_str!("../resources/skills/kitter/SKILL.md"
 const KITTER_OPENAI_YAML: &str = include_str!("../resources/skills/kitter/agents/openai.yaml");
 const KITTER_INSTALL_CLI_MD: &str =
     include_str!("../resources/skills/kitter/references/install-cli.md");
+const KITTER_AGENT_PLUGINS_MD: &str =
+    include_str!("../resources/skills/kitter/references/agent-plugins.md");
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 struct Registry {
@@ -1075,6 +1077,7 @@ fn ensure_builtin_skill(library_dir: &Path) -> Result<()> {
     write_builtin_file(&root.join("SKILL.md"), KITTER_SKILL_MD)?;
     write_builtin_file(&agents.join("openai.yaml"), KITTER_OPENAI_YAML)?;
     write_builtin_file(&references.join("install-cli.md"), KITTER_INSTALL_CLI_MD)?;
+    write_builtin_file(&references.join("agent-plugins.md"), KITTER_AGENT_PLUGINS_MD)?;
     Ok(())
 }
 
@@ -1222,6 +1225,11 @@ mod tests {
             fs::read_to_string(builtin_path.join("references/install-cli.md"))
                 .unwrap()
                 .contains("gh release download")
+        );
+        assert!(
+            fs::read_to_string(builtin_path.join("references/agent-plugins.md"))
+                .unwrap()
+                .contains("kitter agents check")
         );
         assert!(
             fs::read_to_string(builtin_path.join("agents/openai.yaml"))

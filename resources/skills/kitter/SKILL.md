@@ -161,7 +161,20 @@ kitter install <skill> \
 
 Built-in Agent ids are `codex`, `claude-code`, `cursor`, `opencode`, `pi`, `omp`, `dimagent`, `grok`, `openclaw`, `hermes`, `droid`, `amp`, `antigravity`, `copilot`, and `trae`. Only Agents with an install target accept `--target`; `universal` is the shared target. Repeat `--target` to install into several targets in one operation. Use `universal` for DimAgent; omp supports both `universal` and `omp`. The legacy alias `claude` still works; use `claude-code` in new commands. JSON `agent` and `target` fields use canonical ids such as `claude-code`.
 
-Run `kitter agents` to see available Agents, the plugin directory, and plugin errors. To add a custom Agent, see [Agent plugins](https://github.com/what1f/kitter/blob/main/docs/agent-plugins.md).
+## Agents
+
+Run `kitter agents` to see available Agents and plugin errors. Manage them with:
+
+```bash
+kitter agents add <github-url|path> [--only <id>]
+kitter agents update [<id>]
+kitter agents remove <id>
+kitter agents enable <id>
+kitter agents disable <id>
+kitter agents move <id> --before <id>
+```
+
+Disabled Agents are hidden from project inspection and cannot be install targets. When the user needs an Agent that Kitter does not support, or wants to change a built-in one, read [references/agent-plugins.md](references/agent-plugins.md).
 
 ## Common workflows
 
