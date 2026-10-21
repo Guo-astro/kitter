@@ -433,24 +433,51 @@ impl SkillLibrary {
             None
         };
         let identity = record.identity_key();
-        if self
+        let existing = self
             .registry
             .skills
             .values()
-            .any(|existing| existing.identity_key() == identity)
-        {
-            bail!(
-                crate::user_error!("errors.skill_added_notice")
-                    .detail(t!("errors.skill_added_detail", name = record.name).to_string())
-            );
-        }
-        let storage_name = self.storage_name_for(&record.name, &identity);
+            .find(|existing| existing.identity_key() == identity)
+            .cloned();
+        let storage_name = existing
+            .as_ref()
+            .map(|record| record.storage_name.clone())
+            .unwrap_or_else(|| self.storage_name_for(&record.name, &identity));
         let destination = self.config.library_dir.join(&storage_name);
+        let restoring = existing.is_some();
+        if let Some(mut existing) = existing {
+            // A registry entry alone does not mean its files are still present.
+            // Repair missing or empty destinations; never overwrite unrecognized files.
+            match destination.symlink_metadata() {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+                Ok(metadata)
+                    if metadata.is_dir()
+                        && crate::directory_link::inspect(&destination)?.is_none()
+                        && fs::read_dir(&destination)?.next().is_none() =>
+                {
+                    // A failed junction removal can leave an empty directory.
+                    fs::remove_dir(&destination)?;
+                }
+                Ok(_) => {
+                    bail!(t!("errors.location_occupied", path = destination.display()).to_string())
+                }
+            }
+            existing.origin = record.origin;
+            existing.description = record.description;
+            existing.update_available = false;
+            record = existing;
+        }
         if let Some(source) = &local_source {
             crate::directory_link::create(source, &destination)?;
             record.update_available = false;
         } else {
-            copy_tree(source, &destination)?;
+            let staging = tempfile::Builder::new()
+                .prefix(".kitter-import-")
+                .tempdir_in(&self.config.library_dir)?;
+            let staged = staging.path().join("skill");
+            copy_tree(source, &staged)?;
+            fs::rename(staged, &destination)?;
         }
         record.storage_name = storage_name.clone();
         if record.last_operated_at == 0 {
@@ -466,11 +493,10 @@ impl SkillLibrary {
             record.group_id = None;
         }
         let before = self.registry.clone();
-        self.registry.trigger_overrides.remove(&storage_name);
-        self.registry.skills.insert(storage_name, record);
-        if local_source.is_none() {
-            return self.save();
+        if !restoring {
+            self.registry.trigger_overrides.remove(&storage_name);
         }
+        self.registry.skills.insert(storage_name, record);
         if let Err(error) = self.save() {
             self.registry = before;
             if let Some(link) = crate::directory_link::inspect(&destination)? {
@@ -484,10 +510,15 @@ impl SkillLibrary {
     }
 
     pub(crate) fn contains_identity(&self, identity: &str) -> bool {
-        self.registry
-            .skills
-            .values()
-            .any(|record| record.identity_key() == identity)
+        self.registry.skills.values().any(|record| {
+            record.identity_key() == identity
+                && self
+                    .config
+                    .library_dir
+                    .join(&record.storage_name)
+                    .join("SKILL.md")
+                    .is_file()
+        })
     }
 
     /// Adopt one source and its observed links as a single recoverable operation.
@@ -750,8 +781,25 @@ impl SkillLibrary {
         Ok(())
     }
 
+    pub fn removal_record(&self, selector: &str) -> Result<SkillRecord> {
+        if let Some(record) = self.registry.skills.get(selector) {
+            return Ok(record.clone());
+        }
+        let matches = self
+            .registry
+            .skills
+            .values()
+            .filter(|record| record.name == selector)
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [record] => Ok((*record).clone()),
+            [] => self.record(selector),
+            _ => bail!(t!("errors.skill_id_required").to_string()),
+        }
+    }
+
     pub fn remove(&mut self, name: &str) -> Result<()> {
-        let record = self.record(name)?;
+        let record = self.removal_record(name)?;
         self.remove_by_storage(&record.storage_name)
     }
 
@@ -761,7 +809,8 @@ impl SkillLibrary {
             crate::user_bail!("errors.builtin_delete_protected");
         }
         let source_key = record.origin.source().key();
-        let path = self.skill_path_by_storage(storage_name)?;
+        validate_name(storage_name)?;
+        let path = self.config.library_dir.join(storage_name);
         let affected_projects = self
             .config
             .recent_projects
@@ -798,7 +847,11 @@ impl SkillLibrary {
         if let Some(link) = crate::directory_link::inspect(&path)? {
             crate::directory_link::remove(&path, link)?;
         } else {
-            fs::remove_dir_all(path)?;
+            match fs::remove_dir_all(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
         }
         presets.forget_skill(storage_name)?;
         self.registry.skills.remove(storage_name);
@@ -989,6 +1042,10 @@ impl SkillLibrary {
     }
 
     pub fn record_by_storage(&self, storage_name: &str) -> Result<SkillRecord> {
+        validate_name(storage_name)?;
+        if let Some(record) = self.registry.skills.get(storage_name) {
+            return Ok(record.clone());
+        }
         self.list()?
             .into_iter()
             .find(|skill| skill.record.storage_name == storage_name)
@@ -1077,7 +1134,10 @@ fn ensure_builtin_skill(library_dir: &Path) -> Result<()> {
     write_builtin_file(&root.join("SKILL.md"), KITTER_SKILL_MD)?;
     write_builtin_file(&agents.join("openai.yaml"), KITTER_OPENAI_YAML)?;
     write_builtin_file(&references.join("install-cli.md"), KITTER_INSTALL_CLI_MD)?;
-    write_builtin_file(&references.join("agent-plugins.md"), KITTER_AGENT_PLUGINS_MD)?;
+    write_builtin_file(
+        &references.join("agent-plugins.md"),
+        KITTER_AGENT_PLUGINS_MD,
+    )?;
     Ok(())
 }
 

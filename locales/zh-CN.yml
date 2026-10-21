@@ -100,6 +100,7 @@ cli:
     one: "已更新 %{count} 个技能"
     other: "已更新 %{count} 个技能"
 common:
+  back: "返回"
   add_count: "添加 %{count} 个"
   add_skill: "添加技能"
   adopted_skills:
@@ -153,6 +154,9 @@ context:
   manual: " · %{count} 手动"
   name_only: " · %{count} 仅名称"
 errors:
+  install_name_conflict: "请只选择一个来源的“%{name}”"
+  install_target_changed: "%{path} 的内容已变化，请检查后重试。"
+  install_backup_kept: "安装已完成，但旧文件未能清理，已保留在 %{path}：%{error}"
   agent_invalid: "未知 Agent：%{agent}。可选值：%{values}"
   target_invalid: "未知安装目标：%{target}。可选值：%{values}"
   absolute_path_required: "请使用绝对路径"
@@ -276,6 +280,11 @@ errors:
   update_source_missing: "这个技能没有可用的更新来源"
   write_failed: "写入失败：%{path}"
 install:
+  overwrite_warning: "安装位置已存在以下技能，继续安装将覆盖它们。"
+  confirm_overwrite: "继续？[y/N]"
+  overwrite_requires_yes: "请使用 --yes 确认覆盖。"
+  replace_title: "替换同名技能？"
+  replace_and_install: "替换并安装"
   agent_specific: "独立安装"
   delete_batch_confirm: "删除 %{count} 个技能？"
   delete_confirm: "删除「%{name}」？"

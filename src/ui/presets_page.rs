@@ -697,13 +697,15 @@ impl KitterApp {
             .when_some(self.presets_view.error.clone(), |body, error| {
                 body.child(kit::field_error(p, error))
             });
-        self.preset_dialog(
+        self.action_dialog(
             "preset-name",
             title,
             body,
             confirm,
             false,
             true,
+            t!("common.cancel").to_string(),
+            |this, cx| this.close_dialog(cx),
             |this, cx| this.commit_preset_name(cx),
             cx,
         )
@@ -782,13 +784,15 @@ impl KitterApp {
         let body = div()
             .child(kit::search_input(p, &self.presets_view.skill_search).small())
             .child(rows);
-        self.preset_dialog(
+        self.action_dialog(
             "preset-skills",
             t!("common.add_skill").to_string(),
             body,
             t!("common.add_count", count = count).to_string(),
             false,
             count > 0,
+            t!("common.cancel").to_string(),
+            |this, cx| this.close_dialog(cx),
             |this, cx| this.add_picked_preset_skills(cx),
             cx,
         )
@@ -875,74 +879,17 @@ impl KitterApp {
                 )
             }
         };
-        self.preset_dialog(
+        self.action_dialog(
             key,
             title,
             body,
             confirm,
             true,
             true,
+            t!("common.cancel").to_string(),
+            |this, cx| this.close_dialog(cx),
             |this, cx| this.confirm_preset_action(cx),
             cx,
         )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn preset_dialog(
-        &self,
-        key: &'static str,
-        title: String,
-        body: Div,
-        confirm: String,
-        danger: bool,
-        enabled: bool,
-        on_confirm: impl Fn(&mut Self, &mut Context<Self>) + 'static,
-        cx: &mut Context<Self>,
-    ) -> Div {
-        let p = self.palette();
-        kit::modal_panel(p)
-            .child(kit::modal_header(
-                title,
-                kit::close_button(p, ElementId::Name(format!("close-{key}").into()), true)
-                    .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx))),
-            ))
-            .child(kit::modal_body().child(body))
-            .child(
-                kit::modal_footer(p)
-                    .child(
-                        kit::button(
-                            p,
-                            ElementId::Name(format!("cancel-{key}").into()),
-                            kit::ButtonKind::Ghost,
-                            kit::Size::Md,
-                            true,
-                        )
-                        .child(t!("common.cancel").to_string())
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, _, cx| this.close_dialog(cx)),
-                        ),
-                    )
-                    .child(
-                        kit::button(
-                            p,
-                            ElementId::Name(format!("confirm-{key}").into()),
-                            if danger {
-                                kit::ButtonKind::Danger
-                            } else {
-                                kit::ButtonKind::Primary
-                            },
-                            kit::Size::Md,
-                            enabled,
-                        )
-                        .child(confirm)
-                        .when(enabled, |button| {
-                            button.on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |this, _, _, cx| on_confirm(this, cx)),
-                            )
-                        }),
-                    ),
-            )
     }
 }

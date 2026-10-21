@@ -243,7 +243,7 @@ impl KitterApp {
         self.install_flow.preset = Some(id);
     }
 
-    pub(super) fn install_preset(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn install_preset(&mut self, plan: project::InstallPlan, cx: &mut Context<Self>) {
         let Some(id) = self.install_flow.preset.clone() else {
             return;
         };
@@ -260,10 +260,13 @@ impl KitterApp {
             .into_iter()
             .filter(|target| self.install_flow.selected_targets.contains(target))
             .collect::<Vec<_>>();
-        let result = self
-            .presets_view
-            .store
-            .install(&id, &project, &targets, &self.model.skills);
+        let result = self.presets_view.store.install_reviewed(
+            &id,
+            &project,
+            &targets,
+            &self.model.skills,
+            plan,
+        );
         if result.is_ok() && !self.install_flow.global {
             self.model.library.config.touch_project(&project);
             let _ = self.model.library.save();

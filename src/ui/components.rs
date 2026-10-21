@@ -766,3 +766,66 @@ impl KitterApp {
 pub(super) fn clear_agent_images() {
     BRAND_IMAGES.lock().unwrap().clear();
 }
+
+impl KitterApp {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn action_dialog(
+        &self,
+        key: &'static str,
+        title: String,
+        body: impl IntoElement,
+        confirm: String,
+        danger: bool,
+        enabled: bool,
+        cancel: String,
+        on_cancel: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        on_confirm: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let p = self.palette();
+        kit::modal_panel(p)
+            .child(kit::modal_header(
+                title,
+                kit::close_button(p, ElementId::Name(format!("close-{key}").into()), true)
+                    .on_click(cx.listener(|this, _, _, cx| this.close_dialog(cx))),
+            ))
+            .child(kit::modal_body().child(body))
+            .child(
+                kit::modal_footer(p)
+                    .child(
+                        kit::button(
+                            p,
+                            ElementId::Name(format!("cancel-{key}").into()),
+                            kit::ButtonKind::Ghost,
+                            kit::Size::Md,
+                            true,
+                        )
+                        .child(cancel)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| on_cancel(this, cx)),
+                        ),
+                    )
+                    .child(
+                        kit::button(
+                            p,
+                            ElementId::Name(format!("confirm-{key}").into()),
+                            if danger {
+                                kit::ButtonKind::Danger
+                            } else {
+                                kit::ButtonKind::Primary
+                            },
+                            kit::Size::Md,
+                            enabled,
+                        )
+                        .child(confirm)
+                        .when(enabled, |button| {
+                            button.on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| on_confirm(this, cx)),
+                            )
+                        }),
+                    ),
+            )
+    }
+}

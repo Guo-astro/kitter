@@ -3,6 +3,7 @@ use kitter::_rust_i18n_try_translate;
 use rust_i18n::_tr as t;
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
+    io::{IsTerminal, Write},
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
 };
@@ -93,6 +94,9 @@ enum Command {
         project: PathBuf,
         #[arg(long, required = true)]
         target: Vec<String>,
+        /// Confirm overwriting existing skills
+        #[arg(short, long)]
+        yes: bool,
     },
     /// Remove selected skill installations from a project
     Uninstall {
@@ -358,6 +362,9 @@ enum PresetAction {
         project: PathBuf,
         #[arg(long, required = true)]
         target: Vec<String>,
+        /// Confirm overwriting existing skills
+        #[arg(short, long)]
+        yes: bool,
     },
     /// Sync projects with the latest preset content
     Sync {
@@ -546,7 +553,8 @@ fn run() -> Result<()> {
             skills,
             project,
             target,
-        } => install_skills(&library, &skills, &project, target),
+            yes,
+        } => install_skills(&library, &skills, &project, target, yes),
         Command::Uninstall {
             skills,
             paths,
@@ -903,16 +911,23 @@ fn adopt_skills(
 }
 
 fn remove_skills(library: &mut SkillLibrary, selectors: &[String]) -> Result<()> {
-    let skills = resolve_skills(library, selectors)?;
+    let mut seen = HashSet::new();
+    let mut skills = Vec::new();
+    for selector in selectors {
+        let record = library.removal_record(selector)?;
+        if seen.insert(record.storage_name.clone()) {
+            skills.push(record);
+        }
+    }
     let mut removed = 0usize;
     let mut failures = Vec::new();
     for skill in skills {
-        match library.remove_by_storage(&skill.record.storage_name) {
+        match library.remove_by_storage(&skill.storage_name) {
             Ok(()) => removed += 1,
             Err(error) => failures.push(
                 t!(
                     "errors.item_detail",
-                    item = skill.record.name,
+                    item = skill.name,
                     error = kitter::i18n::error_diagnostic(&error)
                 )
                 .to_string(),
@@ -922,11 +937,37 @@ fn remove_skills(library: &mut SkillLibrary, selectors: &[String]) -> Result<()>
     finish_batch("cli.removed_skills", removed, failures)
 }
 
+fn confirm_install(plan: &project::InstallPlan, yes: bool) -> Result<bool> {
+    let names = plan
+        .conflicts()
+        .map(|conflict| conflict.name.as_str())
+        .collect::<BTreeSet<_>>();
+    if names.is_empty() || yes {
+        return Ok(true);
+    }
+    eprintln!("{}", t!("install.overwrite_warning"));
+    for name in names {
+        eprintln!("  {name}");
+    }
+    if !std::io::stdin().is_terminal() {
+        bail!(t!("install.overwrite_requires_yes").to_string());
+    }
+    eprint!("{} ", t!("install.confirm_overwrite"));
+    std::io::stderr().flush()?;
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    Ok(matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
 fn install_skills(
     library: &SkillLibrary,
     selectors: &[String],
     project_path: &Path,
     targets: Vec<String>,
+    yes: bool,
 ) -> Result<()> {
     let project_path = canonical_project(project_path)?;
     let skills = resolve_skills(library, selectors)?;
@@ -935,22 +976,15 @@ fn install_skills(
         .map(|target| parse_target(target))
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
-    let mut installed = 0usize;
-    let mut failures = Vec::new();
-    for skill in skills {
-        match project::install_from_path(&project_path, &skill.path, &skill.record.name, &targets) {
-            Ok(()) => installed += 1,
-            Err(error) => failures.push(
-                t!(
-                    "errors.item_detail",
-                    item = skill.record.name,
-                    error = kitter::i18n::error_diagnostic(&error)
-                )
-                .to_string(),
-            ),
-        }
+    let mut plan = project::InstallPlan::default();
+    for skill in &skills {
+        plan.add(&project_path, &skill.path, &skill.record.name, &targets)?;
     }
-    finish_batch("common.installed_skills", installed, failures)
+    if !confirm_install(&plan, yes)? {
+        return Ok(());
+    }
+    plan.execute()?;
+    finish_batch("common.installed_skills", skills.len(), Vec::new())
 }
 
 fn uninstall_skills(
@@ -1722,6 +1756,7 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
             preset,
             project,
             target,
+            yes,
         } => {
             let id = presets.resolve(&preset)?.id.clone();
             let project = canonical_project(&project)?;
@@ -1730,7 +1765,19 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
                 .map(|target| parse_target(target))
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(anyhow::Error::msg)?;
-            let report = presets.install(&id, &project, &targets, &library.list()?)?;
+            let skills = library.list()?;
+            let mut plan = project::InstallPlan::default();
+            for storage in &presets.preset(&id)?.skills {
+                let skill = skills
+                    .iter()
+                    .find(|skill| skill.record.storage_name == *storage)
+                    .with_context(|| t!("errors.skill_missing").to_string())?;
+                plan.add(&project, &skill.path, &skill.record.name, &targets)?;
+            }
+            if !confirm_install(&plan, yes)? {
+                return Ok(());
+            }
+            let report = presets.install_reviewed(&id, &project, &targets, &skills, plan)?;
             finish_batch(
                 "common.installed_skills",
                 report.installed,

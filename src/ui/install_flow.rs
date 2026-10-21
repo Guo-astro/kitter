@@ -2,6 +2,9 @@ use super::*;
 
 impl KitterApp {
     pub(super) fn install_modal(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
+        if self.install_flow.pending.is_some() {
+            return self.install_replace_modal(cx);
+        }
         let p = self.palette();
         let has_target = !self.install_flow.selected_targets.is_empty()
             && if self.install_flow.global {
@@ -170,14 +173,14 @@ impl KitterApp {
             button.on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| {
-                    if this.install_flow.preset.is_some() {
-                        this.install_preset(cx);
-                    } else {
-                        this.install_selected(cx);
-                    }
+                    this.prepare_install(cx);
                 }),
             )
         });
+        let install_content = install_content
+            .when_some(self.install_flow.error.clone(), |body, error| {
+                body.child(div().text_color(p.danger).child(error))
+            });
         let panel = kit::modal_panel(p)
             .child(kit::modal_header(
                 t!("install.title", name = selected_label.clone()).to_string(),
@@ -187,6 +190,112 @@ impl KitterApp {
             .child(kit::modal_footer(p).child(cancel).child(confirm));
         let _ = window;
         panel
+    }
+
+    fn prepare_install(&mut self, cx: &mut Context<Self>) {
+        self.install_flow.error = None;
+        let result = (|| -> anyhow::Result<project::InstallPlan> {
+            let project = if self.install_flow.global {
+                dirs::home_dir()
+            } else {
+                self.projects_view.open_project.clone()
+            }
+            .ok_or_else(|| anyhow::anyhow!(t!("add.project_required").to_string()))?;
+            let targets = self
+                .install_flow
+                .selected_targets
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            let keys = if let Some(id) = &self.install_flow.preset {
+                self.presets_view.store.preset(id)?.skills.clone()
+            } else {
+                self.selected_skill_keys()
+            };
+            let mut plan = project::InstallPlan::default();
+            for key in keys {
+                let skill = self
+                    .model
+                    .skills
+                    .iter()
+                    .find(|skill| skill_storage_name(skill) == key)
+                    .ok_or_else(|| anyhow::anyhow!(t!("errors.skill_missing").to_string()))?;
+                plan.add(&project, &skill.path, &skill.record.name, &targets)?;
+            }
+            Ok(plan)
+        })();
+        match result {
+            Ok(plan) if plan.conflicts().next().is_some() => self.install_flow.pending = Some(plan),
+            Ok(plan) => self.execute_install_plan(plan, cx),
+            Err(error) => self.install_flow.error = Some(self.error_message(error)),
+        }
+        self.notify_dialog(cx);
+        cx.notify();
+    }
+
+    fn execute_install_plan(&mut self, plan: project::InstallPlan, cx: &mut Context<Self>) {
+        if self.install_flow.preset.is_some() {
+            self.install_preset(plan, cx);
+            return;
+        }
+        match plan.execute() {
+            Ok(()) => self.install_selected(cx),
+            Err(error) => {
+                self.install_flow.error = Some(self.error_message(error));
+                self.notify_dialog(cx);
+                cx.notify();
+            }
+        }
+    }
+
+    fn install_replace_modal(&self, cx: &mut Context<Self>) -> Div {
+        let p = self.palette();
+        let plan = self.install_flow.pending.as_ref().unwrap();
+        let names = plan
+            .conflicts()
+            .map(|conflict| conflict.name.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut entries = kit::card(p);
+        for (index, name) in names.into_iter().enumerate() {
+            entries = entries.child(
+                kit::card_row(p, index == 0)
+                    .child(Self::icon("icons/package.svg", ICON_MD, p.secondary))
+                    .child(kit::field_label(p, name).flex_1().min_w_0().truncate()),
+            );
+        }
+        let rows = kit::form()
+            .child(kit::field_label(
+                p,
+                t!("install.overwrite_warning").to_string(),
+            ))
+            .child(
+                div()
+                    .id("install-conflicts")
+                    .max_h(px(360.))
+                    .overflow_y_scroll()
+                    .child(entries),
+            );
+        self.action_dialog(
+            "install-replace",
+            t!("install.replace_title").to_string(),
+            rows,
+            t!("install.replace_and_install").to_string(),
+            true,
+            true,
+            t!("common.back").to_string(),
+            |this, cx| {
+                this.install_flow.pending = None;
+                this.install_flow.error = None;
+                this.notify_dialog(cx);
+                cx.notify();
+            },
+            |this, cx| {
+                if let Some(plan) = this.install_flow.pending.take() {
+                    this.execute_install_plan(plan, cx);
+                }
+            },
+            cx,
+        )
     }
 
     pub(super) fn toggle_install_target(&mut self, target: InstallTarget) {

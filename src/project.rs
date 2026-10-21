@@ -11,6 +11,9 @@ use crate::{
     agents::installation_root, directory_link,
 };
 
+mod install;
+pub use install::{InstallConflict, InstallPlan};
+
 #[derive(Clone, Debug)]
 pub enum RemovalKind {
     ManagedInstallation,
@@ -65,63 +68,18 @@ fn install_to_roots(
     name: &str,
     roots: impl IntoIterator<Item = PathBuf>,
 ) -> Result<()> {
-    crate::library::validate_name(name)?;
-    let source = source
-        .canonicalize()
-        .context(crate::user_error!("errors.skill_missing"))?;
-    let mut pending = Vec::<(PathBuf, PathBuf)>::new();
-    for parent in roots {
-        let link = parent.join(name);
-        match link.symlink_metadata() {
-            Ok(_) => {
-                if link.canonicalize().ok().as_ref() == Some(&source) {
-                    continue;
-                }
-                bail!(t!("errors.location_occupied", path = link.display()).to_string());
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(error).context(
-                    t!("errors.location_check_failed", path = link.display()).to_string(),
-                );
-            }
-        }
-        if !pending
-            .iter()
-            .any(|(_, pending_link)| installation_key(pending_link) == installation_key(&link))
-        {
-            pending.push((parent, link));
-        }
+    let mut plan = InstallPlan::default();
+    plan.add_to_roots(source, name, roots)?;
+    if let Some(conflict) = plan.conflicts().next() {
+        bail!(
+            t!(
+                "errors.location_occupied",
+                path = conflict.destination.display()
+            )
+            .to_string()
+        );
     }
-
-    let mut created = Vec::new();
-    for (parent, link) in pending {
-        if let Err(error) =
-            fs::create_dir_all(&parent).and_then(|()| directory_link::create(&source, &link))
-        {
-            let rollback_failures = rollback_links(&created);
-            let rollback = if rollback_failures.is_empty() {
-                String::new()
-            } else {
-                t!(
-                    "errors.rollback_failed",
-                    failures = rollback_failures.join(t!("errors.separator").as_ref())
-                )
-                .to_string()
-            };
-            bail!(
-                t!(
-                    "errors.link_create_failed",
-                    path = link.display(),
-                    error = error,
-                    rollback = rollback
-                )
-                .to_string()
-            );
-        }
-        created.push(link);
-    }
-    Ok(())
+    plan.execute()
 }
 
 pub fn uninstall(
@@ -285,26 +243,6 @@ pub fn installation_key(path: &Path) -> PathBuf {
     path.file_name()
         .map(|name| parent.join(name))
         .unwrap_or(parent)
-}
-
-fn rollback_links(links: &[PathBuf]) -> Vec<String> {
-    links
-        .iter()
-        .rev()
-        .filter_map(|link| match directory_link::inspect(link) {
-            Ok(Some(directory_link)) => {
-                directory_link::remove(link, directory_link)
-                    .err()
-                    .map(|error| {
-                        t!("errors.item_detail", item = link.display(), error = error).to_string()
-                    })
-            }
-            Ok(None) => None,
-            Err(error) => {
-                Some(t!("errors.item_detail", item = link.display(), error = error).to_string())
-            }
-        })
-        .collect()
 }
 
 pub fn remove_project_skills<'a>(

@@ -62,6 +62,8 @@ impl KitterApp {
 
     pub(super) fn open_install_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.install_flow.modal = true;
+        self.install_flow.pending = None;
+        self.install_flow.error = None;
         self.install_flow.global = self.projects_view.global_project_view;
         self.install_flow.selected_targets.clear();
         self.sync_project_select(window, cx);

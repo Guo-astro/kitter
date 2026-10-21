@@ -759,6 +759,11 @@ pub(crate) fn run_output(command: &mut Command) -> Result<std::process::Output> 
 pub(crate) fn tool_command(name: &str) -> Command {
     let executable = find_tool(name).unwrap_or_else(|| PathBuf::from(name));
     let mut command = Command::new(&executable);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
     if let Some(bin_dir) = executable.parent() {
         let mut paths = vec![bin_dir.to_path_buf()];
         if let Some(current) = env::var_os("PATH") {
@@ -1030,6 +1035,127 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
             matches!(library.record("skill-18").unwrap().origin, SkillOrigin::Npx { source_hash: Some(hash), .. } if hash == "hash-18")
         );
         assert!(!root.join("data/npx-sources").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn background_batch_commands_have_no_console_and_capture_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let script = temp.path().join("console-check.cmd");
+        let probe = temp.path().join("console.ps1");
+        fs::write(&probe, r#"Add-Type -Name ConsoleProbe -Namespace Test -MemberDefinition '[DllImport("kernel32.dll")] public static extern System.IntPtr GetConsoleWindow();'
+[Test.ConsoleProbe]::GetConsoleWindow().ToInt64()
+"#).unwrap();
+        fs::write(
+            &script,
+            format!(
+                "@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"{}\"\r\n",
+                probe.display()
+            ),
+        )
+        .unwrap();
+        let output = tool_command(script.to_str().unwrap()).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "0");
+    }
+
+    #[test]
+    fn missing_library_link_can_be_readded_and_stale_records_can_be_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("source");
+        write_skill(&root.join("demo"), "demo");
+        let data = temp.path().join("data");
+        let mut library = SkillLibrary::open_in(data.clone()).unwrap();
+        let selected = HashSet::from(["demo".to_string()]);
+        scan_local(&root)
+            .unwrap()
+            .import_selected(&mut library, &selected, Some("Keep group"))
+            .unwrap();
+        let before = library.record("demo").unwrap();
+        let destination = library.config.library_dir.join(&before.storage_name);
+        crate::directory_link::remove(
+            &destination,
+            crate::directory_link::inspect(&destination)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let summary = scan_local(&root)
+            .unwrap()
+            .import_selected(&mut library, &selected, None)
+            .unwrap();
+        assert_eq!(
+            summary,
+            ImportSummary {
+                added: 1,
+                skipped: 0
+            }
+        );
+        let after = library.record("demo").unwrap();
+        assert_eq!(after.storage_name, before.storage_name);
+        assert_eq!(after.group_id, before.group_id);
+        assert_eq!(
+            destination.canonicalize().unwrap(),
+            root.join("demo").canonicalize().unwrap()
+        );
+        crate::directory_link::remove(
+            &destination,
+            crate::directory_link::inspect(&destination)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let mut library = SkillLibrary::open_in(data.clone()).unwrap();
+        library.remove("demo").unwrap();
+        let library = SkillLibrary::open_in(data).unwrap();
+        assert!(library.record_by_storage(&before.storage_name).is_err());
+        assert!(root.join("demo/SKILL.md").is_file());
+        assert!(
+            library
+                .source_records()
+                .iter()
+                .all(|source| !source.added_skills.contains(&"demo".to_string()))
+        );
+    }
+
+    #[test]
+    fn readd_does_not_overwrite_unknown_files_at_a_stale_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("source");
+        write_skill(&root.join("demo"), "demo");
+        let mut library = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+        let selected = HashSet::from(["demo".to_string()]);
+        scan_local(&root)
+            .unwrap()
+            .import_selected(&mut library, &selected, None)
+            .unwrap();
+        let destination = library
+            .config
+            .library_dir
+            .join(library.record("demo").unwrap().storage_name);
+        crate::directory_link::remove(
+            &destination,
+            crate::directory_link::inspect(&destination)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("keep"), "user content").unwrap();
+        assert!(
+            scan_local(&root)
+                .unwrap()
+                .import_selected(&mut library, &selected, None)
+                .is_err()
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("keep")).unwrap(),
+            "user content"
+        );
     }
 
     #[test]

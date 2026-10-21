@@ -100,6 +100,7 @@ cli:
     one: "Updated %{count} skill"
     other: "Updated %{count} skills"
 common:
+  back: "Back"
   add_count: "Add %{count}"
   add_skill: "Add Skill"
   adopted_skills:
@@ -153,6 +154,9 @@ context:
   manual: " · %{count} manual"
   name_only: " · %{count} name-only"
 errors:
+  install_name_conflict: "Select only one source for “%{name}”"
+  install_target_changed: "The installation at %{path} changed. Review it and try again."
+  install_backup_kept: "Installed, but the previous files could not be removed. They are saved at %{path}: %{error}"
   agent_invalid: "Unknown agent: %{agent}. Choose from: %{values}"
   target_invalid: "Unknown target: %{target}. Choose from: %{values}"
   absolute_path_required: "Use an absolute path"
@@ -276,6 +280,11 @@ errors:
   update_source_missing: "No update source is available for this skill"
   write_failed: "Could not write: %{path}"
 install:
+  overwrite_warning: "The following skills already exist at the installation location. Continuing will overwrite them."
+  confirm_overwrite: "Continue? [y/N]"
+  overwrite_requires_yes: "Use --yes to confirm replacement."
+  replace_title: "Replace existing skills?"
+  replace_and_install: "Replace and install"
   agent_specific: "Agent-specific"
   delete_batch_confirm: "Delete %{count} skills?"
   delete_confirm: "Delete “%{name}”?"

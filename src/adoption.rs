@@ -4,7 +4,6 @@ use std::{
     fs,
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -390,7 +389,7 @@ fn git_origin(path: &Path) -> Option<SkillOrigin> {
         }) {
             return None;
         }
-        let output = Command::new("git")
+        let output = crate::source::tool_command("git")
             .env("GIT_OPTIONAL_LOCKS", "0")
             .arg("-C")
             .arg(root)
@@ -794,6 +793,7 @@ pub fn rollback_links(changed: &[SkillReference]) -> Vec<String> {
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+    use std::process::Command;
 
     fn skill(path: &Path, name: &str) {
         fs::create_dir_all(path).unwrap();

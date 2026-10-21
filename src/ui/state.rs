@@ -107,6 +107,8 @@ pub(super) struct InstallFlowState {
     pub modal: bool,
     pub global: bool,
     pub selected_targets: HashSet<InstallTarget>,
+    pub pending: Option<crate::project::InstallPlan>,
+    pub error: Option<String>,
     /// Set when the dialog installs a preset instead of the selected skills.
     pub preset: Option<String>,
 }

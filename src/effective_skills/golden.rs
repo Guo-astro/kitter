@@ -312,6 +312,10 @@ fn all_agents_golden() {
     if env::var("KITTER_UPDATE_GOLDEN").as_deref() == Ok("1") {
         fs::write(path, actual).unwrap();
     } else {
-        assert_eq!(actual, fs::read_to_string(path).unwrap());
+        // Desktop dependencies enable serde_json's preserve_order feature.
+        // Compare JSON values so object key order does not change acceptance.
+        let expected: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(result, expected);
     }
 }

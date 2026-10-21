@@ -24,6 +24,8 @@ impl KitterApp {
         }
         self.agents_settings.cancel_add();
         self.install_flow.modal = false;
+        self.install_flow.pending = None;
+        self.install_flow.error = None;
         self.delete_flow.confirmation = None;
         self.delete_flow.selected.clear();
         self.tags_flow.edit = None;

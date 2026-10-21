@@ -350,6 +350,47 @@ impl PresetStore {
         self.sync(id, project, skills, true)
     }
 
+    /// Keep ownership of links created by the reviewed installation plan so
+    /// removing the preset later removes exactly those links.
+    pub fn install_reviewed(
+        &mut self,
+        id: &str,
+        project: &Path,
+        targets: &[InstallTarget],
+        skills: &[SkillSummary],
+        plan: project::InstallPlan,
+    ) -> Result<SyncReport> {
+        let preset = self.preset(id)?.clone();
+        let mut created = Vec::new();
+        let mut changed_skills = HashSet::new();
+        for storage in &preset.skills {
+            let Some(skill) = find_skill(skills, storage) else {
+                continue;
+            };
+            for target in targets {
+                if target.project_dir().is_some() && !is_linked(project, target, skill) {
+                    created.push(OwnedLink {
+                        skill: storage.clone(),
+                        target: target.clone(),
+                    });
+                    changed_skills.insert(storage.clone());
+                }
+            }
+        }
+        plan.execute()?;
+        let mut report = self.install(id, project, targets, skills)?;
+        let index = self.installation_index(id, &project_key(project)).unwrap();
+        let owned = &mut self.document.installations[index].owned;
+        for link in created {
+            if !owned.contains(&link) {
+                owned.push(link);
+            }
+        }
+        self.save()?;
+        report.installed = changed_skills.len();
+        Ok(report)
+    }
+
     pub fn status(
         &self,
         id: &str,

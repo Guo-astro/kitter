@@ -817,6 +817,8 @@ impl KitterApp {
                 source_select: add_source_select,
             },
             install_flow: InstallFlowState {
+                pending: None,
+                error: None,
                 modal: false,
                 global: true,
                 selected_targets: HashSet::new(),
@@ -1453,6 +1455,7 @@ impl Render for KitterApp {
                 DialogKind::AgentAdd => px(520.),
                 DialogKind::AgentSource => px(420.),
                 DialogKind::Add => px(520.),
+                DialogKind::Install if self.install_flow.pending.is_some() => px(420.),
                 DialogKind::Install => px(600.),
                 DialogKind::Delete => px(420.),
                 DialogKind::Tags | DialogKind::AssignTags => px(420.),
@@ -1477,6 +1480,8 @@ impl Render for KitterApp {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(
                         div()
+                            .id("dialog-frame")
+                            .debug_selector(|| "dialog-frame".into())
                             .w(width)
                             .max_h(px(680.))
                             .rounded(px(R_2XL))
@@ -2281,6 +2286,87 @@ mod e2e_tests {
             );
         });
         assert!(cx.debug_bounds("app-notice").is_some());
+    }
+
+    #[test]
+    fn installation_conflicts_require_confirmation_and_back_keeps_files() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        use super::Language;
+        let mut cx = TestAppContext::single();
+        init(&mut cx);
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fs::create_dir(&source).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            "---\nname: demo\ndescription: Test\n---\n",
+        )
+        .unwrap();
+        let project = temp.path().join("project");
+        let destination = project.join(".agents/skills/demo");
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("keep"), "old files").unwrap();
+        let (app, cx) = cx.add_window_view({
+            let data = temp.path().join("data");
+            move |window, cx| KitterApp::new_in(data, window, cx)
+        });
+        app.update_in(cx, |app, window, cx| {
+            app.set_language(Language::ZhCn, window, cx);
+            let scan = crate::source::scan_local(&source).unwrap();
+            scan.import_selected(
+                &mut app.model.library,
+                &std::collections::HashSet::from(["demo".to_string()]),
+                None,
+            )
+            .unwrap();
+            app.refresh(cx);
+            app.skills_view.selection.select_one("demo".to_string());
+            app.projects_view.global_project_view = false;
+            app.projects_view.open_project = Some(project.clone());
+            app.open_install_dialog(window, cx);
+            app.install_flow
+                .selected_targets
+                .insert(crate::InstallTarget::universal());
+            app.notify_dialog(cx);
+        });
+        let click = |cx: &mut gpui::VisualTestContext, selector: &'static str| {
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+            let bounds = cx
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("missing {selector}"));
+            cx.simulate_click(bounds.center(), Modifiers::none());
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+        };
+        click(cx, "confirm-install");
+        assert!(cx.debug_bounds("confirm-install-replace").is_some());
+        assert_eq!(
+            cx.debug_bounds("dialog-frame").unwrap().size.width,
+            gpui::px(420.)
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("keep")).unwrap(),
+            "old files"
+        );
+        click(cx, "cancel-install-replace");
+        assert!(cx.debug_bounds("confirm-install").is_some());
+        assert_eq!(
+            cx.debug_bounds("dialog-frame").unwrap().size.width,
+            gpui::px(600.)
+        );
+        assert!(destination.join("keep").is_file());
+        click(cx, "confirm-install");
+        click(cx, "confirm-install-replace");
+        assert_eq!(
+            destination.canonicalize().unwrap(),
+            source.canonicalize().unwrap()
+        );
+        assert!(source.join("SKILL.md").is_file());
+        cx.read_entity(&app, |app, _| assert!(app.shell.dialog_body.is_none()));
     }
 
     #[test]
