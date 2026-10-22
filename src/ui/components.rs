@@ -693,6 +693,15 @@ impl KitterApp {
         title: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Div {
+        self.panel_header_content(drag_id, kit::pane_title(title), cx)
+    }
+
+    pub(super) fn panel_header_content(
+        &self,
+        drag_id: &'static str,
+        title: impl IntoElement,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let p = self.palette();
         let header = div()
             .h(px(PANE_HEADER))
@@ -711,7 +720,7 @@ impl KitterApp {
                     .h_full()
                     .flex()
                     .items_center()
-                    .child(kit::pane_title(title)),
+                    .child(title),
                 cx,
             ),
         )

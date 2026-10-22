@@ -39,7 +39,14 @@ impl KitterApp {
         };
         let mut badges = div().flex().items_center();
         for (index, agent) in agents.iter().take(5).enumerate() {
-            badges = badges.child(ring(kit::agent_avatar(p, agent), index));
+            let name = agent.name.clone();
+            badges = badges.child(
+                ring(kit::agent_avatar(p, agent), index)
+                    .id(ElementId::Name(
+                        format!("agent-badge-{popover_id}-{}", agent.id).into(),
+                    ))
+                    .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx)),
+            );
         }
         if hidden > 0 {
             badges = badges.child(

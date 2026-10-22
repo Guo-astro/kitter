@@ -6,6 +6,39 @@ pub(super) enum SkillListRow {
     Group(usize, bool),
 }
 
+fn skill_count(
+    p: Palette,
+    id: String,
+    matched: usize,
+    total: usize,
+    filtered: bool,
+) -> Stateful<Div> {
+    let (value, label) = if filtered {
+        (
+            format!("{matched} / {total}"),
+            t!("skills.matching_count", matched = matched, total = total).to_string(),
+        )
+    } else {
+        (
+            total.to_string(),
+            t!("skills.total_count", count = total).to_string(),
+        )
+    };
+    kit::count(p, &value)
+        .font_family(FONT_UI)
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(px(FS_CAPTION))
+        .h(px(16.))
+        .min_w(px(16.))
+        .px(px(4.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .id(ElementId::Name(id.clone().into()))
+        .debug_selector(move || format!("{id}:{value}"))
+        .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
+}
+
 fn installable_skills_by_group(
     skills: &[SkillSummary],
     group_ids: &HashSet<&str>,
@@ -813,6 +846,8 @@ impl KitterApp {
         group: &SkillGroup,
         collapsed: bool,
         install_group_skills: Vec<String>,
+        matched_count: usize,
+        filtered: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette();
@@ -928,6 +963,13 @@ impl KitterApp {
                     },
                 ),
         )
+        .child(skill_count(
+            p,
+            format!("skill-group-count-{}", group.id),
+            matched_count,
+            install_group_count,
+            filtered,
+        ))
         .drag_over::<SkillDrag>(move |style, _, _, _| style.bg(p.selected))
         .on_drop(cx.listener(move |this, drag: &SkillDrag, _, cx| {
             this.assign_skill_group(drag.name.clone(), Some(drop_group_id.clone()), cx);
@@ -1087,6 +1129,7 @@ impl KitterApp {
             })
             .collect::<Vec<_>>();
         let visible_count = visible_skills.len();
+        let filtered = !query.is_empty() || self.tags_flow.selected_skill_filter.is_some();
         let configured_groups = self.model.library.groups();
         let group_ids = configured_groups
             .iter()
@@ -1130,8 +1173,7 @@ impl KitterApp {
                 .map(|skill| skill_storage_name(skill).to_string()),
         );
         for group in &configured_groups {
-            let collapsed =
-                query.is_empty() && self.skills_view.collapsed_groups.contains(&group.id);
+            let collapsed = !filtered && self.skills_view.collapsed_groups.contains(&group.id);
             if !collapsed {
                 if let Some(skills) = grouped.get(&group.id) {
                     selection_order.extend(
@@ -1160,9 +1202,20 @@ impl KitterApp {
             .flex_col()
             .bg(p.surface)
             .child(
-                self.panel_header(
+                self.panel_header_content(
                     "skills-panel-window-drag",
-                    t!("common.skills").to_string(),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(9.))
+                        .child(kit::pane_title(t!("common.skills").to_string()))
+                        .child(skill_count(
+                            p,
+                            "skills-total-count".into(),
+                            visible_count,
+                            self.model.skills.len(),
+                            filtered,
+                        )),
                     cx,
                 )
                 .child(self.skills_manage_control(cx))
@@ -1260,8 +1313,10 @@ impl KitterApp {
                 .map(|skill| SkillListRow::Skill(skill_indices[skill_storage_name(skill)], false)),
         );
         for (index, group) in configured_groups.iter().enumerate() {
-            let collapsed =
-                query.is_empty() && self.skills_view.collapsed_groups.contains(&group.id);
+            if filtered && grouped.get(&group.id).is_none_or(Vec::is_empty) {
+                continue;
+            }
+            let collapsed = !filtered && self.skills_view.collapsed_groups.contains(&group.id);
             flat_rows.push(SkillListRow::Group(index, collapsed));
             if !collapsed && let Some(skills) = grouped.get(&group.id) {
                 flat_rows.extend(skills.iter().map(|skill| {
@@ -1275,6 +1330,10 @@ impl KitterApp {
                 .map(|skill| SkillListRow::Skill(skill_indices[skill_storage_name(skill)], false)),
         );
         let rows = self.sync_skill_list_rows(flat_rows);
+        let matched_group_counts = grouped
+            .iter()
+            .map(|(id, skills)| (id.clone(), skills.len()))
+            .collect::<BTreeMap<_, _>>();
         let groups: Arc<[SkillGroup]> = configured_groups.into();
         let selected_keys: Arc<[String]> = self.selected_skill_keys().into();
         let protected_selection = self.model.skills.iter().any(|skill| {
@@ -1305,6 +1364,8 @@ impl KitterApp {
                                 .get(&group.id)
                                 .cloned()
                                 .unwrap_or_default(),
+                            matched_group_counts.get(&group.id).copied().unwrap_or(0),
+                            filtered,
                             cx,
                         )
                     }

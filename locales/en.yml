@@ -403,6 +403,8 @@ settings:
   system: "System"
   theme: "Theme"
 skills:
+  total_count: "Skills: %{count}"
+  matching_count: "Matching skills: %{matched} / %{total}"
   add_tag: "Add tag"
   add_to_preset: "Add to preset"
   and_more: "and %{count} more"

@@ -1878,7 +1878,7 @@ mod e2e_tests {
                 )
                 .unwrap();
             }
-            let group = app.model.library.create_group("Fixture").unwrap().id;
+            let group = app.model.library.create_group("Fixture 2026").unwrap().id;
             app.refresh(cx);
             for skill in &mut app.model.skills {
                 if matches!(
@@ -1895,6 +1895,9 @@ mod e2e_tests {
         cx.run_until_parked();
         assert!(cx.debug_bounds("skill-fixture-skill-001").is_some());
         assert!(cx.debug_bounds("skill-fixture-skill-300").is_none());
+        assert!(cx.debug_bounds("skills-total-count:301").is_some());
+        let group_count: &'static str = format!("skill-group-count-{group}:2").leak();
+        assert!(cx.debug_bounds(group_count).is_some());
         let first = cx.debug_bounds("skill-fixture-skill-001").unwrap();
         cx.simulate_click(first.center(), Modifiers::none());
         cx.read_entity(&app, |app, _| {
@@ -1908,6 +1911,8 @@ mod e2e_tests {
         cx.simulate_click(header.center(), Modifiers::none());
         cx.refresh().unwrap();
         assert!(cx.debug_bounds("skill-fixture-skill-001").is_none());
+        assert!(cx.debug_bounds("skills-total-count:301").is_some());
+        assert!(cx.debug_bounds(group_count).is_some());
         app.update(cx, |app, cx| {
             app.skills_view.list.scroll_to_end();
             cx.notify();
@@ -1923,9 +1928,20 @@ mod e2e_tests {
         cx.refresh().unwrap();
         assert!(cx.debug_bounds("skill-fixture-skill-002").is_some());
         assert!(cx.debug_bounds("skill-fixture-skill-300").is_none());
+        assert!(cx.debug_bounds("skills-total-count:1 / 301").is_some());
+        let matched_count: &'static str = format!("skill-group-count-{group}:1 / 2").leak();
+        assert!(cx.debug_bounds(matched_count).is_some());
         cx.read_entity(&app, |app, _| {
             assert!(app.skills_view.collapsed_groups.contains(&group))
         });
+        app.update_in(cx, |app, window, cx| {
+            app.skills_view.skill_search.update(cx, |input, cx| {
+                input.set_value("no-matching-skill", window, cx)
+            });
+        });
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("skills-total-count:0 / 301").is_some());
+        assert!(cx.debug_bounds(matched_count).is_none());
     }
 
     #[test]

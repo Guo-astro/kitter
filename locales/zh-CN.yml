@@ -403,6 +403,8 @@ settings:
   system: "跟随系统"
   theme: "主题"
 skills:
+  total_count: "技能数量：%{count}"
+  matching_count: "匹配的技能：%{matched} / %{total}"
   add_tag: "添加标签"
   add_to_preset: "添加到预设"
   and_more: "还有 %{count} 个"
