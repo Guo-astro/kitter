@@ -356,8 +356,12 @@ fn normalize_npx_source(input: &str) -> Result<String> {
     if value.is_empty() {
         crate::user_bail!("errors.source_address_required");
     }
-    if value.starts_with("http://") || value.starts_with("https://") || value.starts_with("git@") {
-        return Ok(normalize_repository_url(value));
+    if value.starts_with("http://")
+        || value.starts_with("https://")
+        || value.starts_with("git@")
+        || value.starts_with("ssh://")
+    {
+        return Ok(value.to_string());
     }
     let parts = value.split_whitespace().collect::<Vec<_>>();
     parts
@@ -369,15 +373,7 @@ fn normalize_npx_source(input: &str) -> Result<String> {
                 .find(|part| part.starts_with("http"))
                 .map(|part| (*part).to_string())
         })
-        .map(|value| normalize_repository_url(&value))
         .context(crate::user_error!("errors.source_address_invalid"))
-}
-
-fn normalize_repository_url(value: &str) -> String {
-    if let Some(path) = value.strip_prefix("git@github.com:") {
-        return format!("https://github.com/{}", path.trim_end_matches(".git"));
-    }
-    value.to_string()
 }
 
 fn normalize_claude_plugin(input: &str) -> Result<String> {
@@ -697,8 +693,11 @@ struct NpxLockEntry {
 
 impl NpxLockEntry {
     fn remote_source(&self, fallback: &str) -> Option<remote::RemoteSkill> {
-        let mut source =
-            remote::RemoteSkill::parse(self.source_url.as_deref().unwrap_or(fallback)).ok()?;
+        // Installer lock files can rewrite SSH URLs to HTTPS. Keep the user's
+        // repository transport, while retaining the resolved ref and skill path.
+        let mut source = remote::RemoteSkill::parse(fallback)
+            .ok()
+            .or_else(|| remote::RemoteSkill::parse(self.source_url.as_deref()?).ok())?;
         if self.reference.is_some() {
             source.reference = self.reference.clone();
         }
@@ -1036,6 +1035,7 @@ mod tests {
             &stub,
             r#"#!/bin/sh
 printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
+[ "$4" = 'git@github.com:fixture/import-test.git' ] || exit 90
 [ "$6" = '*' ] || exit 91
 /bin/cp -R "$KITTER_IMPORT_FIXTURE/snapshot/." .
 "#,
@@ -1077,7 +1077,7 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
         let Some(root) = env::var_os("KITTER_IMPORT_FIXTURE").map(PathBuf::from) else {
             return;
         };
-        let repository = "https://github.com/fixture/import-test";
+        let repository = "git@github.com:fixture/import-test.git";
         let mut scan = scan_npx(repository).unwrap();
         let selected = scan
             .skills()
@@ -1393,7 +1393,7 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
 
         let scan = SkillScan {
             origin: ScanOrigin::Npx {
-                repository: "owner/repository".into(),
+                repository: "git@github.com:owner/repository.git".into(),
             },
             skills: vec![ScannedSkill {
                 name: "alpha".into(),
@@ -1411,14 +1411,67 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
         assert!(content.contains("fresh scan"));
         let record = library.record("alpha").unwrap();
         let locator = library.remote_skill_source(&record).unwrap();
+        assert_eq!(locator.repository, "git@github.com:owner/repository.git");
         assert_eq!(locator.reference.as_deref(), Some("stable"));
         assert_eq!(locator.skill_path.as_deref(), Some("skills/custom-path"));
         assert!(matches!(
             library.record("alpha").unwrap().origin,
             SkillOrigin::Npx {
+                repository,
                 source_hash: Some(hash),
                 ..
-            } if hash == "fresh-hash"
+            } if hash == "fresh-hash" && repository == "git@github.com:owner/repository.git"
         ));
+    }
+
+    #[test]
+    fn repository_input_preserves_transport() {
+        for repository in [
+            "git@github.com:owner/repository.git",
+            "ssh://git@github.com/owner/repository.git",
+            "https://github.com/owner/repository.git",
+            "https://gitlab.com/owner/repository/",
+        ] {
+            assert_eq!(normalize_npx_source(repository).unwrap(), repository);
+            assert_eq!(
+                normalize_npx_source(&format!("npx skills add {repository}")).unwrap(),
+                repository
+            );
+            assert_eq!(
+                remote::RemoteSkill::parse(repository).unwrap().repository,
+                repository
+            );
+        }
+    }
+
+    #[test]
+    fn lock_metadata_preserves_requested_repository_and_resolved_skill_location() {
+        let entry: NpxLockEntry = serde_json::from_value(serde_json::json!({
+            "sourceUrl": "https://github.com/owner/repository",
+            "ref": "stable",
+            "skillPath": "docs/custom-folder/SKILL.md"
+        }))
+        .unwrap();
+        for repository in [
+            "git@github.com:owner/repository.git",
+            "ssh://git@github.com/owner/repository.git",
+            "https://github.com/owner/repository.git",
+            "https://github.com/owner/repository/",
+        ] {
+            let source = entry.remote_source(repository).unwrap();
+            assert_eq!(source.repository, repository);
+            assert_eq!(source.reference.as_deref(), Some("stable"));
+            assert_eq!(source.skill_path.as_deref(), Some("docs/custom-folder"));
+        }
+        let shorthand = entry.remote_source("owner/repository@main").unwrap();
+        assert_eq!(shorthand.repository, "https://github.com/owner/repository");
+        assert_eq!(shorthand.reference.as_deref(), Some("stable"));
+        let no_lock_location: NpxLockEntry = serde_json::from_str("{}").unwrap();
+        let tree = no_lock_location
+            .remote_source("https://github.com/owner/repository/tree/main/docs/custom-folder")
+            .unwrap();
+        assert_eq!(tree.repository, "https://github.com/owner/repository");
+        assert_eq!(tree.reference.as_deref(), Some("main"));
+        assert_eq!(tree.skill_path.as_deref(), Some("docs/custom-folder"));
     }
 }

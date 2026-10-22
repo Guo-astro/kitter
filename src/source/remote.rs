@@ -69,9 +69,7 @@ impl RemoteSkill {
             reference: None,
             skill_path: None,
         };
-        if let Some(path) = input.strip_prefix("git@github.com:") {
-            source.repository = format!("https://github.com/{}", path.trim_end_matches(".git"));
-        } else if let Ok(mut url) = url::Url::parse(input) {
+        if let Ok(mut url) = url::Url::parse(input) {
             let parts = url
                 .path_segments()
                 .map(|parts| parts.collect::<Vec<_>>())
@@ -106,8 +104,6 @@ impl RemoteSkill {
                     .trim_end_matches('/')
                     .trim_end_matches(".git")
                     .into();
-            } else if matches!(url.scheme(), "http" | "https") {
-                source.repository = input.trim_end_matches('/').trim_end_matches(".git").into();
             }
         } else if !Path::new(input).is_absolute()
             && !input.starts_with('.')
