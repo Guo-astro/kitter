@@ -1313,7 +1313,12 @@ fn inspect_project(
         .map(parse_agent)
         .transpose()
         .map_err(anyhow::Error::msg)?;
-    let mut estimates = effective_skills::estimate_project(&path)
+    let view = match view {
+        ProjectViewArg::All => effective_skills::SkillView::All,
+        ProjectViewArg::Skills => effective_skills::SkillView::Skills,
+        ProjectViewArg::Plugins => effective_skills::SkillView::Plugins,
+    };
+    let estimates = effective_skills::estimate_project_view(&path, view)
         .into_iter()
         .filter(|estimate| {
             selected_agent
@@ -1321,13 +1326,6 @@ fn inspect_project(
                 .is_none_or(|agent| &estimate.agent == agent)
         })
         .collect::<Vec<_>>();
-    for estimate in &mut estimates {
-        estimate.skills.retain(|skill| match view {
-            ProjectViewArg::All => true,
-            ProjectViewArg::Skills => !skill.source.is_plugin(),
-            ProjectViewArg::Plugins => skill.source.is_plugin(),
-        });
-    }
     if json {
         println!(
             "{}",
@@ -2073,10 +2071,14 @@ mod tests {
             ("claude", "claude-code"),
             ("claude_code", "claude-code"),
             ("open_code", "opencode"),
+            ("dimagent", "dimagent"),
+            ("open_claw", "openclaw"),
+            ("amp", "amp"),
+            ("hermes", "hermes"),
         ] {
             assert_eq!(super::parse_target(input).unwrap().as_str(), expected);
         }
-        for input in ["missing-plugin", "dimagent", "open_claw"] {
+        for input in ["missing-plugin"] {
             let error = super::parse_target(input).unwrap_err();
             assert!(error.contains(input));
             for target in kitter::agent_plugins::AgentRegistry::global().install_targets() {

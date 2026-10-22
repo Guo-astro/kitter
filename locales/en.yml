@@ -157,6 +157,7 @@ errors:
   update_check_timeout: "Checking for updates timed out. Try again."
   install_name_conflict: "Select only one source for “%{name}”"
   install_target_changed: "The installation at %{path} changed. Review it and try again."
+  install_target_unavailable: "Cannot install skills for %{agent} in this project"
   install_backup_kept: "Installed, but the previous files could not be removed. They are saved at %{path}: %{error}"
   agent_invalid: "Unknown agent: %{agent}. Choose from: %{values}"
   target_invalid: "Unknown target: %{target}. Choose from: %{values}"
@@ -276,7 +277,7 @@ errors:
   unmanaged_confirmation: "Selected locations contain external links or directly stored files; confirm with --include-unmanaged: %{paths}"
   unmanaged_delete_protected: "Will not delete a folder not managed by Kitter: %{path}"
   update_check_detail: "Some skills could not be checked for updates: %{failures}"
-  update_check_failed: "Some skills could not be checked for updates. Try again later"
+  update_check_failed: "Could not check updates for: %{skills}"
   update_selection_required: "Specify at least one skill, or use --all"
   update_source_missing: "No update source is available for this skill"
   write_failed: "Could not write: %{path}"
@@ -467,6 +468,13 @@ tags:
     one: "Delete #%{name}? %{count} skill will lose this tag."
     other: "Delete #%{name}? %{count} skills will lose this tag."
 updates:
+  update_all: "Update all"
+  none: "No skills to update"
+  batch_progress: "Updating %{completed}/%{total}"
+  batch_partial: "Updated %{updated}; %{failed} failed"
+  updated_count:
+    one: "%{count} skill updated"
+    other: "%{count} skills updated"
   available: "Update available"
   available_count:
     one: "%{count} skill can be updated"
@@ -474,6 +482,8 @@ updates:
   checking_notice: "Checking for updates…"
   scan_progress: "Checking updates %{scanned}/%{total}"
   skill_updated: "Skill updated"
+  updating: "Updating…"
+  more_skills: "%{skills} and %{count} more"
 
 agent_manage:
   invalid_source: "Use a GitHub repository URL, a .js file, or a folder."

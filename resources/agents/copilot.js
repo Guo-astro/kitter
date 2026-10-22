@@ -5,7 +5,6 @@ export default defineAgent({
   id: "copilot",
   name: "GitHub Copilot",
   icon: "builtin:copilot",
-  reads: ["copilot", "claude-code", "universal"],
   install: {
     project: ".github/skills",
     global: "~/.copilot/skills",

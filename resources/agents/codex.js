@@ -8,7 +8,6 @@ export default defineAgent({
   id: "codex",
   name: "Codex",
   icon: "builtin:codex",
-  reads: ["codex", "universal"],
   skills: standard.skills({
     roots(ctx) {
       const roots = [];

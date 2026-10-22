@@ -1,27 +1,6 @@
 use super::*;
 
 impl KitterApp {
-    pub(super) fn agent_badges(
-        &self,
-        popover_id: String,
-        targets: &[InstallTarget],
-        include_global_only: bool,
-        cx: &mut Context<Self>,
-    ) -> Div {
-        let agents = crate::agent_plugins::AgentRegistry::global()
-            .agents()
-            .iter()
-            .filter(|agent| {
-                if agent.global_only {
-                    include_global_only
-                } else {
-                    targets.iter().any(|target| agent.supports_target(target))
-                }
-            })
-            .collect::<Vec<_>>();
-        self.render_agent_badges(popover_id, agents, cx)
-    }
-
     pub(super) fn effective_agent_badges(
         &self,
         popover_id: String,

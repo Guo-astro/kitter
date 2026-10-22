@@ -511,6 +511,7 @@ impl SkillLibrary {
             existing.update_available = false;
             record = existing;
         }
+        let mut restored_override = None;
         if let Some(source) = &local_source {
             crate::directory_link::create(source, &destination)?;
             record.update_available = false;
@@ -520,10 +521,19 @@ impl SkillLibrary {
                 .tempdir_in(&self.config.library_dir)?;
             let staged = staging.path().join("skill");
             copy_tree(source, &staged)?;
+            if restoring && let Some(previous) = self.registry.trigger_overrides.get(&storage_name)
+            {
+                let source = TriggerSource::read(&staged)?;
+                source.render(previous.mode)?.write(&staged)?;
+                restored_override = Some(TriggerOverride {
+                    mode: previous.mode,
+                    source,
+                });
+            }
             fs::rename(staged, &destination)?;
         }
         record.storage_name = storage_name.clone();
-        if record.last_operated_at == 0 {
+        if restoring || record.last_operated_at == 0 {
             record.last_operated_at = operation_stamp();
         }
         if record.group_id.as_deref().is_some_and(|group_id| {
@@ -536,7 +546,11 @@ impl SkillLibrary {
             record.group_id = None;
         }
         let before = self.registry.clone();
-        if !restoring {
+        if let Some(override_entry) = restored_override {
+            self.registry
+                .trigger_overrides
+                .insert(storage_name.clone(), override_entry);
+        } else if !restoring {
             self.registry.trigger_overrides.remove(&storage_name);
         }
         self.registry.skills.insert(storage_name, record);
@@ -1361,6 +1375,37 @@ mod tests {
     }
 
     #[test]
+    fn installation_counts_keep_old_projects_and_count_each_project_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture_skill(&source, "demo");
+        let mut library = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+        for index in 0..12 {
+            let project = temp.path().join(format!("project-{index}"));
+            fs::create_dir_all(&project).unwrap();
+            crate::project::install_from_path(
+                &project,
+                &source,
+                "demo",
+                &[
+                    crate::InstallTarget::universal(),
+                    crate::InstallTarget::from("codex"),
+                ],
+            )
+            .unwrap();
+            library.config.remember_project(project);
+        }
+        assert_eq!(library.install_count("demo", &source), 12);
+        library.config.save_to(&library.data_dir()).unwrap();
+        let mut restored = SkillLibrary::open_in(library.data_dir()).unwrap();
+        assert_eq!(restored.install_count("demo", &source), 12);
+        restored
+            .config
+            .touch_project(&restored.config.recent_projects[0].clone());
+        assert_eq!(restored.install_count("demo", &source), 12);
+    }
+
+    #[test]
     fn update_results_preserve_concurrent_library_changes() {
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("source");
@@ -1904,6 +1949,48 @@ mod tests {
             "keep me"
         );
         assert!(!source.join("local-edit.txt").exists());
+    }
+
+    #[test]
+    fn restoring_missing_skills_reapplies_trigger_modes_and_refreshes_originals() {
+        for mode in [TriggerMode::Manual, TriggerMode::Automatic] {
+            let temp = tempfile::tempdir().unwrap();
+            let source = temp.path().join("source");
+            fixture_skill(&source, "demo");
+            let mut library = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+            library
+                .import(
+                    &source,
+                    SkillRecord {
+                        name: "demo".into(),
+                        storage_name: String::new(),
+                        description: String::new(),
+                        origin: SkillOrigin::Unknown,
+                        update_available: false,
+                        group_id: None,
+                        last_operated_at: 0,
+                    },
+                )
+                .unwrap();
+            library.set_trigger_mode_by_storage("demo", mode).unwrap();
+            let installed = library.skill_path_by_storage("demo").unwrap();
+            let record = library.record_by_storage("demo").unwrap();
+            fs::remove_dir_all(&installed).unwrap();
+            // The source can change while the library files are missing.
+            fs::write(source.join("SKILL.md"), "---\nname: demo\ndescription: Restored\ndisable-model-invocation: true\n---\nNew instructions\n").unwrap();
+            let original = TriggerSource::read(&source).unwrap();
+            library.import(&source, record).unwrap();
+            let mut library = SkillLibrary::open_in(library.data_dir()).unwrap();
+            assert_eq!(library.trigger_mode_by_storage("demo"), mode);
+            assert_eq!(
+                TriggerSource::read(&installed).unwrap(),
+                original.render(mode).unwrap()
+            );
+            library
+                .set_trigger_mode_by_storage("demo", TriggerMode::FollowSkill)
+                .unwrap();
+            assert_eq!(TriggerSource::read(&installed).unwrap(), original);
+        }
     }
 
     #[test]

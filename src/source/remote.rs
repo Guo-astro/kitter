@@ -1,4 +1,4 @@
-//! Read remote refs and Git tree objects without checking out skill files.
+//! Read remote refs, trees and link targets without checking out skill files.
 use std::{
     collections::BTreeMap,
     fs,
@@ -36,6 +36,7 @@ pub(super) struct CheckSkill {
     pub record: SkillRecord,
     source: RemoteSkill,
     files: BTreeMap<String, String>,
+    lf_files: BTreeMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,7 +44,7 @@ struct Snapshot {
     repository: String,
     reference: String,
     revision: String,
-    // A full repository file manifest, made only from Git tree objects.
+    // Repository file manifest, with targets for symbolic links.
     files: BTreeMap<String, TreeEntry>,
 }
 
@@ -51,6 +52,8 @@ struct Snapshot {
 struct TreeEntry {
     mode: String,
     oid: String,
+    #[serde(default)]
+    link_target: Option<String>,
 }
 
 impl RemoteSkill {
@@ -155,6 +158,7 @@ pub(super) fn prepare(
     let root = library.skill_path_by_storage(&record.storage_name)?;
     let original = library.trigger_source_by_storage(&record.storage_name);
     let mut files = BTreeMap::new();
+    let mut lf_files = BTreeMap::new();
     for entry in walkdir::WalkDir::new(&root)
         .follow_links(false)
         .into_iter()
@@ -186,6 +190,11 @@ pub(super) fn prepare(
         } else {
             fs::read(entry.path())?
         };
+        if !entry.file_type().is_symlink()
+            && let Some(normalized) = normalize_crlf(&bytes)
+        {
+            lf_files.insert(path.clone(), blob_hash(&normalized));
+        }
         files.insert(path, blob_hash(&bytes));
     }
     Ok((
@@ -194,6 +203,7 @@ pub(super) fn prepare(
             record,
             source,
             files,
+            lf_files,
         },
     ))
 }
@@ -203,6 +213,27 @@ fn blob_hash(bytes: &[u8]) -> String {
     hash.update(format!("blob {}\0", bytes.len()).as_bytes());
     hash.update(bytes);
     hash.digest().to_string()
+}
+
+// Git stores LF for text files that a checkout can materialize as CRLF. Keep
+// the exact hash too, and never treat binary data or lone CRs as text conversion.
+fn normalize_crlf(bytes: &[u8]) -> Option<Vec<u8>> {
+    if bytes.contains(&0)
+        || !bytes.windows(2).any(|pair| pair == b"\r\n")
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(index, byte)| *byte == b'\r' && bytes.get(index + 1) != Some(&b'\n'))
+    {
+        return None;
+    }
+    Some(
+        bytes
+            .iter()
+            .copied()
+            .filter(|byte| *byte != b'\r')
+            .collect(),
+    )
 }
 
 pub(super) fn check_group(
@@ -256,21 +287,88 @@ fn compare(snapshot: &Snapshot, skill: &CheckSkill) -> Result<bool> {
         format!("{path}/")
     };
     let mut remote = BTreeMap::new();
-    for (path, entry) in &snapshot.files {
+    for path in snapshot.files.keys() {
         let Some(relative) = path.strip_prefix(&prefix) else {
             continue;
         };
-        // A submodule needs its own revision/source. Never report it as current.
-        if entry.mode == "160000" {
-            bail!(t!("errors.update_source_missing").to_string());
-        }
-        remote.insert(relative.to_owned(), entry.oid.clone());
+        add_comparison_entry(snapshot, path, relative, &skill.files, &mut remote, 0)?;
     }
     if !remote.contains_key("SKILL.md") {
         // A removed skill cannot be upgraded using the current source.
         bail!(t!("errors.repository_skill_missing").to_string());
     }
-    Ok(remote != skill.files)
+    Ok(remote.len() != skill.files.len()
+        || remote.iter().any(|(path, oid)| {
+            skill.files.get(path) != Some(oid) && skill.lf_files.get(path) != Some(oid)
+        }))
+}
+
+// Skill installers can materialize symbolic links as ordinary files or folders.
+// Compare their content too, while preserving exact Git-link comparisons when
+// the installed copy still has the original link.
+fn add_comparison_entry(
+    snapshot: &Snapshot,
+    source: &str,
+    destination: &str,
+    local: &BTreeMap<String, String>,
+    files: &mut BTreeMap<String, String>,
+    depth: usize,
+) -> Result<()> {
+    let entry = &snapshot.files[source];
+    // A submodule needs its own revision/source, including through a link.
+    if entry.mode == "160000" {
+        bail!(t!("errors.update_source_missing").to_string());
+    }
+    if entry.mode != "120000" || local.get(destination) == Some(&entry.oid) {
+        files.insert(destination.into(), entry.oid.clone());
+        return Ok(());
+    }
+    if depth >= 16 {
+        bail!(t!("errors.update_source_missing").to_string());
+    }
+    let target = entry
+        .link_target
+        .as_deref()
+        .context(t!("errors.update_source_missing").to_string())?;
+    let mut resolved = Path::new(source)
+        .parent()
+        .unwrap_or(Path::new(""))
+        .to_path_buf();
+    for component in Path::new(target).components() {
+        match component {
+            Component::Normal(part) => resolved.push(part),
+            Component::CurDir => {}
+            Component::ParentDir if resolved.pop() => {}
+            _ => bail!(t!("errors.update_source_missing").to_string()),
+        }
+    }
+    let resolved = resolved.to_string_lossy().replace('\\', "/");
+    if snapshot.files.contains_key(&resolved) {
+        return add_comparison_entry(snapshot, &resolved, destination, local, files, depth + 1);
+    }
+    let prefix = if resolved.is_empty() {
+        String::new()
+    } else {
+        format!("{resolved}/")
+    };
+    let mut found = false;
+    for path in snapshot.files.keys() {
+        if let Some(relative) = path.strip_prefix(&prefix) {
+            found = true;
+            add_comparison_entry(
+                snapshot,
+                path,
+                &format!("{destination}/{relative}"),
+                local,
+                files,
+                depth + 1,
+            )?;
+        }
+    }
+    if !found {
+        bail!(t!("errors.update_source_missing").to_string());
+    }
+    Ok(())
 }
 
 fn resolve_revision(key: &RemoteKey) -> Result<String> {
@@ -326,6 +424,10 @@ fn snapshot(data_dir: &Path, key: &RemoteKey) -> Result<Snapshot> {
         && cached.repository == key.repository
         && cached.reference == key.reference
         && cached.revision == revision
+        && cached
+            .files
+            .values()
+            .all(|entry| entry.mode != "120000" || entry.link_target.is_some())
     {
         return Ok(cached);
     }
@@ -333,6 +435,12 @@ fn snapshot(data_dir: &Path, key: &RemoteKey) -> Result<Snapshot> {
     let mut init = super::tool_command("git");
     init.args(["init", "--bare"]).arg(temp.path());
     git_output(&mut init, REF_TIMEOUT)?;
+    let mut origin = super::tool_command("git");
+    origin
+        .arg("-C")
+        .arg(temp.path())
+        .args(["remote", "add", "origin", &key.repository]);
+    git_output(&mut origin, REF_TIMEOUT)?;
     let mut fetch = super::tool_command("git");
     fetch.arg("-C").arg(temp.path()).args([
         "-c",
@@ -343,7 +451,7 @@ fn snapshot(data_dir: &Path, key: &RemoteKey) -> Result<Snapshot> {
         "--no-tags",
         "--no-recurse-submodules",
         "--",
-        &key.repository,
+        "origin",
         &revision,
     ]);
     git_output(&mut fetch, TREE_TIMEOUT)?;
@@ -365,11 +473,21 @@ fn snapshot(data_dir: &Path, key: &RemoteKey) -> Result<Snapshot> {
         if parts.len() != 3 {
             bail!(t!("errors.update_source_missing").to_string());
         }
+        let link_target = if parts[0] == "120000" {
+            let mut show = super::tool_command("git");
+            show.arg("-C")
+                .arg(temp.path())
+                .args(["show", &format!("{revision}:{path}")]);
+            Some(String::from_utf8(git_output(&mut show, TREE_TIMEOUT)?)?)
+        } else {
+            None
+        };
         files.insert(
             path.into(),
             TreeEntry {
                 mode: parts[0].into(),
                 oid: parts[2].into(),
+                link_target,
             },
         );
     }
@@ -565,6 +683,50 @@ mod tests {
     }
 
     #[test]
+    fn crlf_checkouts_are_current_but_content_and_binary_changes_are_detected() {
+        let (temp, mut library) = fixture();
+        let repo = temp.path().join("repo");
+        let checkout = temp.path().join("crlf-checkout");
+        git(
+            temp.path(),
+            &[
+                "-c",
+                "core.autocrlf=true",
+                "clone",
+                "-q",
+                repo.to_str().unwrap(),
+                checkout.to_str().unwrap(),
+            ],
+        );
+        let crlf = fs::read(checkout.join("skills/alpha/SKILL.md")).unwrap();
+        assert!(crlf.windows(2).any(|pair| pair == b"\r\n"));
+        let record = library.record("alpha").unwrap();
+        library
+            .replace_by_storage(
+                &checkout.join("skills/alpha"),
+                record.storage_name.clone(),
+                record,
+            )
+            .unwrap();
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 0);
+        // The cache must preserve the same result on later checks.
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 0);
+        fs::write(repo.join("skills/alpha/reference.txt"), "new content\n").unwrap();
+        commit(&repo, "real update");
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 1);
+        let binary = b"binary\0payload\r\n";
+        assert!(normalize_crlf(binary).is_none());
+        assert!(normalize_crlf(b"lone\rcarriage\r\n").is_none());
+        fs::write(repo.join("skills/beta/data.bin"), binary).unwrap();
+        commit(&repo, "binary reference");
+        let local = library.skill_path("beta").unwrap();
+        fs::write(local.join("data.bin"), b"binary\0payload\n").unwrap();
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 2);
+        fs::write(local.join("data.bin"), binary).unwrap();
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 1);
+    }
+
+    #[test]
     fn changed_trigger_settings_do_not_look_like_upstream_updates() {
         let (_temp, mut library) = fixture();
         let storage = library.record("alpha").unwrap().storage_name;
@@ -572,6 +734,27 @@ mod tests {
             .set_trigger_mode_by_storage(&storage, crate::TriggerMode::Manual)
             .unwrap();
         assert_eq!(super::super::check_updates(&mut library).unwrap(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialized_links_compare_content_and_detect_later_changes() {
+        use std::os::unix::fs::symlink;
+        let (temp, mut library) = fixture();
+        let repo = temp.path().join("repo");
+        symlink("../beta", repo.join("skills/alpha/shared")).unwrap();
+        symlink("../beta/SKILL.md", repo.join("skills/alpha/linked.md")).unwrap();
+        commit(&repo, "shared references");
+        let local = library.skill_path("alpha").unwrap();
+        crate::library::copy_tree(&repo.join("skills/beta"), &local.join("shared")).unwrap();
+        fs::copy(repo.join("skills/beta/SKILL.md"), local.join("linked.md")).unwrap();
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 0);
+        // A warm cached check must retain link-target information.
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 0);
+        fs::write(repo.join("skills/beta/new.txt"), "new reference").unwrap();
+        commit(&repo, "changed shared references");
+        assert_eq!(super::super::check_updates(&mut library).unwrap(), 2);
+        assert!(library.record("alpha").unwrap().update_available);
     }
 
     #[test]

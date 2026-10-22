@@ -266,8 +266,8 @@ fn refresh_preserves_old_file_when_new_file_is_invalid_or_missing() {
 }
 
 #[test]
-fn settings_apply_order_and_disable_after_reads_validation() {
-    let a = "export default {apiVersion:1,id:'first',name:'First',reads:['second']}";
+fn settings_apply_order_and_disable() {
+    let a = "export default {apiVersion:1,id:'first',name:'First'}";
     let b = "export default {apiVersion:1,id:'second',name:'Second',install:{project:'.b',global:'~/.b'}}";
     let c = plugin("third", "Third");
     let builtins = [("first", a), ("second", b), ("third", c.as_str())];

@@ -75,6 +75,20 @@ impl KitterApp {
         let click_name = storage_name.clone();
         let click_order = visible_order;
         let reveal_path = skill.path.clone();
+        let update_keys = if multi_selection {
+            selected_keys.to_vec()
+        } else {
+            vec![storage_name.clone()]
+        };
+        let update_enabled = self.model.updating_batch.is_none()
+            && self.model.pending_updates.is_none()
+            && self.model.skills.iter().any(|skill| {
+                update_keys
+                    .iter()
+                    .any(|key| key == skill_storage_name(skill))
+                    && source::can_update(&self.model.library, &skill.record)
+            });
+        let update_label = t!("skills.update").to_string();
         let checkbox_name = storage_name.clone();
         let trigger_mode = self.model.library.trigger_mode_by_storage(&storage_name);
         let trigger_label = t!("skills.trigger_timing").to_string();
@@ -229,6 +243,8 @@ impl KitterApp {
         }))
         .context_menu(move |menu, window, menu_cx| {
             let install_app = context_app.clone();
+            let update_app = context_app.clone();
+            let update_keys = update_keys.clone();
             let set_tags_app = context_app.clone();
             let move_app = context_app.clone();
             let delete_app = context_app.clone();
@@ -238,6 +254,19 @@ impl KitterApp {
                     .on_click(move |_, window, cx| {
                         let _ = install_app.update(cx, |this, cx| {
                             this.open_install_dialog(window, cx);
+                        });
+                    }),
+            );
+            menu = menu.item(
+                PopupMenuItem::new(update_label.clone())
+                    .icon(Icon::default().path("icons/rotate-cw.svg"))
+                    .disabled(!update_enabled)
+                    .on_click(move |_, _, cx| {
+                        let _ = update_app.update(cx, |this, cx| {
+                            this.request_skill_updates(
+                                SkillUpdateRequest::Selection(update_keys.clone()),
+                                cx,
+                            );
                         });
                     }),
             );
@@ -798,6 +827,20 @@ impl KitterApp {
         let delete_group_id = group_id.clone();
         let delete_group_menu_color = p.danger;
         let install_group_count = install_group_skills.len();
+        let update_group_skills = self
+            .model
+            .skills
+            .iter()
+            .filter(|skill| {
+                skill.record.group_id.as_deref() == Some(group.id.as_str())
+                    && source::can_update(&self.model.library, &skill.record)
+            })
+            .map(|skill| skill_storage_name(skill).to_string())
+            .collect::<Vec<_>>();
+        let update_enabled = !update_group_skills.is_empty()
+            && self.model.updating_batch.is_none()
+            && self.model.pending_updates.is_none();
+        let update_group_label = t!("skills.update").to_string();
         let preset_label = t!("skills.add_to_preset").to_string();
         let preset_choices = self
             .presets_view
@@ -898,6 +941,8 @@ impl KitterApp {
         }))
         .context_menu(move |menu, window, menu_cx| {
             let install_app = context_app.clone();
+            let update_app = context_app.clone();
+            let update_group_skills = update_group_skills.clone();
             let preset_app = context_app.clone();
             let preset_skills = install_group_skills.clone();
             let preset_choices = preset_choices.clone();
@@ -930,6 +975,19 @@ impl KitterApp {
                             }),
                     )
                 })
+                .item(
+                    PopupMenuItem::new(update_group_label.clone())
+                        .icon(Icon::default().path("icons/rotate-cw.svg"))
+                        .disabled(!update_enabled)
+                        .on_click(move |_, _, cx| {
+                            let _ = update_app.update(cx, |this, cx| {
+                                this.request_skill_updates(
+                                    SkillUpdateRequest::Selection(update_group_skills.clone()),
+                                    cx,
+                                );
+                            });
+                        }),
+                )
                 .when(
                     !preset_skills.is_empty() && !preset_choices.is_empty(),
                     |menu| {
@@ -1508,17 +1566,39 @@ impl KitterApp {
         let storage_name = skill_storage_name(skill).to_string();
         let skill_path = skill.path.clone();
         let mut actions = div().flex().items_center().gap(px(4.));
-        if skill.record.update_available {
+        let updating = self.model.updating_skill.as_deref() == Some(storage_name.as_str());
+        if skill.record.update_available || updating {
             let update_name = storage_name.clone();
             actions = actions.child(
                 kit::button(
                     p,
                     "update-skill",
-                    kit::ButtonKind::Secondary,
+                    kit::ButtonKind::Ghost,
                     kit::Size::Sm,
-                    self.model.updating_skill.is_none(),
+                    updating
+                        || (self.model.updating_batch.is_none()
+                            && self.model.updating_skill.is_none()
+                            && self.model.pending_updates.is_none()),
                 )
-                .child(Self::icon("icons/rotate-cw.svg", ICON_SM, p.secondary))
+                .when(updating, |button| {
+                    button.cursor_default().child(
+                        div()
+                            .id("update-skill-progress")
+                            .debug_selector(|| "update-skill-progress".to_string())
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size(px(ICON_SM))
+                            .child(self.shell.spinner_update.clone()),
+                    )
+                })
+                .when(!updating, |button| {
+                    button.child(
+                        Self::icon("icons/rotate-cw.svg", ICON_SM, p.secondary)
+                            .id("update-skill-refresh")
+                            .debug_selector(|| "update-skill-refresh".to_string()),
+                    )
+                })
                 .child(t!("skills.update").to_string())
                 .on_mouse_down(
                     MouseButton::Left,
@@ -1844,10 +1924,10 @@ impl KitterApp {
                 };
                 let project_path = display_path(&path);
                 let installations = self.skill_installations_at(skill, &path, cx);
-                let targets = installations
-                    .iter()
-                    .map(|installation| installation.target.clone())
-                    .collect::<Vec<_>>();
+                let agents = self
+                    .context_estimate_snapshot(&path, cx)
+                    .map(|snapshot| snapshot.agents_for_skill(skill).to_vec())
+                    .unwrap_or_default();
                 let project_for_delete = path.clone();
                 let skill_for_delete = ProjectSkill {
                     name: skill.record.name.clone(),
@@ -1885,7 +1965,7 @@ impl KitterApp {
                                         )),
                                 ),
                         )
-                        .child(self.agent_badges(popover_id, &targets, false, cx))
+                        .child(self.effective_agent_badges(popover_id, &agents, cx))
                         .child(
                             self.danger_icon_button(
                                 ElementId::Name(format!("remove-install-project-{index}").into()),

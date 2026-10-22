@@ -1312,12 +1312,12 @@
     },
     {
       "agent": "antigravity",
-      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
+      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n</available_skills>",
       "conditional_count": 0,
-      "discovered_count": 5,
-      "estimated_tokens": 233,
+      "discovered_count": 2,
+      "estimated_tokens": 53,
       "manual_only_count": 0,
-      "model_visible_count": 5,
+      "model_visible_count": 2,
       "name_only_count": 0,
       "skills": [
         {
@@ -1341,48 +1341,6 @@
           "path": "$HOME/.gemini/config/skills/second/SKILL.md",
           "prompt_path": null,
           "root_path": "$HOME/.gemini/config/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use manual",
-          "id": "manual",
-          "name": "manual",
-          "path": "$HOME/.agents/skills/manual/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "Use shared",
-          "id": "shared",
-          "name": "shared",
-          "path": "$HOME/.agents/skills/shared/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
           "scope": "user",
           "source": {
             "type": "filesystem"
@@ -1479,6 +1437,46 @@
           "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
           "prompt_path": null,
           "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "trae",
+      "catalog": "<available_skills>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 2,
+      "estimated_tokens": 53,
+      "manual_only_count": 0,
+      "model_visible_count": 2,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.trae-cn/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.trae-cn/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.trae-cn/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.trae-cn/skills",
           "scope": "user",
           "source": {
             "type": "filesystem"
@@ -2515,6 +2513,184 @@
       ]
     },
     {
+      "agent": "openclaw",
+      "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>unicode-long</name>\n    <description>中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 6,
+      "estimated_tokens": 1192,
+      "manual_only_count": 1,
+      "model_visible_count": 5,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "local",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "manual_only",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "local",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀",
+          "id": "unicode-long",
+          "name": "unicode-long",
+          "path": "$HOME/.agents/skills/unicode-long/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.agents/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.openclaw/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.openclaw/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.openclaw/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.openclaw/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "hermes",
+      "catalog": "<available_skills>\n- native: Use native\n- second: Use second\n- unicode-long: 中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中…\n- unicode-mixed: 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 E…\n- hermes-external: Use hermes-external\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 5,
+      "estimated_tokens": 107,
+      "manual_only_count": 0,
+      "model_visible_count": 5,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.hermes/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.hermes/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.hermes/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.hermes/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀中文描述🦀",
+          "id": "unicode-long",
+          "name": "unicode-long",
+          "path": "$HOME/.hermes/skills/unicode-long/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.hermes/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
+          "id": "unicode-mixed",
+          "name": "unicode-mixed",
+          "path": "$HOME/.hermes/skills/unicode-mixed/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.hermes/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use hermes-external",
+          "id": "hermes-external",
+          "name": "hermes-external",
+          "path": "$HOME/.hermes/shared/external/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.hermes/shared",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
       "agent": "droid",
       "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
       "conditional_count": 0,
@@ -2708,12 +2884,12 @@
     },
     {
       "agent": "antigravity",
-      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n  <skill>\n    <name>unicode-mixed</name>\n    <description>中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀</description>\n  </skill>\n</available_skills>",
+      "catalog": "<available_skills>\n  <skill>\n    <name>manual</name>\n    <description>Use manual</description>\n  </skill>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n</available_skills>",
       "conditional_count": 0,
-      "discovered_count": 5,
-      "estimated_tokens": 233,
+      "discovered_count": 4,
+      "estimated_tokens": 97,
       "manual_only_count": 0,
-      "model_visible_count": 5,
+      "model_visible_count": 4,
       "name_only_count": 0,
       "skills": [
         {
@@ -2723,7 +2899,7 @@
           "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
           "prompt_path": null,
           "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
+          "scope": "local",
           "source": {
             "type": "filesystem"
           },
@@ -2737,7 +2913,7 @@
           "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
           "prompt_path": null,
           "root_path": "$REPO/subdir/.agents/skills",
-          "scope": "repository",
+          "scope": "local",
           "source": {
             "type": "filesystem"
           },
@@ -2765,20 +2941,6 @@
           "path": "$HOME/.gemini/config/skills/second/SKILL.md",
           "prompt_path": null,
           "root_path": "$HOME/.gemini/config/skills",
-          "scope": "user",
-          "source": {
-            "type": "filesystem"
-          },
-          "visibility": "automatic",
-          "when_to_use": null
-        },
-        {
-          "description": "中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀 中文 English 🦀",
-          "id": "unicode-mixed",
-          "name": "unicode-mixed",
-          "path": "$HOME/.agents/skills/unicode-mixed/SKILL.md",
-          "prompt_path": null,
-          "root_path": "$HOME/.agents/skills",
           "scope": "user",
           "source": {
             "type": "filesystem"
@@ -2875,6 +3037,74 @@
           "path": "$HOME/.claude/skills/claude-configured/SKILL.md",
           "prompt_path": null,
           "root_path": "$HOME/.claude/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        }
+      ]
+    },
+    {
+      "agent": "trae",
+      "catalog": "<available_skills>\n  <skill>\n    <name>shared</name>\n    <description>Use shared</description>\n  </skill>\n  <skill>\n    <name>native</name>\n    <description>Use native</description>\n  </skill>\n  <skill>\n    <name>second</name>\n    <description>Use second</description>\n  </skill>\n</available_skills>",
+      "conditional_count": 0,
+      "discovered_count": 4,
+      "estimated_tokens": 75,
+      "manual_only_count": 1,
+      "model_visible_count": 3,
+      "name_only_count": 0,
+      "skills": [
+        {
+          "description": "Use manual",
+          "id": "manual",
+          "name": "manual",
+          "path": "$REPO/subdir/.agents/skills/manual/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "local",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "manual_only",
+          "when_to_use": null
+        },
+        {
+          "description": "Use shared",
+          "id": "shared",
+          "name": "shared",
+          "path": "$REPO/subdir/.agents/skills/shared/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$REPO/subdir/.agents/skills",
+          "scope": "local",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use native",
+          "id": "native",
+          "name": "native",
+          "path": "$HOME/.trae-cn/skills/native/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.trae-cn/skills",
+          "scope": "user",
+          "source": {
+            "type": "filesystem"
+          },
+          "visibility": "automatic",
+          "when_to_use": null
+        },
+        {
+          "description": "Use second",
+          "id": "second",
+          "name": "second",
+          "path": "$HOME/.trae-cn/skills/second/SKILL.md",
+          "prompt_path": null,
+          "root_path": "$HOME/.trae-cn/skills",
           "scope": "user",
           "source": {
             "type": "filesystem"

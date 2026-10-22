@@ -334,12 +334,20 @@ impl KitterApp {
                         .child(agent.name.clone()),
                 )
         };
+        let destination = if self.install_flow.global {
+            dirs::home_dir()
+        } else {
+            self.projects_view.open_project.clone()
+        };
+        let readers = destination
+            .as_ref()
+            .and_then(|path| self.project_snapshot(path, cx))
+            .map(|snapshot| snapshot.universal_agents.clone())
+            .unwrap_or_default();
         let universal_agents = crate::agent_plugins::AgentRegistry::global()
             .agents()
             .iter()
-            .filter(|agent| {
-                !agent.global_only && agent.supports_target(&InstallTarget::universal())
-            })
+            .filter(|agent| readers.contains(&agent.id))
             .collect::<Vec<_>>();
         let mut universal_rows = div().flex().flex_col();
         for chunk in universal_agents.chunks(3) {
@@ -402,7 +410,15 @@ impl KitterApp {
         let independent = crate::agent_plugins::AgentRegistry::global()
             .agents()
             .iter()
-            .filter(|agent| agent.install.is_some())
+            .filter(|agent| {
+                destination.as_ref().is_some_and(|destination| {
+                    crate::agents::installation_root(
+                        destination,
+                        &InstallTarget::from(agent.id.as_str()),
+                    )
+                    .is_some()
+                })
+            })
             .collect::<Vec<_>>();
         let last = independent.len().saturating_sub(1);
         for (index, agent) in independent.into_iter().enumerate() {
@@ -464,7 +480,17 @@ impl KitterApp {
                             .map(|root| display_path(&root))
                             .unwrap_or_default()
                     } else {
-                        target.project_dir().unwrap().to_string()
+                        self.projects_view
+                            .open_project
+                            .as_ref()
+                            .and_then(|project| {
+                                crate::agents::installation_root(project, &target).map(|root| {
+                                    root.strip_prefix(project)
+                                        .map(|relative| relative.display().to_string())
+                                        .unwrap_or_else(|_| display_path(&root))
+                                })
+                            })
+                            .unwrap_or_default()
                     }),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -651,9 +677,10 @@ impl KitterApp {
                 {
                     let path = installation.path.clone();
                     let checked = self.delete_flow.selected.contains(&path);
-                    let Some(target) = installation.target.project_dir() else {
+                    let Some(root) = installation.path.parent() else {
                         continue;
                     };
+                    let target = display_path(root);
                     let removal_kind = project::removal_kind(installation);
                     let deletes_files = matches!(removal_kind, project::RemovalKind::SourceFiles);
                     let external_source = match removal_kind {

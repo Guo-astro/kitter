@@ -34,7 +34,7 @@ fn parses_declarations_and_hook_paths() {
         "valid.js",
         r#"
 import { defineAgent, standard } from 'kitter';
-export default defineAgent({apiVersion: 1, id: 'test-agent', name: 'Test', reads: ['universal'],
+export default defineAgent({apiVersion: 1, id: 'test-agent', name: 'Test',
   install: {project: '.test/skills', global: ctx => ctx.path('~/.test/skills')},
   skills: standard.skills({project: ['.test/skills'], user: ['.test/skills'],
     filter: (entries, ctx) => entries,
@@ -56,6 +56,54 @@ export default defineAgent({apiVersion: 1, id: 'test-agent', name: 'Test', reads
 }
 
 #[test]
+fn grok_plugin_containment_accepts_windows_paths_and_rejects_outside_folders() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let plugin = home.join(".grok/plugins/demo");
+    for dir in ["skills", "commands"] {
+        fs::create_dir_all(plugin.join(dir)).unwrap();
+    }
+    fs::create_dir_all(plugin.parent().unwrap().join("escape")).unwrap();
+    fs::write(
+        plugin.join("plugin.json"),
+        r#"{"name":"demo","skills":["skills","../escape"]}"#,
+    )
+    .unwrap();
+    fs::write(
+        home.join(".grok/config.toml"),
+        "[plugins]\nenabled = [\"demo\"]\n",
+    )
+    .unwrap();
+    let builtin = AgentRegistry::global().agent("grok").unwrap();
+    // Exercise the actual roots hook with Windows-style canonical paths on
+    // every CI host. Filesystem reads still use native fixture paths.
+    let windows_code = builtin.source.code.replacen(
+        "roots(ctx) {",
+        r#"roots(ctx) {
+      const canonical = ctx.canonical;
+      ctx = { ...ctx, canonical: value => canonical(value).replace(/\//g, "\\") };
+    "#,
+        1,
+    );
+    for code in [builtin.source.code.as_ref(), windows_code.as_str()] {
+        let source = source("grok-paths.js", code);
+        let mut host = JsHost::new(context(&home, &home, None, true));
+        let roots = call(&mut host, &source, "skills.roots", None);
+        let plugin_roots = roots
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|root| root.get("plugin").is_some())
+            .collect::<Vec<_>>();
+        assert_eq!(plugin_roots.len(), 2);
+        assert!(plugin_roots.iter().all(|root| {
+            let path = std::path::PathBuf::from(root["path"].as_str().unwrap());
+            path == plugin.join("skills") || path == plugin.join("commands")
+        }));
+    }
+}
+
+#[test]
 fn rejects_invalid_specs_and_reports_syntax_locations() {
     for body in [
         "apiVersion:1,id:'x',name:'X',typo: true",
@@ -66,7 +114,6 @@ fn rejects_invalid_specs_and_reports_syntax_locations() {
         "apiVersion:1,id:'x',name:'X',install:{global:'~/.test'}",
         "apiVersion:1,id:'x',name:'X',install:{project:'.test'}",
         "apiVersion:1,id:'x',name:'X',install:{project:'/absolute',global:'~/.test'}",
-        "apiVersion:1,id:'x',name:'X',install:{project:ctx=>'.test',global:'~/.test'}",
     ] {
         assert!(
             load_spec(&source("invalid.js", &format!("export default {{{body}}}"))).is_err(),

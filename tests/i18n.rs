@@ -331,7 +331,9 @@ fn detailed_errors_keep_ui_and_cli_messages_separate_in_both_languages() {
         for (message_key, detail_key) in pairs {
             let render = |key| {
                 let mut text = translations[&format!("errors.{key}")].clone();
-                for name in ["name", "path", "source", "failures", "program", "detail"] {
+                for name in [
+                    "name", "path", "source", "skills", "failures", "program", "detail",
+                ] {
                     text = text.replace(&format!("%{{{name}}}"), "diagnostic-value");
                 }
                 assert!(!text.contains("%{"));

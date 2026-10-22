@@ -43,7 +43,6 @@ export default defineAgent({
   apiVersion: 1,
   id: "maki",
   name: "Maki",
-  reads: ["maki", "universal"],
   install: {
     project: ".maki/skills",
     global: "~/.maki/skills",
@@ -66,9 +65,10 @@ export default defineAgent({
 | `name` | string | required | Display name. |
 | `icon` | string or `{ light, dark }` | monogram | Inline SVG, theme-specific inline SVG strings, or `builtin:<name>`. Each SVG must start with `<svg` after trimming and be at most 64 KiB. |
 | `globalOnly` | boolean | `false` | Agent is available only at user scope. |
-| `reads` | string[] | `[]` | Install target ids the Agent can read, including `universal` for `.agents/skills`. Does not set discovery roots. |
-| `install` | `{ project, global }` | absent | Enables an install target. `project` is a relative directory; `global` is a path template or `(ctx) => string`. Return an absolute path from the hook. |
+| `install` | `{ project, global }` | absent | Enables an install target. `project` is a relative directory or `(ctx) => string | null`; `global` is a path template or `(ctx) => string`. Hooks return an absolute path, or `null` when installation is unavailable. Choose one current recommended native directory per scope; use `.agents/skills` when no native directory is suitable. |
 | `skills` | object | absent | Enables effective-skill discovery and catalog estimates. Requires `roots`; see below. |
+
+Skill discovery and Agent availability are derived from `skills` paths and hooks. Universal installation badges resolve `<project>/.agents/skills` and `~/.agents/skills` independently against those same roots; `install` does not determine compatibility. Each preferred install directory must be readable by its Agent. The obsolete API v1 `reads` field is accepted but ignored.
 
 Built-in icon names: `amp`, `antigravity`, `claude`, `codex`, `copilot`, `cursor`, `dimagent`, `droid`, `gemini`, `grok`, `hermes`, `omp`, `openclaw`, `opencode`, `pi`, `trae`. Icon names are separate from Agent ids.
 
@@ -76,7 +76,7 @@ Built-in icon names: `amp`, `antigravity`, `claude`, `codex`, `copilot`, `cursor
 
 Path templates support `~`, `~/…`, `${env:NAME}`, and `${env:NAME:-default}`. An unset or empty variable uses the default (or an empty string). For example, `"${env:MAKI_HOME:-~/.maki}/skills"`.
 
-`install.global`, `roots.user`, and `ctx.path(template)` resolve relative paths against the user home. `ctx.path(template, base)` uses the given base. `install.project` is joined to the target project. Declarative `roots.project` entries are relative paths joined to each directory from the working directory up to the repository root (or filesystem root if none); they are not expanded as templates. Global inspection skips project roots. `envPaths` names a variable containing an OS-separated path list; relative entries use `ctx.cwd`.
+`install.global`, `roots.user`, and `ctx.path(template)` resolve relative paths against the user home. `ctx.path(template, base)` uses the given base. A string `install.project` is joined to the target project; its hook can resolve a repository-level directory through `ctx.repoRoot`. Declarative `roots.project` entries are relative paths joined to each directory from the working directory up to the repository root (or filesystem root if none); they are not expanded as templates. Global inspection skips project roots. `envPaths` names a variable containing an OS-separated path list; relative entries use `ctx.cwd`.
 
 ## Skill settings
 

@@ -202,3 +202,58 @@ fn move_requires_exactly_one_direction_and_broken_settings_stay_intact() {
         "{broken"
     );
 }
+
+#[test]
+fn project_view_counts_and_tokens_follow_the_selected_skill_sources() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("data");
+    let project = temp.path().join("project");
+    for (root, name) in [
+        ("local-skills", "local-example"),
+        ("plugin-skills", "plugin-example"),
+    ] {
+        let dir = project.join(root).join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("SKILL.md"),
+            format!(
+                "---\nname: {name}\ndescription: Example workflow for {name}\n---\nInstructions\n"
+            ),
+        )
+        .unwrap();
+    }
+    let file = temp.path().join("view-test.js");
+    fs::write(&file, r#"
+import {defineAgent, standard} from 'kitter';
+let resolved = false;
+export default defineAgent({apiVersion:1,id:'view-test',name:'View Test',
+ skills:standard.skills({roots(ctx) {resolved = true; return [
+  {path:ctx.path('local-skills',ctx.cwd),scope:'local'},
+  {path:ctx.path('plugin-skills',ctx.cwd),scope:'local',plugin:{id:'test-plugin',displayName:'Test Plugin'}}
+ ];}, filter(entries) {if (!resolved) throw new Error("root state lost"); return entries;}})
+});"#).unwrap();
+    success(&home, &["agents", "add", file.to_str().unwrap()]);
+    let mut tokens = Vec::new();
+    for (view, count) in [("all", 2), ("skills", 1), ("plugins", 1)] {
+        let output: Value = serde_json::from_str(&success(
+            &home,
+            &[
+                "project",
+                project.to_str().unwrap(),
+                "--agent",
+                "view-test",
+                "--view",
+                view,
+                "--json",
+            ],
+        ))
+        .unwrap();
+        let agent = &output["agents"][0];
+        assert_eq!(agent["skills"].as_array().unwrap().len(), count);
+        assert_eq!(agent["discovered_count"], count);
+        assert_eq!(agent["model_visible_count"], count);
+        tokens.push(agent["estimated_tokens"].as_u64().unwrap());
+    }
+    assert!(tokens[0] > tokens[1]);
+    assert!(tokens[0] > tokens[2]);
+}

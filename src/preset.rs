@@ -368,7 +368,9 @@ impl PresetStore {
                 continue;
             };
             for target in targets {
-                if target.project_dir().is_some() && !is_linked(project, target, skill) {
+                if crate::agents::installation_root(project, target).is_some()
+                    && !is_linked(project, target, skill)
+                {
                     created.push(OwnedLink {
                         skill: storage.clone(),
                         target: target.clone(),
@@ -411,7 +413,7 @@ impl PresetStore {
             if !installation
                 .targets
                 .iter()
-                .filter(|target| target.project_dir().is_some())
+                .filter(|target| crate::agents::installation_root(project, target).is_some())
                 .all(|target| is_linked(project, target, skill))
             {
                 status.missing_skills.push(storage_name.clone());
@@ -457,7 +459,8 @@ impl PresetStore {
                 .targets
                 .iter()
                 .filter(|target| {
-                    target.project_dir().is_some() && !is_linked(project, target, skill)
+                    crate::agents::installation_root(project, target).is_some()
+                        && !is_linked(project, target, skill)
                 })
                 .cloned()
                 .collect::<Vec<_>>();

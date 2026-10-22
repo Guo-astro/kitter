@@ -5,13 +5,23 @@ export default defineAgent({
   id: "dimagent",
   name: "DimAgent",
   icon: "builtin:dimagent",
-  reads: ["universal"],
+  install: { project: ".agents/skills", global: "~/.agents/skills" },
   skills: standard.skills({
     roots(ctx) {
-      const roots = [
+      const roots = [], seen = new Set();
+      for (const base of [ctx.path("plugins", dimHome(ctx)), ctx.path("~/.agents/plugins")]) {
+        for (const name of ctx.listDir(base)) {
+          const dir = ctx.path(name, base);
+          if (seen.has(name) || name.includes(".installing-") || name.includes(".backup-") || !ctx.isDir(dir)) continue;
+          seen.add(name);
+          roots.push({ path: ctx.path("skills", dir), scope: "user",
+            plugin: { id: ctx.canonical(dir), displayName: name } });
+        }
+      }
+      roots.push(
         { path: ctx.path("skills", dimHome(ctx)), scope: "user" },
         { path: ctx.path("~/.agents/skills"), scope: "user" },
-      ];
+      );
       if (!ctx.isGlobal) roots.push({ path: ctx.path(".agents/skills", ctx.cwd), scope: "local" });
       return roots;
     },
@@ -26,7 +36,8 @@ export default defineAgent({
       return entries.filter(e => {
         const dir = e.dir.replace(/\\/g, "/"), root = e.root.path.replace(/\\/g, "/").replace(/\/$/, "");
         const relative = dir === root ? "" : dir.startsWith(`${root}/`) ? dir.slice(root.length + 1) : dir;
-        const id = e.scope === "local" ? `workspace:${e.root.path}:${relative}` : `user:${relative}`;
+        const id = e.scope === "local" ? `workspace:${e.root.path}:${relative || "."}`
+          : `user:${e.root.plugin ? `${e.root.plugin.displayName}/` : ""}${relative || "."}`;
         return !Array.isArray(disabled) || !disabled.includes(id);
       });
     },

@@ -58,6 +58,7 @@ pub struct AppConfig {
     pub theme: Theme,
     pub library_dir: PathBuf,
     #[serde(default)]
+    // Persist every known project; activity determines display order, not retention.
     pub recent_projects: Vec<PathBuf>,
     #[serde(default)]
     pub project_activity: BTreeMap<PathBuf, u64>,
@@ -126,7 +127,6 @@ impl AppConfig {
         let needs_activity = !self.project_activity.contains_key(&path);
         self.recent_projects.retain(|item| item != &path);
         self.recent_projects.insert(0, path.clone());
-        self.recent_projects.truncate(8);
         if needs_activity {
             self.touch_project(&path);
         } else {
@@ -169,7 +169,6 @@ impl AppConfig {
             .unwrap_or_default()
             .saturating_add(1);
         self.project_activity.insert(path, now.max(next));
-        self.recent_projects.truncate(8);
         self.prune_project_activity();
     }
 

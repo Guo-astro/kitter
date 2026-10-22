@@ -30,6 +30,14 @@ pub use crate::agent_plugins::AgentId;
 #[cfg(test)]
 use crate::agent_plugins::AgentRegistry;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub enum SkillView {
+    #[default]
+    All,
+    Skills,
+    Plugins,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillVisibility {
@@ -188,22 +196,22 @@ pub(crate) fn group_effective_skills_with_paths<'a>(
         root
     }
 
-    let mut names = HashMap::<&str, usize>::new();
+    let mut logical_ids = HashMap::<(AgentId, String), usize>::new();
     let mut paths = HashMap::<PathBuf, usize>::new();
     let mut nodes = Vec::<Node<'a>>::new();
     for (agent, skill) in entries {
         let path =
-            matches!(skill.source, SkillSource::Filesystem).then(|| canonical_path(&skill.path));
+            (!matches!(skill.source, SkillSource::Builtin)).then(|| canonical_path(&skill.path));
         let mut matching = Vec::with_capacity(2);
-        if let Some(&index) = names.get(skill.name.as_str()) {
+        let logical_id = path.is_none().then(|| (agent.clone(), skill.id.clone()));
+        if let Some(&index) = logical_id.as_ref().and_then(|id| logical_ids.get(id)) {
             matching.push(root(&mut nodes, index));
         }
         if let Some(index) = path.as_ref().and_then(|path| paths.get(path)).copied() {
             matching.push(root(&mut nodes, index));
         }
-        // Live groups were previously removed and appended on each match.
-        // Their latest node indexes preserve that order, including a late
-        // name/path alias that joins two previously separate groups.
+        // Keep repeated sightings in discovery order, without merging different
+        // files merely because their display names happen to match.
         matching.sort_unstable();
         matching.dedup();
         let index = nodes.len();
@@ -215,7 +223,9 @@ pub(crate) fn group_effective_skills_with_paths<'a>(
             children: matching,
             entry: (agent, skill),
         });
-        names.insert(&skill.name, index);
+        if let Some(id) = logical_id {
+            logical_ids.insert(id, index);
+        }
         if let Some(path) = path {
             paths.insert(path, index);
         }
@@ -263,7 +273,7 @@ mod grouping_regression_tests {
 
         let mut groups = Vec::<Vec<Candidate<'a>>>::new();
         for (agent, skill) in entries {
-            let filesystem_path = matches!(skill.source, SkillSource::Filesystem).then(|| {
+            let filesystem_path = (!matches!(skill.source, SkillSource::Builtin)).then(|| {
                 skill
                     .path
                     .canonicalize()
@@ -281,7 +291,11 @@ mod grouping_regression_tests {
                     group
                         .iter()
                         .any(|entry| {
-                            entry.skill.name == candidate.skill.name
+                            (entry.filesystem_path.is_none()
+                                && candidate.filesystem_path.is_none()
+                                && entry.agent == candidate.agent
+                                && entry.skill.id == candidate.skill.id
+                                && entry.skill.source == candidate.skill.source)
                                 || entry
                                     .filesystem_path
                                     .as_ref()
@@ -320,7 +334,7 @@ mod grouping_regression_tests {
     }
 
     #[test]
-    fn indexed_grouping_preserves_transitive_aliases_and_entry_order() {
+    fn indexed_grouping_preserves_file_identity_and_entry_order() {
         let temp = tempfile::tempdir().unwrap();
         let files = (0..8)
             .map(|i| {
@@ -491,9 +505,58 @@ struct SkillMetadata {
     pub source_path: PathBuf,
 }
 
-pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
+/// Potential readers of a destination, before a Skill is installed. This uses
+/// the same resolved roots as discovery; Skill validation and overrides still
+/// determine availability after installation.
+pub fn agents_reading_root(project: &Path, root: &Path) -> Vec<AgentId> {
     let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
-    estimate_project_with_home(project, &home)
+    agents_reading_root_with_home(project, &home, root)
+}
+
+fn agents_reading_root_with_home(project: &Path, home: &Path, root: &Path) -> Vec<AgentId> {
+    let context = crate::agent_plugins::HostContext {
+        cwd: project.to_path_buf(),
+        home: home.to_path_buf(),
+        repo_root: find_repository_root(project),
+        is_global: same_directory(project, home),
+    };
+    let canonical = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let root = canonical(root);
+    crate::agent_plugins::AgentRegistry::global()
+        .agents()
+        .iter()
+        .filter(|agent| !agent.global_only || context.is_global)
+        .filter(|agent| {
+            agent.skills.as_ref().is_some_and(|skills| {
+                engine::resolve_roots(skills, &agent.source, &context).is_ok_and(|roots| {
+                    roots.iter().any(|candidate| {
+                        candidate.exact_file.is_none() && canonical(&candidate.path) == root
+                    })
+                })
+            })
+        })
+        .map(|agent| agent.id.clone())
+        .collect()
+}
+
+pub fn estimate_project(project: &Path) -> Vec<AgentContextEstimate> {
+    estimate_project_view(project, SkillView::All)
+}
+
+pub fn estimate_project_view(project: &Path, view: SkillView) -> Vec<AgentContextEstimate> {
+    let home = dirs::home_dir().unwrap_or_else(|| project.to_path_buf());
+    let context = DiscoveryContext {
+        cwd: project.to_path_buf(),
+        home: home.clone(),
+        repository_root: find_repository_root(project),
+    };
+    adapters::inspect_project_view(
+        crate::agent_plugins::AgentRegistry::global(),
+        &context,
+        is_global_context(&context),
+        view,
+    )
+    .0
 }
 
 pub fn estimate_project_with_home(project: &Path, home: &Path) -> Vec<AgentContextEstimate> {
@@ -505,7 +568,7 @@ pub fn estimate_project_with_home(project: &Path, home: &Path) -> Vec<AgentConte
     adapters::inspect_project(
         crate::agent_plugins::AgentRegistry::global(),
         &context,
-        project == home,
+        is_global_context(&context),
     )
     .0
 }
@@ -523,7 +586,7 @@ pub fn check_project(
         home: home.clone(),
         repository_root: find_repository_root(project),
     };
-    adapters::inspect_project(registry, &context, project == home)
+    adapters::inspect_project(registry, &context, is_global_context(&context))
 }
 
 #[cfg(test)]
@@ -581,10 +644,19 @@ pub fn is_manual_skill(skill_dir: &Path) -> bool {
 /// selected path. It must not be treated as an ordinary project whose parent
 /// directories contribute project-local compatibility roots.
 fn is_global_context(context: &DiscoveryContext) -> bool {
-    context.cwd == context.home
+    same_directory(&context.cwd, &context.home)
 }
 
-fn find_repository_root(path: &Path) -> Option<PathBuf> {
+pub(crate) fn same_directory(left: &Path, right: &Path) -> bool {
+    left == right
+        || left
+            .canonicalize()
+            .ok()
+            .zip(right.canonicalize().ok())
+            .is_some_and(|(left, right)| left == right)
+}
+
+pub(crate) fn find_repository_root(path: &Path) -> Option<PathBuf> {
     path.ancestors()
         .find(|dir| dir.join(".git").is_dir() || dir.join(".git").is_file())
         .map(Path::to_path_buf)
@@ -1781,6 +1853,7 @@ mod tests {
             ".factory/skills",
             ".grok/skills",
             ".hermes/skills",
+            ".gemini/config/skills",
         ] {
             write_skill(
                 &temp.path().join("home").join(root),
@@ -2623,7 +2696,7 @@ path = 'D:\skills\active\SKILL.md'
                     .agent(estimate.agent.as_str())
                     .is_some_and(|agent| agent.global_only))
                 .count(),
-            2
+            0
         );
     }
 
@@ -3028,5 +3101,193 @@ path = 'D:\skills\active\SKILL.md'
             !adapters::render_catalog(&AgentId::from("hermes"), &estimate.skills)
                 .contains("SKILL.md")
         );
+    }
+}
+
+#[cfg(test)]
+mod availability_regression_tests {
+    use super::*;
+
+    #[test]
+    fn preferred_install_directories_are_discovered_in_both_scopes() {
+        if std::env::var_os("KITTER_TEST_PREFERRED_ROOTS").is_none() {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "effective_skills::availability_regression_tests::preferred_install_directories_are_discovered_in_both_scopes"])
+                .env("KITTER_TEST_PREFERRED_ROOTS", "1");
+            for name in [
+                "CODEX_HOME",
+                "PI_CODING_AGENT_DIR",
+                "OMP_PROFILE",
+                "PI_PROFILE",
+                "XDG_CONFIG_HOME",
+                "GROK_HOME",
+                "HERMES_HOME",
+                "DIMCODE_HOME",
+                "OPENCLAW_STATE_DIR",
+                "CLAWDBOT_STATE_DIR",
+                "OPENCLAW_CONFIG_PATH",
+            ] {
+                command.env_remove(name);
+            }
+            assert!(command.status().unwrap().success());
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let project = temp.path().join("project");
+        fs::create_dir_all(project.join(".git")).unwrap();
+        fs::create_dir_all(home.join(".hermes")).unwrap();
+        fs::write(
+            home.join(".hermes/config.yaml"),
+            format!(
+                "skills:\n  trusted_project_dirs: [{}]\n",
+                serde_json::to_string(&project.canonicalize().unwrap()).unwrap()
+            ),
+        )
+        .unwrap();
+        for global in [false, true] {
+            let cwd = if global { &home } else { &project };
+            for agent in crate::agent_plugins::AgentRegistry::global().agents() {
+                let root = if global {
+                    agent.global_dir(&home)
+                } else {
+                    agent.project_root(&project, &home)
+                }
+                .unwrap_or_else(|| {
+                    panic!("missing preferred directory: {} global={global}", agent.id)
+                });
+                let readers = agents_reading_root_with_home(cwd, &home, &root);
+                assert!(
+                    readers.contains(&agent.id),
+                    "unreadable default: {} {} global={global}",
+                    agent.id,
+                    root.display()
+                );
+                let skill = root.join(format!("preferred-{}-{global}", agent.id));
+                fs::create_dir_all(&skill).unwrap();
+                fs::write(skill.join("SKILL.md"), format!("---\nname: preferred-{}-{global}\ndescription: Check preferred installation path\n---\nInstructions\n", agent.id)).unwrap();
+                let estimates = estimate_project_with_home(cwd, &home);
+                let estimate = estimates
+                    .iter()
+                    .find(|estimate| estimate.agent == agent.id)
+                    .unwrap();
+                assert!(
+                    estimate
+                        .skills
+                        .iter()
+                        .any(|entry| entry.path.canonicalize().ok()
+                            == skill.join("SKILL.md").canonicalize().ok()),
+                    "installed skill missing: {} global={global}",
+                    agent.id
+                );
+            }
+        }
+        let nested = project.join("src/nested");
+        fs::create_dir_all(&nested).unwrap();
+        let target = crate::InstallTarget::from("hermes");
+        assert_eq!(
+            target.project_root(&nested, &home),
+            Some(project.join(".hermes/skills"))
+        );
+        assert_eq!(
+            target.project_root(&temp.path().join("outside"), &home),
+            None
+        );
+        for (cwd, global) in [(&project, false), (&home, true)] {
+            let readers = agents_reading_root_with_home(cwd, &home, &cwd.join(".agents/skills"));
+            for id in ["amp", "dimagent"] {
+                assert!(readers.iter().any(|agent| agent.as_str() == id));
+            }
+            for id in ["antigravity", "trae"] {
+                assert_eq!(readers.iter().any(|agent| agent.as_str() == id), !global);
+            }
+            assert!(!readers.iter().any(|agent| agent.as_str() == "claude-code"));
+        }
+    }
+
+    #[test]
+    fn readers_and_discovery_agree_on_project_global_and_settings() {
+        // Provider settings and environment overrides must not touch the real profile.
+        if std::env::var_os("KITTER_TEST_PATH_READERS").is_none() {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "effective_skills::availability_regression_tests::readers_and_discovery_agree_on_project_global_and_settings"])
+                .env("KITTER_TEST_PATH_READERS", "1");
+            for name in [
+                "CODEX_HOME",
+                "PI_CODING_AGENT_DIR",
+                "OMP_PROFILE",
+                "PI_PROFILE",
+                "XDG_CONFIG_HOME",
+            ] {
+                command.env_remove(name);
+            }
+            assert!(command.status().unwrap().success());
+            return;
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        let project = temp.path().join("project");
+        fs::create_dir_all(project.join(".git")).unwrap();
+        let project_root = project.join(".agent/skills");
+        let global_root = home.join(".gemini/config/skills");
+        for root in [&project_root, &global_root] {
+            fs::create_dir_all(root.join("write-swift")).unwrap();
+            fs::write(
+                root.join("write-swift/SKILL.md"),
+                "---\nname: write-swift\ndescription: Write Swift code\n---\nSwift instructions\n",
+            )
+            .unwrap();
+        }
+        let has = |ids: &[AgentId], agent: &str| ids.iter().any(|id| id.as_str() == agent);
+        let discovered = |cwd: &Path, file: &Path, agent: &str| {
+            estimate_project_with_home(cwd, &home)
+                .iter()
+                .find(|estimate| estimate.agent.as_str() == agent)
+                .is_some_and(|estimate| {
+                    estimate
+                        .skills
+                        .iter()
+                        .any(|skill| skill.path.canonicalize().ok() == file.canonicalize().ok())
+                })
+        };
+        let readers = agents_reading_root_with_home(&project, &home, &project_root);
+        for agent in ["antigravity", "omp", "droid"] {
+            assert!(has(&readers, agent), "project reader: {agent}");
+            assert!(discovered(
+                &project,
+                &project_root.join("write-swift/SKILL.md"),
+                agent
+            ));
+        }
+        let readers = agents_reading_root_with_home(&home, &home, &global_root);
+        assert!(has(&readers, "antigravity"));
+        assert!(discovered(
+            &home,
+            &global_root.join("write-swift/SKILL.md"),
+            "antigravity"
+        ));
+        for agent in ["omp", "droid"] {
+            assert!(!has(&readers, agent), "unexpected global reader: {agent}");
+            assert!(!discovered(
+                &home,
+                &global_root.join("write-swift/SKILL.md"),
+                agent
+            ));
+        }
+        fs::create_dir_all(home.join(".omp/agent")).unwrap();
+        fs::write(
+            home.join(".omp/agent/settings.json"),
+            r#"{"skills":{"enabled":false}}"#,
+        )
+        .unwrap();
+        assert!(!has(
+            &agents_reading_root_with_home(&project, &home, &project_root),
+            "omp"
+        ));
+        assert!(!discovered(
+            &project,
+            &project_root.join("write-swift/SKILL.md"),
+            "omp"
+        ));
     }
 }

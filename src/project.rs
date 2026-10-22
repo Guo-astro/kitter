@@ -54,13 +54,25 @@ pub fn install_from_path(
     if !project.is_dir() {
         bail!(t!("errors.project_missing", path = project.display()).to_string());
     }
-    install_to_roots(
-        source,
-        name,
-        targets
-            .iter()
-            .filter_map(|target| installation_root(project, target)),
-    )
+    install_to_roots(source, name, installation_roots(project, targets)?)
+}
+
+fn installation_roots(project: &Path, targets: &[InstallTarget]) -> Result<Vec<PathBuf>> {
+    if targets.is_empty() {
+        crate::user_bail!("errors.install_location_required");
+    }
+    targets
+        .iter()
+        .map(|target| {
+            installation_root(project, target).ok_or_else(|| {
+                let agent = AgentRegistry::global()
+                    .agent(target.as_str())
+                    .map(|agent| agent.name.as_str())
+                    .unwrap_or(target.as_str());
+                crate::user_error!("errors.install_target_unavailable", agent = agent).into()
+            })
+        })
+        .collect()
 }
 
 fn install_to_roots(
@@ -199,6 +211,11 @@ fn is_supported_installation_path(installation: &ProjectSkillInstallation) -> bo
             .project_dir()
             .is_some_and(|dir| parent.ends_with(dir))
             || dirs::home_dir().is_some_and(|home| {
+                if parent.ancestors().any(|project| {
+                    installation.target.project_root(project, &home).as_deref() == Some(parent)
+                }) {
+                    return true;
+                }
                 crate::agents::global_target_root(&home, &installation.target)
                     .is_some_and(|root| parent == root)
             })
@@ -302,10 +319,16 @@ pub fn list(project: &Path, library_dir: &Path) -> Result<Vec<ProjectSkill>> {
                 .flatten()
         })
         .collect::<HashSet<_>>();
+    let mut listed_roots = HashSet::new();
     for target in AgentRegistry::global().install_targets() {
         let Some(parent) = installation_root(project, &target) else {
             continue;
         };
+        // Several targets can install to the same path. Preserve distinct
+        // alias paths for removal, but never list the identical path twice.
+        if !listed_roots.insert(parent.clone()) {
+            continue;
+        }
         let Ok(entries) = fs::read_dir(&parent) else {
             continue;
         };
@@ -391,7 +414,7 @@ mod tests {
             let project = temp.path().join("project");
             let library = temp.path().join("library");
             let source = library.join("example");
-            fs::create_dir_all(&project).unwrap();
+            fs::create_dir_all(project.join(".git")).unwrap();
             fs::create_dir_all(&source).unwrap();
             fs::write(source.join("SKILL.md"), "# Example").unwrap();
             Self {
@@ -403,8 +426,8 @@ mod tests {
         }
 
         fn installation(&self, target: &InstallTarget) -> PathBuf {
-            self.project
-                .join(target.project_dir().unwrap())
+            crate::agents::installation_root(&self.project, target)
+                .unwrap()
                 .join("example")
         }
     }
@@ -468,19 +491,28 @@ mod tests {
     #[test]
     fn lists_and_removes_every_supported_project_install_target() {
         let fixture = Fixture::new();
-        let targets = AgentRegistry::global().install_targets();
+        let targets = AgentRegistry::global()
+            .install_targets()
+            .into_iter()
+            .filter(|target| installation_root(&fixture.project, target).is_some())
+            .collect::<Vec<_>>();
 
         install(&fixture.project, &fixture.library, "example", &targets).unwrap();
 
         let listed = list(&fixture.project, &fixture.library).unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].installations.len(), targets.len());
+        assert_eq!(
+            listed[0].installations.len(),
+            targets
+                .iter()
+                .map(|target| fixture.installation(target))
+                .collect::<HashSet<_>>()
+                .len()
+        );
         for target in &targets {
             assert!(fixture.installation(target).symlink_metadata().is_ok());
             assert!(listed[0].installations.iter().any(|installation| {
-                &installation.target == target
-                    && installation.path == fixture.installation(target)
-                    && installation.managed
+                installation.path == fixture.installation(target) && installation.managed
             }));
         }
 
@@ -488,6 +520,20 @@ mod tests {
         for target in &targets {
             assert!(fixture.installation(target).symlink_metadata().is_err());
         }
+    }
+
+    #[test]
+    fn unavailable_targets_fail_before_any_installation() {
+        let fixture = Fixture::new();
+        let targets = [InstallTarget::universal(), InstallTarget::from("hermes")];
+        assert!(install(&fixture.project, &fixture.library, "example", &targets).is_err());
+        let mut plan = InstallPlan::default();
+        assert!(
+            plan.add(&fixture.project, &fixture.source, "example", &targets)
+                .is_err()
+        );
+        assert!(!fixture.project.join(".agents/skills/example").exists());
+        assert!(!fixture.project.join(".hermes/skills/example").exists());
     }
 
     #[test]

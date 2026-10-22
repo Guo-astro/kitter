@@ -13,8 +13,7 @@ export default defineAgent({
   id: "openclaw",
   name: "OpenClaw",
   icon: "builtin:openclaw",
-  globalOnly: true,
-  reads: [],
+  install: { project: "skills", global: ctx => ctx.path("skills", stateDir(ctx)) },
   skills: standard.skills({
     roots: ctx => {
       const state = stateDir(ctx);

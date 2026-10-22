@@ -12,6 +12,27 @@ fn decode<T: DeserializeOwned>(value: serde_json::Value) -> Result<T, PluginErro
     serde_json::from_value(value).map_err(error)
 }
 
+pub(super) fn resolve_roots(
+    skills: &spec::SkillsSpec,
+    plugin: &PluginSource,
+    context: &HostContext,
+) -> Result<Vec<spec::RootSpec>, PluginError> {
+    resolve_roots_with(skills, context, |hook| {
+        JsHost::new(context.clone()).call(plugin, hook, None)
+    })
+}
+
+fn resolve_roots_with(
+    skills: &spec::SkillsSpec,
+    context: &HostContext,
+    mut call: impl FnMut(&spec::HookPath) -> Result<serde_json::Value, PluginError>,
+) -> Result<Vec<spec::RootSpec>, PluginError> {
+    match &skills.roots {
+        spec::RootsValue::Decl(decl) => Ok(spec::expand_roots(decl, context)),
+        spec::RootsValue::Hook(hook) => decode(call(hook)?),
+    }
+}
+
 pub(crate) fn estimate(
     agent: &AgentId,
     skills: &spec::SkillsSpec,
@@ -27,6 +48,26 @@ fn estimate_catalog(
     plugin: &PluginSource,
     context: &DiscoveryContext,
 ) -> Result<(AgentContextEstimate, String), PluginError> {
+    estimate_catalog_view(agent, skills, plugin, context, SkillView::All)
+}
+
+pub(crate) fn estimate_view(
+    agent: &AgentId,
+    skills: &spec::SkillsSpec,
+    plugin: &PluginSource,
+    context: &DiscoveryContext,
+    view: SkillView,
+) -> Result<AgentContextEstimate, PluginError> {
+    estimate_catalog_view(agent, skills, plugin, context, view).map(|(estimate, _)| estimate)
+}
+
+fn estimate_catalog_view(
+    agent: &AgentId,
+    skills: &spec::SkillsSpec,
+    plugin: &PluginSource,
+    context: &DiscoveryContext,
+    view: SkillView,
+) -> Result<(AgentContextEstimate, String), PluginError> {
     let host_context = HostContext {
         home: context.home.clone(),
         cwd: context.cwd.clone(),
@@ -40,10 +81,7 @@ fn estimate_catalog(
         || matches!(skills.catalog, Some(spec::CatalogSpec::Custom(_)));
     let mut host = has_hooks.then(|| JsHost::new(host_context.clone()));
     let mut call = |hook: &spec::HookPath, input| host.as_mut().unwrap().call(plugin, hook, input);
-    let roots: Vec<spec::RootSpec> = match &skills.roots {
-        spec::RootsValue::Decl(decl) => spec::expand_roots(decl, &host_context),
-        spec::RootsValue::Hook(hook) => decode(call(hook, None)?)?,
-    };
+    let roots = resolve_roots_with(skills, &host_context, |hook| call(hook, None))?;
     let mut result = Vec::<spec::SkillEntry>::new();
     if let Some(hook) = &skills.builtins {
         let builtins: Vec<spec::SkillEntryInput> = decode(call(hook, None)?)?;
@@ -94,9 +132,21 @@ fn estimate_catalog(
     };
     let mut entries = Vec::new();
     let mut canonical_paths = HashSet::new();
+    let mut dim_budgets = [1_000usize; 2];
     for root_spec in roots {
         let root = skill_root(&root_spec);
-        for skill_file in scanner::scan(&root, scan) {
+        let files = if matches!(scan, scanner::ScanProfile::DimRecursive) {
+            let budget = &mut dim_budgets[usize::from(matches!(
+                root_spec.scope,
+                spec::Scope::Local | spec::Scope::Repository
+            ))];
+            let files = scanner::dim_recursive(&root, *budget);
+            *budget -= files.len();
+            files
+        } else {
+            scanner::scan(&root, scan)
+        };
+        for skill_file in files {
             let skill_dir = skill_file.parent().unwrap_or(&root.path).to_path_buf();
             let canonical_target = if root.exact_skill_file.is_some()
                 || (root.include_root_markdown && skill_dir == root.path)
@@ -194,6 +244,11 @@ fn estimate_catalog(
             call(hook, Some(serde_json::to_value(&result).map_err(error)?))?,
         )?;
     }
+    result.retain(|entry| match view {
+        SkillView::All => true,
+        SkillView::Skills => !matches!(entry.source, spec::Source::Plugin),
+        SkillView::Plugins => matches!(entry.source, spec::Source::Plugin),
+    });
     let visible = result
         .iter()
         .filter(|entry| {

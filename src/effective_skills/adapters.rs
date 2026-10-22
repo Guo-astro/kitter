@@ -11,6 +11,20 @@ pub(super) fn inspect_project(
     context: &DiscoveryContext,
     include_global_only: bool,
 ) -> (Vec<AgentContextEstimate>, Vec<PluginDiagnostic>) {
+    inspect_project_view(
+        registry,
+        context,
+        include_global_only,
+        super::SkillView::All,
+    )
+}
+
+pub(super) fn inspect_project_view(
+    registry: &AgentRegistry,
+    context: &DiscoveryContext,
+    include_global_only: bool,
+    view: super::SkillView,
+) -> (Vec<AgentContextEstimate>, Vec<PluginDiagnostic>) {
     let mut estimates = Vec::new();
     let mut diagnostics = Vec::new();
     for agent in registry
@@ -18,7 +32,7 @@ pub(super) fn inspect_project(
         .iter()
         .filter(|agent| include_global_only || !agent.global_only)
     {
-        match inspect_registry_agent(registry, &agent.id, context) {
+        match inspect_registry_agent(registry, &agent.id, context, view) {
             Some(Ok(estimate)) => estimates.push(estimate),
             Some(Err(diagnostic)) => diagnostics.push(diagnostic),
             None => {}
@@ -32,27 +46,34 @@ pub(super) fn inspect_agent(
     agent: &AgentId,
     context: &DiscoveryContext,
 ) -> Option<AgentContextEstimate> {
-    inspect_registry_agent(AgentRegistry::global(), agent, context)?.ok()
+    inspect_registry_agent(
+        AgentRegistry::global(),
+        agent,
+        context,
+        super::SkillView::All,
+    )?
+    .ok()
 }
 
 fn inspect_registry_agent(
     registry: &AgentRegistry,
     agent: &AgentId,
     context: &DiscoveryContext,
+    view: super::SkillView,
 ) -> Option<Result<AgentContextEstimate, PluginDiagnostic>> {
     let def = registry.agent(agent.as_str())?;
     let skills = def.skills.as_ref()?;
     Some(
-        super::engine::estimate(&def.id, skills, &def.source, context).map_err(|error| {
-            PluginDiagnostic {
+        super::engine::estimate_view(&def.id, skills, &def.source, context, view).map_err(
+            |error| PluginDiagnostic {
                 origin: def.origin.clone(),
                 id: Some(def.id.to_string()),
                 message: match error.stack {
                     Some(stack) => format!("{}\n{stack}", error.message),
                     None => error.message,
                 },
-            }
-        }),
+            },
+        ),
     )
 }
 

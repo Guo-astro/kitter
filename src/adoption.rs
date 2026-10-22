@@ -430,7 +430,9 @@ fn skill_root(path: &Path) -> bool {
     crate::agent_plugins::AgentRegistry::global()
         .install_targets()
         .iter()
+        // A bare workspace "skills" directory is ambiguous in a home scan.
         .filter_map(|target| target.project_dir())
+        .filter(|dir| Path::new(dir).components().count() > 1)
         .any(|dir| path.ends_with(dir))
         || EXTRA_DIRECT_ROOTS
             .iter()
@@ -445,12 +447,12 @@ fn agent_directory(path: &Path) -> bool {
             target
                 .project_dir()
                 .and_then(|dir| Path::new(dir).parent())
-                .is_some_and(|parent| path.ends_with(parent))
+                .is_some_and(|parent| !parent.as_os_str().is_empty() && path.ends_with(parent))
         })
         || EXTRA_DIRECT_ROOTS.iter().any(|root| {
             Path::new(root)
                 .parent()
-                .is_some_and(|parent| path.ends_with(parent))
+                .is_some_and(|parent| !parent.as_os_str().is_empty() && path.ends_with(parent))
         })
 }
 

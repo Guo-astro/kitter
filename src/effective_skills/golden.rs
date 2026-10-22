@@ -41,6 +41,7 @@ pub(super) fn fixture(home: &Path, repo: &Path, project: &Path) {
         ".openclaw/skills",
         ".hermes/skills",
         ".dimcode/v2/skills",
+        ".trae-cn/skills",
     ] {
         skill(&home.join(root), "native", "native", "");
         skill(&home.join(root), "second", "second", "");
@@ -304,8 +305,8 @@ fn all_agents_golden() {
         "project": snapshot(&project, &home, &repo),
         "global": snapshot(&home, &home, &repo),
     });
-    assert_eq!(result["global"].as_array().unwrap().len(), 14);
-    assert_eq!(result["project"].as_array().unwrap().len(), 12);
+    assert_eq!(result["global"].as_array().unwrap().len(), 15);
+    assert_eq!(result["project"].as_array().unwrap().len(), 15);
     let actual = format!("{}\n", serde_json::to_string_pretty(&result).unwrap());
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/effective_skills/testdata/golden.json");

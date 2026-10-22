@@ -60,7 +60,6 @@ pub struct AgentDef {
     pub name: String,
     pub icon: AgentIcon,
     pub global_only: bool,
-    pub reads: Vec<InstallTarget>,
     pub install: Option<InstallDef>,
     pub skills: Option<SkillsSpec>,
     pub origin: PluginOrigin,
@@ -79,7 +78,7 @@ pub enum AgentIcon {
 
 #[derive(Clone)]
 pub struct InstallDef {
-    pub project: String,
+    pub project: PathValue,
     pub global: PathValue,
 }
 
@@ -121,13 +120,11 @@ impl AgentDef {
             name: spec.name,
             icon,
             global_only: spec.global_only,
-            reads: spec
-                .reads
-                .iter()
-                .map(|s| InstallTarget::from(s.as_str()))
-                .collect(),
             install: spec.install.map(|install| InstallDef {
-                project: install.project,
+                project: match install.project {
+                    PathTemplate::Template(s) => PathValue::Template(s),
+                    PathTemplate::Hook(hook) => PathValue::Hook(hook),
+                },
                 global: match install.global {
                     PathTemplate::Template(s) => PathValue::Template(s),
                     PathTemplate::Hook(hook) => PathValue::Hook(hook),
@@ -279,21 +276,6 @@ impl AgentRegistry {
             }
         }
         let agents: Vec<AgentDef> = slots.into_iter().filter_map(|(_, agent)| agent).collect();
-        for agent in &agents {
-            for target in &agent.reads {
-                if !target.is_universal()
-                    && !agents.iter().any(|other| {
-                        other.id.as_str() == target.as_str() && other.install.is_some()
-                    })
-                {
-                    diagnostics.push(PluginDiagnostic {
-                        origin: agent.origin.clone(),
-                        id: Some(agent.id.to_string()),
-                        message: format!("unknown install target: {target}"),
-                    });
-                }
-            }
-        }
         Self {
             all_agents: agents.clone(),
             agents,
@@ -387,6 +369,23 @@ impl AgentRegistry {
 }
 
 impl AgentDef {
+    pub fn project_root(&self, project: &Path, home: &Path) -> Option<PathBuf> {
+        match &self.install.as_ref()?.project {
+            PathValue::Template(relative) => Some(project.join(relative)),
+            PathValue::Hook(hook) => {
+                let mut host = JsHost::new(HostContext {
+                    home: home.into(),
+                    cwd: project.into(),
+                    repo_root: crate::effective_skills::find_repository_root(project),
+                    is_global: false,
+                });
+                let value = host.call(&self.source, hook, None).ok()?;
+                let root = PathBuf::from(value.as_str()?);
+                root.is_absolute().then_some(root)
+            }
+        }
+    }
+
     pub fn global_dir(&self, home: &Path) -> Option<PathBuf> {
         let install = self.install.as_ref()?;
         Some(match &install.global {
@@ -403,10 +402,6 @@ impl AgentDef {
             }
         })
     }
-
-    pub fn supports_target(&self, target: &InstallTarget) -> bool {
-        self.reads.contains(target)
-    }
 }
 
 impl InstallTarget {
@@ -418,7 +413,19 @@ impl InstallTarget {
             .agent(self.as_str())?
             .install
             .as_ref()
-            .map(|install| install.project.as_str())
+            .and_then(|install| match &install.project {
+                PathValue::Template(relative) => Some(relative.as_str()),
+                PathValue::Hook(_) => None,
+            })
+    }
+
+    pub fn project_root(&self, project: &Path, home: &Path) -> Option<PathBuf> {
+        if self.is_universal() {
+            return Some(project.join(UNIVERSAL_PROJECT));
+        }
+        AgentRegistry::global()
+            .agent(self.as_str())?
+            .project_root(project, home)
     }
 
     pub fn global_dir(&self, home: &Path) -> Option<PathBuf> {
@@ -502,7 +509,6 @@ mod tests {
         assert_eq!(agent.name, "Test");
         assert_eq!(agent.origin, PluginOrigin::Override(path.clone()));
         assert!(agent.global_only);
-        assert!(agent.reads.is_empty());
         assert!(agent.install.is_none());
         assert!(matches!(agent.icon, AgentIcon::Monogram));
         assert_eq!(agent.source.name, path.to_string_lossy());
@@ -549,34 +555,16 @@ mod tests {
     }
 
     #[test]
-    fn unknown_reads_are_retained_and_reported_after_loading_all_plugins() {
+    fn legacy_reads_do_not_control_discovery_or_require_other_agents() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
-            dir.path().join("a-first.js"),
-            plugin("a-first", "reads:['missing','z-last','universal']"),
-        )
-        .unwrap();
-        fs::write(
-            dir.path().join("z-last.js"),
-            plugin(
-                "z-last",
-                "install:{project:'.last/skills',global:'~/.last/skills'}",
-            ),
+            dir.path().join("custom.js"),
+            plugin("custom", "reads:['missing','universal']"),
         )
         .unwrap();
         let registry = AgentRegistry::load(BUILTIN_PLUGINS, &user_plugin_files(dir.path()).0);
-        let agent = registry.agent("a-first").unwrap();
-        assert_eq!(
-            agent
-                .reads
-                .iter()
-                .map(InstallTarget::as_str)
-                .collect::<Vec<_>>(),
-            ["missing", "z-last", "universal"]
-        );
-        assert_eq!(registry.diagnostics().len(), 1);
-        assert_eq!(registry.diagnostics()[0].id.as_deref(), Some("a-first"));
-        assert!(registry.diagnostics()[0].message.contains("missing"));
+        assert!(registry.diagnostics().is_empty());
+        assert!(registry.agent("custom").unwrap().skills.is_none());
     }
 
     #[test]

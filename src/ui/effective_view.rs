@@ -57,6 +57,7 @@ pub(super) fn plugin_groups(
 
 #[derive(Clone)]
 pub(super) struct EffectiveSkillRow {
+    pub key: String,
     pub name: String,
     pub description: String,
     pub locations: Vec<PathBuf>,
@@ -88,7 +89,6 @@ impl FilePaths {
 
 struct InstallationIdentity {
     installation: ProjectSkillInstallation,
-    file: PathBuf,
     key: PathBuf,
 }
 
@@ -96,10 +96,11 @@ struct InstallationIdentity {
 /// they never resolve symlinks or scan the full project's installations.
 #[derive(Default)]
 pub(super) struct ProjectSnapshot {
+    pub universal_agents: Vec<AgentId>,
     skills: Arc<[ProjectSkill]>,
     installations: HashMap<PathBuf, HashMap<String, Arc<[ProjectSkillInstallation]>>>,
-    identities: HashMap<String, Vec<InstallationIdentity>>,
-    library_files: HashMap<String, Vec<(PathBuf, String)>>,
+    identities: HashMap<PathBuf, Vec<InstallationIdentity>>,
+    library_files: HashMap<PathBuf, Vec<String>>,
 }
 
 impl std::ops::Deref for ProjectSnapshot {
@@ -112,7 +113,7 @@ impl std::ops::Deref for ProjectSnapshot {
 impl ProjectSnapshot {
     pub fn new(skills: Vec<ProjectSkill>, library: &[SkillSummary]) -> Self {
         let mut paths = FilePaths::default();
-        let mut identities = HashMap::<String, Vec<InstallationIdentity>>::new();
+        let mut identities = HashMap::<PathBuf, Vec<InstallationIdentity>>::new();
         let mut directories = HashMap::<(String, PathBuf), Vec<ProjectSkillInstallation>>::new();
         for skill in &skills {
             for installation in &skill.installations {
@@ -121,10 +122,9 @@ impl ProjectSnapshot {
                     .or_default()
                     .push(installation.clone());
                 identities
-                    .entry(skill.name.clone())
+                    .entry(paths.canonical(&installation.path.join("SKILL.md")))
                     .or_default()
                     .push(InstallationIdentity {
-                        file: paths.canonical(&installation.path.join("SKILL.md")),
                         key: paths.installation_key(&installation.path),
                         installation: installation.clone(),
                     });
@@ -132,7 +132,7 @@ impl ProjectSnapshot {
         }
         let mut installations =
             HashMap::<PathBuf, HashMap<String, Arc<[ProjectSkillInstallation]>>>::new();
-        let mut library_files = HashMap::<String, Vec<(PathBuf, String)>>::new();
+        let mut library_files = HashMap::<PathBuf, Vec<String>>::new();
         for skill in library {
             if let Some(entries) =
                 directories.get(&(skill.record.name.clone(), paths.canonical(&skill.path)))
@@ -143,14 +143,12 @@ impl ProjectSnapshot {
                     .insert(skill.record.name.clone(), entries.clone().into());
             }
             library_files
-                .entry(skill.record.name.clone())
+                .entry(paths.canonical(&skill.path.join("SKILL.md")))
                 .or_default()
-                .push((
-                    paths.canonical(&skill.path.join("SKILL.md")),
-                    super::skill_storage_name(skill).to_string(),
-                ));
+                .push(super::skill_storage_name(skill).to_string());
         }
         Self {
+            universal_agents: Vec::new(),
             skills: skills.into(),
             installations,
             identities,
@@ -178,14 +176,14 @@ pub(super) struct ProjectView {
 pub(super) struct ProjectRenderSnapshot {
     pub estimates: Arc<[AgentContextEstimate]>,
     views: BTreeMap<Option<AgentId>, ProjectView>,
+    library_agents: HashMap<String, Vec<AgentId>>,
 }
 
 impl ProjectRenderSnapshot {
     pub fn new(estimates: Vec<AgentContextEstimate>, project: &ProjectSnapshot) -> Self {
         let mut paths = FilePaths::default();
         let mut views = BTreeMap::new();
-        // Filtering must precede grouping: an unselected Agent may be the
-        // only alias bridging two otherwise distinct Skills.
+        // Each filtered view has its own names and visibility.
         for agent in std::iter::once(None).chain(
             estimates
                 .iter()
@@ -203,10 +201,39 @@ impl ProjectRenderSnapshot {
                 },
             );
         }
+        let mut file_agents = HashMap::<PathBuf, Vec<AgentId>>::new();
+        for estimate in &estimates {
+            for skill in &estimate.skills {
+                if matches!(skill.source, SkillSource::Builtin) {
+                    continue;
+                }
+                let agents = file_agents.entry(paths.canonical(&skill.path)).or_default();
+                if !agents.contains(&estimate.agent) {
+                    agents.push(estimate.agent.clone());
+                }
+            }
+        }
+        let mut library_agents = HashMap::new();
+        for (file, keys) in &project.library_files {
+            for key in keys {
+                library_agents.insert(
+                    key.clone(),
+                    file_agents.get(file).cloned().unwrap_or_default(),
+                );
+            }
+        }
         Self {
             estimates: estimates.into(),
             views,
+            library_agents,
         }
+    }
+
+    pub fn agents_for_skill(&self, skill: &SkillSummary) -> &[AgentId] {
+        self.library_agents
+            .get(super::skill_storage_name(skill))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn view(&self, agent: Option<AgentId>) -> ProjectView {
@@ -242,13 +269,19 @@ fn skill_rows(
         let Some((_, first)) = group.entries().first() else {
             continue;
         };
+        let key = if matches!(first.source, SkillSource::Filesystem) {
+            format!("file:{}", paths.canonical(&first.path).display())
+        } else {
+            format!("builtin:{}:{}", group.entries()[0].0, first.id)
+        };
         let mut row = EffectiveSkillRow {
+            key,
             name: first.name.clone(),
             description: first.description.clone(),
             locations: Vec::new(),
             built_in: false,
             agents: Vec::new(),
-            manual_only: false,
+            manual_only: true,
             direct_installations: Vec::new(),
             library_keys: Vec::new(),
         };
@@ -266,26 +299,20 @@ fn skill_rows(
             if !row.agents.contains(agent) {
                 row.agents.push(agent.clone());
             }
-            row.manual_only |= skill.visibility == SkillVisibility::ManualOnly;
-            if let Some(installations) = project.identities.get(&skill.name) {
-                let file = paths.canonical(&skill.path);
+            row.manual_only &= skill.visibility == SkillVisibility::ManualOnly;
+            let file = paths.canonical(&skill.path);
+            if let Some(installations) = project.identities.get(&file) {
                 for identity in installations {
-                    if identity.file == file && seen.insert(&identity.key) {
+                    if seen.insert(&identity.key) {
                         row.direct_installations.push(identity.installation.clone());
                     }
                 }
-            }
-        }
-        if let Some(library_files) = project.library_files.get(&row.name) {
-            for (file, key) in library_files {
-                if project
-                    .identities
-                    .get(&row.name)
-                    .into_iter()
-                    .flatten()
-                    .any(|identity| &identity.file == file && seen.contains(&identity.key))
-                {
-                    row.library_keys.push(key.clone());
+                if let Some(keys) = project.library_files.get(&file) {
+                    for key in keys {
+                        if !row.library_keys.contains(key) {
+                            row.library_keys.push(key.clone());
+                        }
+                    }
                 }
             }
         }
@@ -300,6 +327,11 @@ fn skill_rows(
         });
         rows.push(row);
     }
+    rows.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.key.cmp(&right.key))
+    });
     rows
 }
 
@@ -371,7 +403,7 @@ mod tests {
             ),
         ];
         let snapshot = ProjectRenderSnapshot::new(estimates, &ProjectSnapshot::default());
-        assert_eq!(snapshot.view(None).rows.len(), 1);
+        assert_eq!(snapshot.view(None).rows.len(), 2);
         assert_eq!(snapshot.view(Some(AgentId::from("codex"))).rows.len(), 2);
         assert_eq!(
             snapshot.view(Some(AgentId::from("claude-code"))).rows.len(),
@@ -382,6 +414,26 @@ mod tests {
             &snapshot.view(None).rows,
             &snapshot.view(None).rows
         ));
+    }
+
+    #[test]
+    fn same_file_has_one_row_and_is_manual_only_when_all_readers_are_manual() {
+        let file = PathBuf::from("shared/SKILL.md");
+        let mut manual = skill("one-name", file.clone());
+        manual.visibility = SkillVisibility::ManualOnly;
+        let automatic = skill("another-name", file);
+        let snapshot = ProjectRenderSnapshot::new(
+            vec![
+                estimate(AgentId::from("codex"), vec![manual]),
+                estimate(AgentId::from("droid"), vec![automatic]),
+            ],
+            &ProjectSnapshot::default(),
+        );
+        let all = snapshot.view(None);
+        assert_eq!(all.rows.len(), 1);
+        assert_eq!(all.rows[0].agents.len(), 2);
+        assert!(!all.rows[0].manual_only);
+        assert!(snapshot.view(Some(AgentId::from("codex"))).rows[0].manual_only);
     }
 
     #[test]
@@ -422,18 +474,31 @@ mod tests {
             ProjectSnapshot::new(crate::project::list(&root, temp.path()).unwrap(), &library);
         assert_eq!(project.installations_for(&library[0]).len(), 2);
         let snapshot = ProjectRenderSnapshot::new(
-            vec![estimate(
-                AgentId::from("codex"),
-                vec![
-                    skill("fixture", source.join("SKILL.md")),
-                    skill("fixture", other.join("SKILL.md")),
-                ],
-            )],
+            vec![
+                estimate(
+                    AgentId::from("codex"),
+                    vec![skill("agent-alias", source.join("SKILL.md"))],
+                ),
+                estimate(
+                    AgentId::from("droid"),
+                    vec![skill("fixture", other.join("SKILL.md"))],
+                ),
+            ],
             &project,
         );
         let rows = snapshot.view(None).rows;
-        assert_eq!(rows[0].direct_installations.len(), 3);
-        assert_eq!(rows[0].library_keys, ["fixture-key"]);
+        assert_eq!(rows.len(), 2);
+        let managed = rows
+            .iter()
+            .find(|row| !row.library_keys.is_empty())
+            .unwrap();
+        assert_eq!(managed.direct_installations.len(), 2);
+        assert_eq!(managed.library_keys, ["fixture-key"]);
+        assert_eq!(
+            snapshot.agents_for_skill(&library[0]),
+            [AgentId::from("codex")]
+        );
+        assert_ne!(rows[0].key, rows[1].key);
         // Rendering remains a pure cache read even when a source changes.
         // A new scan, rather than a hover, publishes the changed file state.
         std::fs::remove_file(source.join("SKILL.md")).unwrap();

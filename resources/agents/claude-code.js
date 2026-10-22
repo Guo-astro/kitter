@@ -5,7 +5,6 @@ export default defineAgent({
   id: "claude-code",
   name: "Claude Code",
   icon: "builtin:claude",
-  reads: ["claude-code"],
   skills: standard.skills({
     roots(ctx) {
       const roots = [];

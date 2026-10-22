@@ -13,7 +13,6 @@ export default defineAgent({
   id: "opencode",
   name: "OpenCode",
   icon: "builtin:opencode",
-  reads: ["opencode", "claude-code", "universal"],
   skills: standard.skills({
     roots(ctx) {
       const roots = [];

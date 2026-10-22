@@ -13,7 +13,6 @@ export default defineAgent({
   apiVersion: 1,
   id: "maki",
   name: "Maki",
-  reads: ["maki", "universal"],
   install: {
     project: ".maki/skills",
     global: "~/.maki/skills",
@@ -32,9 +31,11 @@ export default defineAgent({
 | `name` | Display name. |
 | `icon` | Optional. Inline SVG string, `{ light, dark }` SVG strings, or `builtin:<name>`. Without it Kitter shows the first letter of the name. |
 | `globalOnly` | Optional. `true` when the Agent only reads user-level skills. |
-| `reads` | Install targets the Agent reads. Include `universal` if it reads `.agents/skills`. |
-| `install` | Optional. Makes the Agent an install target: `project` is a directory relative to the project, `global` is a user-level path. |
+| `install` | Optional. Makes the Agent an install target: `project` is a relative directory or a hook returning an absolute path; `global` is a user-level template or hook. Choose one recommended native directory per scope, or `.agents/skills` when appropriate. Hooks can return `null` to disable installation for the current destination. |
 | `skills` | Optional. Lets `kitter project` show which skills the Agent sees and their context cost. |
+
+Declare all supported read directories in `skills.roots`, separately for project and user scope. Universal install badges use these roots to check `<project>/.agents/skills` and `~/.agents/skills` independently. `install` selects the preferred write directory and does not declare compatibility. Its directory must be one the Agent reads.
+
 
 In `standard.skills`, list project directories (relative, searched from the working directory up to the repository root) and user directories in the order the Agent reads them. Paths may use `~` and environment variables such as `"${env:MAKI_HOME:-~/.maki}/skills"`.
 

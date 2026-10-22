@@ -54,8 +54,9 @@ pub struct AgentSpec {
     pub icon: Option<IconSpec>,
     #[serde(default)]
     pub global_only: bool,
-    #[serde(default)]
-    pub reads: Vec<String>,
+    // API v1 plugins may still include this obsolete field; it has no runtime effect.
+    #[serde(default, rename = "reads", skip_serializing)]
+    _legacy_reads: Option<serde_json::Value>,
     pub install: Option<InstallSpec>,
     pub skills: Option<SkillsSpec>,
 }
@@ -65,7 +66,8 @@ impl AgentSpec {
             return Err("invalid or reserved agent id".into());
         }
         if let Some(install) = &self.install
-            && std::path::Path::new(&install.project)
+            && let PathTemplate::Template(project) = &install.project
+            && std::path::Path::new(project)
                 .components()
                 .any(|c| matches!(c, Component::Prefix(_) | Component::RootDir))
         {
@@ -97,7 +99,7 @@ impl AgentSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InstallSpec {
-    pub project: String,
+    pub project: PathTemplate,
     pub global: PathTemplate,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]

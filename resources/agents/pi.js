@@ -5,7 +5,6 @@ export default defineAgent({
   id: "pi",
   name: "Pi",
   icon: "builtin:pi",
-  reads: ["pi", "universal"],
   install: {
     project: ".pi/skills",
     global: "${env:PI_CODING_AGENT_DIR:-~/.pi/agent}/skills",

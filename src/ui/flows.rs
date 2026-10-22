@@ -76,49 +76,95 @@ impl KitterApp {
         self.open_dialog(DialogKind::Delete, cx);
     }
 
-    pub(super) fn check_all_updates(&mut self, cx: &mut Context<Self>) {
-        if self.model.update_check.is_some() {
+    pub(super) fn start_background_update_check(&mut self, cx: &mut Context<Self>) {
+        if self.model.update_check.is_some() || self.model.updating_batch.is_some() {
             return;
         }
-        let total = self
-            .model
-            .skills
-            .iter()
-            .filter(|skill| {
-                !skill.record.origin.is_builtin()
-                    && !self
-                        .model
-                        .library
-                        .is_linked_source(skill_storage_name(skill))
-            })
-            .count();
-        self.model.update_check = Some(source::UpdateCheckProgress {
-            scanned: 0,
-            total,
-            current: None,
-        });
-        self.show_sticky_notice(self.update_check_notice(), cx);
+        self.model.update_check = Some(source::UpdateCheckProgress::default());
         let data_dir = self.model.library.data_dir().to_path_buf();
-        let progress = Arc::new(Mutex::new(source::UpdateCheckProgress {
-            scanned: 0,
-            total,
-            current: None,
-        }));
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut library = SkillLibrary::open_in(data_dir)?;
+                    source::check_updates_if_due(&mut library)
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.model.update_check = None;
+                if let Err(error) = result {
+                    // Startup checks are silent; keep diagnostics for debugging.
+                    let _ = this.error_message(error);
+                }
+                if let Ok(library) = SkillLibrary::open_in(this.model.library.data_dir()) {
+                    this.model.library = library;
+                }
+                this.refresh(cx);
+                if let Some(request) = this.model.pending_updates.take() {
+                    this.request_skill_updates(request, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn request_skill_updates(
+        &mut self,
+        request: SkillUpdateRequest,
+        cx: &mut Context<Self>,
+    ) {
+        if self.model.updating_batch.is_some()
+            || self.model.updating_skill.is_some()
+            || self.model.pending_updates.is_some()
+        {
+            return;
+        }
+        if self.model.update_check.is_some() {
+            self.model.pending_updates = Some(request);
+            self.show_sticky_notice(t!("updates.checking_notice").to_string(), cx);
+            return;
+        }
+        let names = match request {
+            SkillUpdateRequest::All => self
+                .model
+                .skills
+                .iter()
+                .map(|skill| skill_storage_name(skill).to_string())
+                .collect::<Vec<_>>(),
+            SkillUpdateRequest::Selection(names) => names,
+        };
+        let names = names
+            .into_iter()
+            .filter(|name| {
+                self.model.skills.iter().any(|skill| {
+                    skill_storage_name(skill) == name
+                        && source::can_update(&self.model.library, &skill.record)
+                })
+            })
+            .collect::<Vec<_>>();
+        if names.is_empty() {
+            self.show_notice(t!("updates.none").to_string(), cx);
+            return;
+        }
+        let progress = source::UpdateProgress {
+            total: names.len(),
+            ..Default::default()
+        };
+        self.model.updating_batch = Some(progress.clone());
+        self.model.updating_skill = names.first().cloned();
+        self.show_sticky_notice(self.skill_update_notice(), cx);
+        let data_dir = self.model.library.data_dir().to_path_buf();
+        let progress = Arc::new(Mutex::new(progress));
         let worker_progress = progress.clone();
         let done = Arc::new(AtomicBool::new(false));
         let worker_done = done.clone();
-        cx.notify();
         cx.spawn(async move |this, cx| {
             let worker = cx.background_executor().spawn(async move {
-                let result = (|| {
-                    let mut library = SkillLibrary::open_in(data_dir)?;
-                    let result = source::check_updates_with_progress(&mut library, |snapshot| {
-                        *worker_progress
-                            .lock()
-                            .unwrap_or_else(|error| error.into_inner()) = snapshot;
-                    });
-                    Ok::<_, anyhow::Error>((library, result))
-                })();
+                let result = source::update_skills_with_progress(&data_dir, &names, |snapshot| {
+                    *worker_progress
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner()) = snapshot;
+                });
                 worker_done.store(true, Ordering::Release);
                 result
             });
@@ -128,9 +174,10 @@ impl KitterApp {
                     .unwrap_or_else(|error| error.into_inner())
                     .clone();
                 let _ = this.update(cx, |this, cx| {
-                    if this.model.update_check.is_some() {
-                        this.set_update_check_progress(snapshot, cx);
-                    }
+                    this.model.updating_skill = snapshot.current.clone();
+                    this.model.updating_batch = Some(snapshot);
+                    this.shell.notice = Some(this.skill_update_notice());
+                    cx.notify();
                 });
                 if done.load(Ordering::Acquire) {
                     break;
@@ -141,24 +188,24 @@ impl KitterApp {
             }
             let result = worker.await;
             let _ = this.update(cx, |this, cx| {
-                this.model.update_check = None;
+                this.model.updating_batch = None;
+                this.model.updating_skill = None;
+                if let Ok(library) = SkillLibrary::open_in(this.model.library.data_dir()) {
+                    this.model.library = library;
+                }
                 let message = match result {
-                    Ok((library, Ok(0))) => {
-                        this.model.library = library;
-                        t!("common.updates_current").to_string()
-                    }
-                    Ok((library, Ok(count))) => {
-                        this.model.library = library;
-                        crate::i18n::tn(
-                            "updates.available_count",
-                            count,
-                            &[("count", (count).to_string())],
-                        )
-                    }
-                    Ok((library, Err(error))) => {
-                        this.model.library = library;
-                        this.error_message(error)
-                    }
+                    Ok(report) if !report.failures.is_empty() => t!(
+                        "updates.batch_partial",
+                        updated = report.updated,
+                        failed = report.failures.len()
+                    )
+                    .to_string(),
+                    Ok(report) if report.updated == 0 => t!("updates.none").to_string(),
+                    Ok(report) => crate::i18n::tn(
+                        "updates.updated_count",
+                        report.updated,
+                        &[("count", report.updated.to_string())],
+                    ),
                     Err(error) => this.error_message(error),
                 };
                 this.show_notice(message, cx);
@@ -169,35 +216,7 @@ impl KitterApp {
     }
 
     pub(super) fn update_skill(&mut self, storage_name: String, cx: &mut Context<Self>) {
-        if self.model.updating_skill.is_some() {
-            return;
-        }
-        self.model.updating_skill = Some(storage_name.clone());
-        let data_dir = self.model.library.data_dir().to_path_buf();
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let mut library = SkillLibrary::open_in(data_dir)?;
-                    source::update_by_storage(&mut library, &storage_name)?;
-                    Ok::<_, anyhow::Error>(library)
-                })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                this.model.updating_skill = None;
-                let message = match result {
-                    Ok(library) => {
-                        this.model.library = library;
-                        t!("updates.skill_updated").to_string()
-                    }
-                    Err(error) => this.error_message(error),
-                };
-                this.show_notice(message, cx);
-                this.refresh(cx);
-            });
-        })
-        .detach();
+        self.request_skill_updates(SkillUpdateRequest::Selection(vec![storage_name]), cx);
     }
 
     pub(super) fn import_scanned_skills(&mut self, cx: &mut Context<Self>) {

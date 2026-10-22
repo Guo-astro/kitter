@@ -86,7 +86,13 @@ fn migrated_agents_keep_validation_and_visibility_rules() {
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
     let repo = temp.path().join("repo");
-    for root in [".agents/skills", ".hermes/skills", ".openclaw/skills"] {
+    for root in [
+        ".agents/skills",
+        ".hermes/skills",
+        ".openclaw/skills",
+        ".gemini/config/skills",
+        ".trae-cn/skills",
+    ] {
         skill(
             &home.join(root),
             "manual",
@@ -108,6 +114,7 @@ fn migrated_agents_keep_validation_and_visibility_rules() {
         "amp",
         "hermes",
         "openclaw",
+        "trae",
     ] {
         let estimate = inspect(agent, &context);
         let unvalidated = matches!(agent, "hermes" | "openclaw");
@@ -123,7 +130,6 @@ fn migrated_agents_keep_validation_and_visibility_rules() {
             "{agent}"
         );
     }
-    assert!(adapters::inspect_agent(&AgentId::from("trae"), &context).is_none());
 }
 
 #[test]

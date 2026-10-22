@@ -5,7 +5,7 @@ fn selected_project_skills(
     selected_names: &HashSet<String>,
 ) -> Vec<ProjectSkill> {
     rows.iter()
-        .filter(|row| !row.direct_installations.is_empty() && selected_names.contains(&row.name))
+        .filter(|row| !row.direct_installations.is_empty() && selected_names.contains(&row.key))
         .map(|row| ProjectSkill {
             name: row.name.clone(),
             installations: row.direct_installations.clone(),
@@ -154,7 +154,7 @@ impl KitterApp {
         };
         let selectable_names = visible_rows
             .filter(|row| !row.direct_installations.is_empty())
-            .map(|row| row.name.clone())
+            .map(|row| row.key.clone())
             .collect::<Vec<_>>();
         let all_selected = !selectable_names.is_empty()
             && selectable_names
@@ -290,7 +290,7 @@ impl KitterApp {
         if effective.built_in {
             location_labels.push(t!("projects.built_in").to_string());
         }
-        let name = effective.name.clone();
+        let name = effective.key.clone();
         let description = effective.description.clone();
         let installed_for_delete = ProjectSkill {
             name: effective.name.clone(),
@@ -299,9 +299,9 @@ impl KitterApp {
         let can_delete = !installed_for_delete.installations.is_empty();
         let batch_mode = self.projects_view.batch_project.as_deref() == Some(open_project);
         let batch_checked = self.projects_view.batch_selected.contains(&name);
-        let row_selector = format!("project-skill-{name}");
+        let row_selector = format!("project-skill-{}", effective.name);
         let mut row = div()
-            .id(ElementId::Name(row_selector.clone().into()))
+            .id(ElementId::Name(format!("project-skill-{name}").into()))
             .debug_selector(move || row_selector)
             .w_full()
             .h(px(ROW_2 + 12.))
@@ -452,10 +452,10 @@ impl KitterApp {
             .trim()
             .to_lowercase();
         let global_root = dirs::home_dir();
-        let global_skills = global_root
+        let global_skill_count = global_root
             .as_ref()
-            .and_then(|path| self.project_snapshot(path, cx));
-        let global_skill_count = global_skills.as_ref().map(|skills| skills.len());
+            .and_then(|path| self.context_estimate_snapshot(path, cx))
+            .map(|snapshot| snapshot.view(None).rows.len());
         let projects = self
             .model
             .library
@@ -678,14 +678,7 @@ impl KitterApp {
         };
         let detail = if let Some(open_project) = selected_root {
             let is_global = self.projects_view.global_project_view;
-            let project_skills = if is_global {
-                global_skills
-            } else {
-                self.project_snapshot(open_project, cx)
-            };
-            let snapshot = project_skills
-                .as_ref()
-                .and_then(|_| self.context_estimate_snapshot(open_project, cx));
+            let snapshot = self.context_estimate_snapshot(open_project, cx);
             let loading = snapshot.is_none();
             let snapshot = snapshot.unwrap_or_default();
             let view = snapshot.view(self.projects_view.selected_project_agent.clone());
@@ -959,6 +952,7 @@ mod tests {
 
     fn row(name: &str, paths: &[&str]) -> EffectiveSkillRow {
         EffectiveSkillRow {
+            key: name.into(),
             name: name.into(),
             description: String::new(),
             locations: Vec::new(),
@@ -975,6 +969,21 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn selecting_one_same_named_skill_does_not_select_the_other_source() {
+        let mut first = row("same-name", &["/first"]);
+        first.key = "file:first".into();
+        let mut second = row("same-name", &["/second"]);
+        second.key = "file:second".into();
+        let selected = std::collections::HashSet::from([first.key.clone()]);
+        let result = selected_project_skills(&[first, second], &selected);
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].installations[0].path,
+            std::path::PathBuf::from("/first")
+        );
     }
 
     #[test]

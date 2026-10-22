@@ -33,6 +33,13 @@ pub(super) struct AppModel {
     pub skills: Vec<SkillSummary>,
     pub update_check: Option<source::UpdateCheckProgress>,
     pub updating_skill: Option<String>,
+    pub updating_batch: Option<source::UpdateProgress>,
+    pub pending_updates: Option<SkillUpdateRequest>,
+}
+
+pub(super) enum SkillUpdateRequest {
+    All,
+    Selection(Vec<String>),
 }
 
 pub(super) struct ShellState {
@@ -42,6 +49,7 @@ pub(super) struct ShellState {
     pub shell_layout: Entity<ResizableState>,
     pub content_layout: Entity<ResizableState>,
     pub spinner_accent: Entity<SpinnerView>,
+    pub spinner_update: Entity<SpinnerView>,
     pub spinner_on_accent: Entity<SpinnerView>,
     pub notice: Option<String>,
     pub notice_generation: u64,

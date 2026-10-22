@@ -86,28 +86,15 @@ impl KitterApp {
         .detach();
     }
 
-    pub(super) fn set_update_check_progress(
-        &mut self,
-        progress: source::UpdateCheckProgress,
-        cx: &mut Context<Self>,
-    ) {
-        if self.model.update_check.is_none() {
-            return;
-        }
-        self.model.update_check = Some(progress);
-        self.shell.notice = Some(self.update_check_notice());
-        cx.notify();
-    }
-
-    pub(super) fn update_check_notice(&self) -> String {
-        match &self.model.update_check {
-            Some(progress) if progress.total > 0 => t!(
-                "updates.scan_progress",
-                scanned = progress.scanned,
+    pub(super) fn skill_update_notice(&self) -> String {
+        match &self.model.updating_batch {
+            Some(progress) => t!(
+                "updates.batch_progress",
+                completed = progress.completed,
                 total = progress.total
             )
             .to_string(),
-            _ => t!("updates.checking_notice").to_string(),
+            None => t!("updates.updating").to_string(),
         }
     }
 }

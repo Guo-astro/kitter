@@ -5,16 +5,23 @@ export default defineAgent({
   id: "amp",
   name: "Amp",
   icon: "builtin:amp",
-  reads: ["claude-code", "universal"],
+  install: { project: ".agents/skills", global: "~/.config/agents/skills" },
   skills: standard.skills({
     roots: ctx => {
+      const settings = Object.assign({}, ctx.readJsonc(`${ctx.home}/.config/amp/settings.json`),
+        ...ctx.walkUp().reverse().map(dir => ctx.readJsonc(`${dir}/.amp/settings.json`)));
+      const claude = settings["amp.skills.disableClaudeCodeSkills"] !== true;
       const roots = standard.roots(ctx, {
-        user: ["~/.config/agents/skills", "~/.agents/skills", "~/.config/amp/skills"],
+        user: ["~/.config/agents/skills",
+          ...(settings["amp.skills.disableGlobalAgentsSkills"] !== true ? ["~/.agents/skills"] : []),
+          "~/.config/amp/skills"],
       });
       roots.push(...standard.roots(ctx, {
-        project: [".agents/skills", ".claude/skills"],
-        user: ["~/.claude/skills"],
+        project: [".agents/skills", ...(claude ? [".claude/skills"] : [])],
+        user: claude ? ["~/.claude/skills"] : [],
       }));
+      if (claude) roots.push({ path: ctx.path("~/.claude/plugins/cache"), scope: "user",
+        plugin: { id: "claude-cache", displayName: "Claude" } });
       const paths = ctx.envPaths("AMP_SKILL_PATHS");
       const files = [
         `${ctx.home}/.config/amp/settings.json`,
@@ -34,6 +41,7 @@ export default defineAgent({
       roots.push(...paths.map(path => ({ path, scope: "user", layout: "rootMarkdown" })));
       return roots;
     },
+    scan: { recursive: { maxDepth: 5 } },
     visibility: "automatic",
   }),
 });

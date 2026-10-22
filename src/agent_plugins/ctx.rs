@@ -20,6 +20,20 @@ pub struct HostContext {
 
 pub type NativeFn = fn(&HostContext, serde_json::Value) -> serde_json::Value;
 const NATIVES: &[(&str, NativeFn)] = &[
+    ("grokPluginId", |_, input| {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(input["path"].as_str().unwrap_or_default().as_bytes());
+        let hash = digest[..4]
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        serde_json::json!(format!(
+            "{}/{}/{}",
+            input["scope"].as_str().unwrap_or("user"),
+            hash,
+            input["name"].as_str().unwrap_or_default()
+        ))
+    }),
     ("openclawPluginRoots", |ctx, input| {
         plugin_roots(crate::effective_skills::openclaw_plugin_roots(
             &input["config"],
@@ -211,6 +225,12 @@ impl HostContext {
                     .collect();
                 names.sort();
                 names
+            })?,
+        )?;
+        obj.set(
+            "isSymlink",
+            Function::new(ctx.clone(), |p: String| {
+                fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_symlink())
             })?,
         )?;
         obj.set(

@@ -5,7 +5,6 @@ export default defineAgent({
   id: "omp",
   name: "omp",
   icon: "builtin:omp",
-  reads: ["omp", "claude-code", "codex", "opencode", "antigravity", "copilot", "universal"],
   install: {
     project: ".omp/skills",
     global: (ctx) => ctx.path("skills", ctx.native.ompAgentDir()),
@@ -41,6 +40,7 @@ export default defineAgent({
           || settings.skills?.[userToggle] === true;
         if (user !== null && optedIn && settings.skills?.[userToggle] !== false) add(user, "user");
       }
+      roots.push(...installedPlugins(ctx));
       return roots;
     },
     scan: "providerChildren",
@@ -74,7 +74,7 @@ export default defineAgent({
         if (contents.has(e.name)) {
           if (contents.get(e.name) === content) continue;
           const segments = e.root.path.replace(/\\/g, "/").split("/").filter(Boolean);
-          const namespace = (segments.at(-2) ?? "omp").replace(/^\.+/, "");
+          const namespace = e.root.plugin?.displayName ?? (segments.at(-2) ?? "omp").replace(/^\.+/, "");
           const base = `${namespace}/${e.name}`;
           let name = base, suffix = 2;
           while (names.has(name)) name = `${base}~${suffix++}`;
@@ -93,6 +93,28 @@ export default defineAgent({
     catalog: { render: entries => entries.map(e => `- ${e.name}: ${e.description}`).join("\n") },
   }),
 });
+
+function installedPlugins(ctx) {
+  const anchor = ctx.walkUp().find(dir => ctx.isDir(ctx.path(".omp", dir)) || ctx.exists(ctx.path(".git", dir)));
+  const overrides = anchor ? ctx.readJson(ctx.path(".omp/plugin-overrides.json", anchor)) : null;
+  const bases = [{ path: ctx.path("~/.omp/plugins"), scope: "user" }];
+  if (anchor) bases.push({ path: ctx.path(".omp/plugins", anchor), scope: "repository" });
+  const plugins = new Map();
+  for (const base of bases) {
+    const manifest = ctx.readJson(ctx.path("package.json", base.path));
+    const states = ctx.readJson(ctx.path("omp-plugins.lock.json", base.path))?.plugins ?? {};
+    const deps = Object.keys(manifest?.dependencies ?? {});
+    for (const name of new Set([...deps, ...Object.keys(states)])) {
+      const dir = ctx.path(`node_modules/${name}`, base.path);
+      if (manifest && !deps.includes(name) && !ctx.isSymlink(dir)) continue;
+      const pkg = ctx.readJson(ctx.path("package.json", dir));
+      if (!(pkg?.omp || pkg?.pi) || (states[name] && !states[name].enabled) || overrides?.disabled?.includes(name)) continue;
+      plugins.set(name, { path: ctx.path("skills", dir), scope: base.scope,
+        plugin: { id: ctx.canonical(dir), displayName: name.split("/").at(-1) } });
+    }
+  }
+  return [...plugins.values()];
+}
 
 function readSettings(ctx) {
   const merged = {};

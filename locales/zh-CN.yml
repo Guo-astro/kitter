@@ -157,6 +157,7 @@ errors:
   update_check_timeout: "检查更新超时，请重试。"
   install_name_conflict: "请只选择一个来源的“%{name}”"
   install_target_changed: "%{path} 的内容已变化，请检查后重试。"
+  install_target_unavailable: "无法在此项目中为 %{agent} 安装技能"
   install_backup_kept: "安装已完成，但旧文件未能清理，已保留在 %{path}：%{error}"
   agent_invalid: "未知 Agent：%{agent}。可选值：%{values}"
   target_invalid: "未知安装目标：%{target}。可选值：%{values}"
@@ -276,7 +277,7 @@ errors:
   unmanaged_confirmation: "所选位置包含外部链接或直接保存的文件；确认后使用 --include-unmanaged：%{paths}"
   unmanaged_delete_protected: "不会删除非 Kitter 管理的目录：%{path}"
   update_check_detail: "部分技能检查失败：%{failures}"
-  update_check_failed: "部分技能无法检查更新，请稍后重试"
+  update_check_failed: "无法检查更新：%{skills}"
   update_selection_required: "请指定至少一个 skill，或使用 --all"
   update_source_missing: "这个技能没有可用的更新来源"
   write_failed: "写入失败：%{path}"
@@ -467,6 +468,13 @@ tags:
     one: "删除 #%{name}？%{count} 个技能将失去这个标签。"
     other: "删除 #%{name}？%{count} 个技能将失去这个标签。"
 updates:
+  update_all: "全部更新"
+  none: "没有需要更新的技能"
+  batch_progress: "正在更新 %{completed}/%{total}"
+  batch_partial: "已更新 %{updated} 个，%{failed} 个失败"
+  updated_count:
+    one: "已更新 %{count} 个技能"
+    other: "已更新 %{count} 个技能"
   available: "有可用更新"
   available_count:
     one: "发现 %{count} 个可更新的技能"
@@ -474,6 +482,8 @@ updates:
   checking_notice: "正在检查更新…"
   scan_progress: "正在检查更新 %{scanned}/%{total}"
   skill_updated: "技能已更新"
+  updating: "正在更新…"
+  more_skills: "%{skills}，另 %{count} 个技能"
 
 agent_manage:
   invalid_source: "请使用 GitHub 仓库链接、.js 文件或文件夹。"

@@ -434,17 +434,14 @@ struct ContextEstimateCache {
 }
 
 struct SpinnerView {
+    icon: &'static str,
     color: Rgba,
     size: f32,
 }
 
 impl Render for SpinnerView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        motion::spin(KitterApp::icon(
-            "icons/rotate-cw.svg",
-            self.size,
-            self.color,
-        ))
+        motion::spin(KitterApp::icon(self.icon, self.size, self.color))
     }
 }
 
@@ -464,7 +461,9 @@ pub struct KitterApp {
 
 impl KitterApp {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::new_in(crate::config::app_data_dir(), window, cx)
+        let mut app = Self::new_in(crate::config::app_data_dir(), window, cx);
+        app.start_background_update_check(cx);
+        app
     }
 
     fn new_in(data_dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -567,12 +566,19 @@ impl KitterApp {
             _ => Palette::light(),
         };
         let spinner_accent = cx.new(|_| SpinnerView {
+            icon: "icons/rotate-cw.svg",
             color: initial_palette.accent,
             size: 14.,
         });
         let spinner_on_accent = cx.new(|_| SpinnerView {
+            icon: "icons/rotate-cw.svg",
             color: initial_palette.on_primary,
             size: 12.,
+        });
+        let spinner_update = cx.new(|_| SpinnerView {
+            icon: "icons/loader-circle.svg",
+            color: initial_palette.secondary,
+            size: ICON_SM,
         });
         let app = cx.entity();
         let weak_app = app.downgrade();
@@ -751,6 +757,8 @@ impl KitterApp {
                 skills,
                 update_check: None,
                 updating_skill: None,
+                updating_batch: None,
+                pending_updates: None,
             },
             shell: ShellState {
                 page: Page::Skills,
@@ -759,6 +767,7 @@ impl KitterApp {
                 shell_layout,
                 content_layout,
                 spinner_accent,
+                spinner_update,
                 spinner_on_accent,
                 notice: None,
                 notice_generation: 0,
@@ -1040,6 +1049,10 @@ impl KitterApp {
             spinner.color = p.accent;
             cx.notify();
         });
+        self.shell.spinner_update.update(cx, |spinner, cx| {
+            spinner.color = p.secondary;
+            cx.notify();
+        });
         self.shell.spinner_on_accent.update(cx, |spinner, cx| {
             spinner.color = p.on_primary;
             cx.notify();
@@ -1094,11 +1107,15 @@ impl KitterApp {
                     pending
                         .into_iter()
                         .map(|path| {
-                            let snapshot = project::list(&path, &library_dir).unwrap_or_default();
-                            (
-                                path,
-                                Arc::new(ProjectSnapshot::new(snapshot, &library_skills)),
-                            )
+                            let skills = project::list(&path, &library_dir).unwrap_or_default();
+                            let mut snapshot = ProjectSnapshot::new(skills, &library_skills);
+                            if let Some(root) =
+                                crate::agents::installation_root(&path, &InstallTarget::universal())
+                            {
+                                snapshot.universal_agents =
+                                    effective_skills::agents_reading_root(&path, &root);
+                            }
+                            (path, Arc::new(snapshot))
                         })
                         .collect::<Vec<_>>()
                 })
@@ -1423,7 +1440,7 @@ impl Render for KitterApp {
             );
         }
         if let Some(notice) = self.shell.notice.clone() {
-            let progress = self.model.update_check.clone();
+            let progress = self.model.updating_batch.clone();
             let mut card = kit::toast(p)
                 .id("app-notice")
                 .debug_selector(|| "app-notice".into())
@@ -1435,6 +1452,13 @@ impl Render for KitterApp {
                 .child(notice);
             if let Some(progress) = progress {
                 if let Some(current) = progress.current.filter(|name| !name.is_empty()) {
+                    let current = self
+                        .model
+                        .skills
+                        .iter()
+                        .find(|skill| skill_storage_name(skill) == current)
+                        .map(|skill| skill.record.name.clone())
+                        .unwrap_or(current);
                     card = card.child(
                         div()
                             .text_size(px(FS_SMALL))
@@ -1444,7 +1468,7 @@ impl Render for KitterApp {
                     );
                 }
                 if progress.total > 0 {
-                    let ratio = progress.scanned as f32 / progress.total as f32;
+                    let ratio = progress.completed as f32 / progress.total as f32;
                     card = card.child(kit::progress_bar(p, ratio));
                 }
             }
@@ -1711,6 +1735,43 @@ mod e2e_tests {
 
     #[test]
     fn large_project_renders_and_scrolls_with_virtual_rows() {
+        // The list now includes default global Skills. Give this end-to-end
+        // fixture its own home without changing the parallel test process.
+        if std::env::var_os("KITTER_LARGE_PROJECT_UI_CHILD").is_none() {
+            let isolated = tempfile::tempdir().unwrap();
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "ui::e2e_tests::large_project_renders_and_scrolls_with_virtual_rows",
+                ])
+                .env("KITTER_LARGE_PROJECT_UI_CHILD", "1")
+                .env("HOME", isolated.path());
+            for key in [
+                "CODEX_HOME",
+                "CLAUDE_CONFIG_DIR",
+                "GROK_HOME",
+                "PI_CODING_AGENT_DIR",
+                "XDG_CONFIG_HOME",
+                "XDG_DATA_HOME",
+                "OPENCODE_CONFIG_DIR",
+                "OPENCODE_CONFIG",
+                "OPENCODE_PROJECT_CONFIG",
+                "COPILOT_SKILLS_DIRS",
+                "AMP_SKILL_PATHS",
+                "HERMES_HOME",
+                "OPENCLAW_STATE_DIR",
+                "CLAWDBOT_STATE_DIR",
+                "OPENCLAW_CONFIG_PATH",
+                "DIMCODE_HOME",
+                "OMP_PROFILE",
+                "PI_PROFILE",
+            ] {
+                command.env_remove(key);
+            }
+            assert!(command.status().unwrap().success());
+            return;
+        }
         let _locale_guard = LOCALE_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -1719,17 +1780,27 @@ mod e2e_tests {
         let temp = tempfile::tempdir().unwrap();
         let data_dir = temp.path().join("kitter-data");
         let project = temp.path().join("fixture-project");
-        for target in [".agents/skills", ".codex/skills", ".claude/skills"] {
-            for index in 1..=180 {
-                let name = format!("fixture-skill-{index:03}");
-                let skill = project.join(target).join(&name);
-                fs::create_dir_all(&skill).unwrap();
-                fs::write(
-                    skill.join("SKILL.md"),
-                    format!("---\nname: {name}\ndescription: Performance fixture {index}\n---\n"),
-                )
-                .unwrap();
-            }
+        fs::create_dir_all(&project).unwrap();
+        for index in 1..=180 {
+            let name = format!("fixture-skill-{index:03}");
+            let skill = temp.path().join("sources").join(&name);
+            fs::create_dir_all(&skill).unwrap();
+            fs::write(
+                skill.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: Performance fixture {index}\n---\n"),
+            )
+            .unwrap();
+            crate::project::install_from_path(
+                &project,
+                &skill,
+                &name,
+                &[
+                    crate::InstallTarget::universal(),
+                    crate::InstallTarget::from("codex"),
+                    crate::InstallTarget::from("claude-code"),
+                ],
+            )
+            .unwrap();
         }
 
         let (app, cx) = cx.add_window_view({
@@ -2210,82 +2281,155 @@ mod e2e_tests {
     }
 
     #[test]
-    fn check_updates_shows_scan_progress_notice() {
+    fn startup_update_check_is_silent_and_restarts_use_the_saved_limit() {
         let _locale_guard = LOCALE_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        use super::Language;
-        use std::time::Duration;
-
         let mut cx = TestAppContext::single();
         init(&mut cx);
         let temp = tempfile::tempdir().unwrap();
-        let data_dir = temp.path().join("kitter-data");
-        let source = temp.path().join("skills");
-        for name in ["alpha", "beta"] {
-            fs::create_dir_all(source.join(name)).unwrap();
-            fs::write(
-                source.join(name).join("SKILL.md"),
-                format!("---\nname: {name}\ndescription: Fixture\n---\n"),
-            )
-            .unwrap();
-        }
-
+        let data = temp.path().join("data");
         let (app, cx) = cx.add_window_view({
-            let data_dir = data_dir.clone();
-            move |window, cx| KitterApp::new_in(data_dir, window, cx)
+            let data = data.clone();
+            move |window, cx| KitterApp::new_in(data, window, cx)
         });
-        app.update_in(cx, |app, window, cx| {
-            app.set_language(Language::ZhCn, window, cx);
-            for name in ["alpha", "beta"] {
-                // Linked local sources are skipped by update checks. Use copied
-                // fixtures so this test still covers a two-item progress notice.
-                app.model
-                    .library
-                    .import(
-                        &source.join(name),
-                        crate::SkillRecord {
-                            name: name.into(),
-                            storage_name: String::new(),
-                            description: "Fixture".into(),
-                            origin: crate::SkillOrigin::Unknown,
-                            update_available: false,
-                            group_id: None,
-                            last_operated_at: 0,
-                        },
-                    )
-                    .unwrap();
-            }
-            app.refresh(cx);
-            app.check_all_updates(cx);
-            let progress = app
-                .model
-                .update_check
-                .as_ref()
-                .expect("check should start immediately");
-            assert_eq!(progress.total, 2);
-            assert_eq!(progress.scanned, 0);
-            assert!(
-                app.shell
-                    .notice
-                    .as_deref()
-                    .is_some_and(|notice| notice == app.update_check_notice())
-            );
+        app.update(cx, |app, cx| {
+            app.start_background_update_check(cx);
+            assert!(app.model.update_check.is_some());
+            assert!(app.shell.notice.is_none());
         });
-        cx.refresh().unwrap();
-        assert!(cx.debug_bounds("app-notice").is_some());
         cx.run_until_parked();
-        cx.executor().advance_clock(Duration::from_millis(100));
+        cx.refresh().unwrap();
+        let timestamp = fs::read(data.join("update-check.json")).unwrap();
+        app.update(cx, |app, cx| {
+            assert!(app.model.update_check.is_none());
+            assert!(app.shell.notice.is_none());
+            app.start_background_update_check(cx);
+            app.request_skill_updates(super::SkillUpdateRequest::All, cx);
+            assert!(app.model.pending_updates.is_some());
+        });
         cx.run_until_parked();
         cx.refresh().unwrap();
         app.update(cx, |app, _| {
             assert!(app.model.update_check.is_none());
+            assert!(app.model.pending_updates.is_none());
             assert_eq!(
                 app.shell.notice.as_deref(),
-                Some(t!("common.updates_current").as_ref())
+                Some(t!("updates.none").as_ref())
             );
         });
-        assert!(cx.debug_bounds("app-notice").is_some());
+        assert_eq!(fs::read(data.join("update-check.json")).unwrap(), timestamp);
+    }
+
+    #[test]
+    fn update_all_fetches_new_content_without_cached_update_flags() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut cx = TestAppContext::single();
+        init(&mut cx);
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let old = "---\nname: demo\ndescription: Fixture\n---\nOld instructions\n";
+        let new = "---\nname: demo\ndescription: Fixture\n---\nNew instructions\n";
+        fs::write(repo.join("SKILL.md"), old).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env(
+                    "GIT_CONFIG_GLOBAL",
+                    if cfg!(windows) { "NUL" } else { "/dev/null" },
+                )
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "initial",
+        ]);
+        let data = temp.path().join("data");
+        let (app, cx) = cx.add_window_view({
+            let data = data.clone();
+            move |window, cx| KitterApp::new_in(data, window, cx)
+        });
+        let installed = app.update(cx, |app, cx| {
+            app.model
+                .library
+                .import(
+                    &repo,
+                    crate::SkillRecord {
+                        name: "demo".into(),
+                        storage_name: String::new(),
+                        description: String::new(),
+                        origin: crate::SkillOrigin::Git {
+                            repository: repo.to_string_lossy().into_owned(),
+                            subdir: None,
+                        },
+                        update_available: false,
+                        group_id: None,
+                        last_operated_at: 0,
+                    },
+                )
+                .unwrap();
+            app.refresh(cx);
+            app.model.library.skill_path("demo").unwrap()
+        });
+        fs::write(repo.join("SKILL.md"), new).unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "updated",
+        ]);
+        // A recent automatic-check attempt must not prevent an explicit update.
+        fs::write(
+            data.join("update-check.json"),
+            serde_json::to_vec(
+                &std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        app.update(cx, |app, cx| {
+            assert!(!app.model.library.record("demo").unwrap().update_available);
+            app.start_background_update_check(cx);
+            app.request_skill_updates(super::SkillUpdateRequest::All, cx);
+            assert!(app.model.pending_updates.is_some());
+        });
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        cx.run_until_parked();
+        cx.refresh().unwrap();
+        cx.read_entity(&app, |app, _| {
+            assert!(app.model.pending_updates.is_none());
+            assert!(app.model.updating_batch.is_none());
+            assert_eq!(fs::read_to_string(installed.join("SKILL.md")).unwrap(), new);
+            assert!(!app.model.library.record("demo").unwrap().update_available);
+        });
     }
 
     #[test]
@@ -2337,8 +2481,28 @@ mod e2e_tests {
         assert!(cx.debug_bounds(group_selector).is_some());
         assert!(cx.debug_bounds("update-dot-demo").is_none());
         assert!(cx.debug_bounds("update-skill").is_some());
+        assert!(cx.debug_bounds("update-skill-refresh").is_some());
+        let update_width = cx.debug_bounds("update-skill").unwrap().size.width;
         assert!(cx.debug_bounds("skill-detail-version").is_some());
         app.update(cx, |app, cx| {
+            app.model.updating_skill = Some("demo".into());
+            cx.notify();
+        });
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("update-skill-progress").is_some());
+        assert!(cx.debug_bounds("update-skill-refresh").is_none());
+        assert_eq!(
+            cx.debug_bounds("update-skill").unwrap().size.width,
+            update_width
+        );
+        app.update(cx, |app, cx| {
+            app.model.updating_skill = Some("another-skill".into());
+            cx.notify();
+        });
+        cx.refresh().unwrap();
+        assert!(cx.debug_bounds("update-skill-progress").is_none());
+        app.update(cx, |app, cx| {
+            app.model.updating_skill = None;
             assert_eq!(
                 app.selected_skill().unwrap().version.as_deref(),
                 Some("1.2.0")

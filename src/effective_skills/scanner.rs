@@ -44,11 +44,55 @@ pub(super) fn scan(root: &SkillRoot, profile: ScanProfile) -> Vec<PathBuf> {
             max_directories,
             max_entries,
         } => recursive(root, max_depth, max_directories, max_entries, true, false),
-        ScanProfile::DimRecursive => recursive(root, 11, 2_000, 20_000, false, true),
+        ScanProfile::DimRecursive => dim_recursive(root, 1_000),
         ScanProfile::PiIgnored => pi_ignored(root),
     };
     files.sort();
     files.dedup();
+    files
+}
+
+// Dim counts candidate manifests, including invalid and duplicate Skills. The
+// caller shares the user budget across roots, independently of the workspace.
+pub(super) fn dim_recursive(root: &SkillRoot, max_files: usize) -> Vec<PathBuf> {
+    fn walk(
+        dir: &std::path::Path,
+        depth: usize,
+        limit: usize,
+        visited: &mut HashSet<PathBuf>,
+        files: &mut Vec<PathBuf>,
+    ) {
+        if depth > 10 || files.len() >= limit {
+            return;
+        }
+        if !visited.insert(fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())) {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        let mut children = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        children.sort();
+        for child in children {
+            if files.len() >= limit {
+                break;
+            }
+            if !child.is_dir() {
+                continue;
+            }
+            let manifest = child.join("SKILL.md");
+            if manifest.is_file() {
+                files.push(manifest);
+            } else {
+                walk(&child, depth + 1, limit, visited, files);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&root.path, 0, max_files, &mut HashSet::new(), &mut files);
     files
 }
 

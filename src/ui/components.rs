@@ -721,7 +721,7 @@ impl KitterApp {
         let p = self.palette();
         let app = cx.entity().downgrade();
         let labels = [
-            t!("common.check_updates").to_string(),
+            t!("updates.update_all").to_string(),
             t!("common.manage_tags").to_string(),
             t!("common.manage_groups").to_string(),
         ];
@@ -748,7 +748,7 @@ impl KitterApp {
                         .on_click(popover_cx.listener(
                             move |_, _, _, cx| {
                                 let _ = item_app.update(cx, |this, cx| match index {
-                                    0 => this.check_all_updates(cx),
+                                    0 => this.request_skill_updates(SkillUpdateRequest::All, cx),
                                     1 => this.open_tag_dialog(TagScope::Skills, cx),
                                     _ => this.open_group_dialog(cx),
                                 });

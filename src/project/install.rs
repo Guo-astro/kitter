@@ -1,6 +1,5 @@
 use crate::{
     InstallTarget,
-    agents::installation_root,
     directory_link::{self, DirectoryLink},
 };
 use anyhow::{Context, Result, bail};
@@ -66,13 +65,7 @@ impl InstallPlan {
         if !project.is_dir() {
             bail!(t!("errors.project_missing", path = project.display()).to_string());
         }
-        self.add_to_roots(
-            source,
-            name,
-            targets
-                .iter()
-                .filter_map(|target| installation_root(project, target)),
-        )
+        self.add_to_roots(source, name, super::installation_roots(project, targets)?)
     }
 
     pub(super) fn add_to_roots(

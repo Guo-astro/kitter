@@ -38,10 +38,11 @@ pub(crate) fn omp_agent_dir(home: &Path) -> PathBuf {
 }
 
 pub fn installation_root(project: &Path, target: &InstallTarget) -> Option<PathBuf> {
-    if dirs::home_dir().as_deref() == Some(project) {
+    let home = dirs::home_dir()?;
+    if crate::effective_skills::same_directory(project, &home) {
         global_target_root(project, target)
     } else {
-        target.project_dir().map(|dir| project.join(dir))
+        target.project_root(project, &home)
     }
 }
 
@@ -80,70 +81,16 @@ mod tests {
     }
 
     #[test]
-    fn openclaw_and_hermes_are_global_only() {
+    fn all_builtin_agents_support_project_contexts() {
         let global_only = AgentRegistry::global()
             .agents()
             .iter()
             .filter(|agent| agent.global_only)
             .map(|agent| agent.id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(global_only, vec!["openclaw", "hermes"]);
-        assert!(
-            AgentRegistry::global()
-                .agents()
-                .iter()
-                .filter(|agent| agent.global_only)
-                .all(|agent| agent.reads.is_empty())
-        );
+        assert!(global_only.is_empty());
     }
 
-    #[test]
-    fn shared_agents_also_have_their_provider_specific_targets() {
-        for id in [
-            "codex",
-            "cursor",
-            "opencode",
-            "pi",
-            "grok",
-            "droid",
-            "antigravity",
-            "copilot",
-        ] {
-            let agent = AgentRegistry::global()
-                .agents()
-                .iter()
-                .find(|agent| agent.id.as_str() == id)
-                .unwrap();
-            assert!(
-                agent.supports_target(&InstallTarget::universal()),
-                "{id} should consume .agents/skills"
-            );
-            assert!(
-                agent.reads.iter().any(|target| !target.is_universal()),
-                "{id} should have a provider-specific project target"
-            );
-        }
-    }
-
-    #[test]
-    fn compatibility_badges_cover_shared_provider_specific_roots() {
-        let cursor = AgentRegistry::global()
-            .agents()
-            .iter()
-            .find(|agent| agent.id.as_str() == "cursor")
-            .unwrap();
-        assert!(cursor.supports_target(&InstallTarget::universal()));
-        assert!(cursor.supports_target(&InstallTarget::from("cursor")));
-        assert!(cursor.supports_target(&InstallTarget::from("claude-code")));
-        assert!(cursor.supports_target(&InstallTarget::from("codex")));
-
-        let openclaw = AgentRegistry::global()
-            .agents()
-            .iter()
-            .find(|agent| agent.id.as_str() == "openclaw")
-            .unwrap();
-        assert!(!openclaw.supports_target(&InstallTarget::universal()));
-    }
     #[test]
     fn install_roots_preserve_existing_directories() {
         if std::env::var_os("KITTER_TEST_ROOTS").is_none() {
@@ -158,6 +105,10 @@ mod tests {
                 .env_remove("XDG_CONFIG_HOME")
                 .env_remove("OMP_PROFILE")
                 .env_remove("PI_PROFILE")
+                .env_remove("GROK_HOME")
+                .env_remove("HERMES_HOME")
+                .env_remove("OPENCLAW_STATE_DIR")
+                .env_remove("CLAWDBOT_STATE_DIR")
                 .status()
                 .unwrap();
             assert!(status.success());
@@ -166,6 +117,16 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let project = temp.path().join("project");
         let home = temp.path().join("home");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::create_dir_all(home.join(".hermes")).unwrap();
+        std::fs::write(
+            home.join(".hermes/config.yaml"),
+            format!(
+                "skills:\n  trusted_project_dirs: [{}]\n",
+                serde_json::to_string(&project).unwrap()
+            ),
+        )
+        .unwrap();
         let expected = [
             ("universal", ".agents/skills", ".agents/skills"),
             ("codex", ".codex/skills", ".codex/skills"),
@@ -174,17 +135,22 @@ mod tests {
             ("opencode", ".opencode/skills", ".config/opencode/skills"),
             ("pi", ".pi/skills", ".pi/agent/skills"),
             ("omp", ".omp/skills", ".omp/agent/skills"),
+            ("dimagent", ".agents/skills", ".agents/skills"),
             ("grok", ".grok/skills", ".grok/skills"),
+            ("openclaw", "skills", ".openclaw/skills"),
+            ("hermes", ".hermes/skills", ".hermes/skills"),
             ("droid", ".factory/skills", ".factory/skills"),
+            ("amp", ".agents/skills", ".config/agents/skills"),
             ("antigravity", ".agent/skills", ".gemini/config/skills"),
             ("copilot", ".github/skills", ".copilot/skills"),
+            ("trae", ".trae/skills", ".trae-cn/skills"),
         ];
         let targets = AgentRegistry::global().install_targets();
         assert_eq!(targets.len(), expected.len());
         for (target, (id, local, global)) in targets.iter().zip(expected) {
             assert_eq!(target.as_str(), id);
             assert_eq!(
-                installation_root(&project, target),
+                target.project_root(&project, &home),
                 Some(project.join(local))
             );
             assert_eq!(global_target_root(&home, target), Some(home.join(global)));
