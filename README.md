@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-3f8997" alt="Apache-2.0 license"></a>
-  <a href="https://github.com/what1f/kitter/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.0-blue" alt="Release v0.2.0"></a>
+  <a href="https://github.com/what1f/kitter/releases/latest"><img src="https://img.shields.io/badge/release-v0.2.1-blue" alt="Release v0.2.1"></a>
   <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows%20%7C%20Linux-15191a" alt="macOS, Windows, and Linux desktop app">
   <img src="https://img.shields.io/badge/built_with-Rust-b8aaa0" alt="Built with Rust">
 </p>

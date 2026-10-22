@@ -13,6 +13,8 @@ use walkdir::WalkDir;
 
 use crate::{SkillLibrary, SkillOrigin, SkillRecord};
 
+pub(crate) mod remote;
+
 pub struct ScannedSkill {
     pub name: String,
     pub description: String,
@@ -112,6 +114,16 @@ impl SkillScan {
         } else {
             HashMap::new()
         };
+        let mut scan_sources = if matches!(origin, ScanOrigin::Npx { .. }) {
+            npx_lock_entries(
+                scan_temp
+                    .as_ref()
+                    .context(crate::user_error!("errors.scan_required"))?
+                    .path(),
+            )?
+        } else {
+            HashMap::new()
+        };
         let mut added_skills = Vec::new();
         let mut skipped = 0;
         let group_name = group_name
@@ -186,6 +198,12 @@ impl SkillScan {
                     last_operated_at: 0,
                 },
             )?;
+            if let ScanOrigin::Npx { repository } = &origin
+                && let Some(entry) = scan_sources.remove(&name)
+                && let Some(source) = entry.remote_source(repository)
+            {
+                library.set_remote_skill_source(identity, source)?;
+            }
             added_skills.push(name);
         }
         let source = match origin {
@@ -467,91 +485,100 @@ pub fn check_updates_with_progress(
         current: None,
     });
 
-    // The upstream CLI owns Npx version detection. It updates the persistent
-    // source workspace, then we compare its lock hash with the hash recorded
-    // when the Kitter copy was last installed. This avoids reimplementing
-    // repository/tree comparison here while preserving the UI's pending-update
-    // state until the user chooses to install the update into the library.
-    let mut npx_sources = BTreeMap::<String, Vec<SkillRecord>>::new();
+    let mut groups = BTreeMap::<remote::RemoteKey, Vec<remote::CheckSkill>>::new();
     let mut other_records = Vec::new();
+    let mut failures = Vec::new();
     for record in records {
-        match &record.origin {
-            SkillOrigin::Npx { repository, .. } => {
-                npx_sources
-                    .entry(repository.clone())
-                    .or_default()
-                    .push(record);
+        if matches!(
+            record.origin,
+            SkillOrigin::Git { .. } | SkillOrigin::Npx { .. }
+        ) {
+            let name = record.name.clone();
+            match remote::prepare(library, record) {
+                Ok((key, skill)) => groups.entry(key).or_default().push(skill),
+                Err(error) => {
+                    failures.push(format!("{name}: {}", crate::i18n::error_diagnostic(&error)));
+                    scanned += 1;
+                    on_progress(UpdateCheckProgress {
+                        scanned,
+                        total,
+                        current: Some(name),
+                    });
+                }
             }
-            _ => other_records.push(record),
+        } else {
+            other_records.push(record);
         }
     }
-
-    let mut count = 0;
-    let mut failures = Vec::new();
-    for (repository, skills) in npx_sources {
-        on_progress(UpdateCheckProgress {
-            scanned,
-            total,
-            current: Some(repository.clone()),
-        });
-        let result = (|| -> Result<HashMap<String, String>> {
-            let workspace = npx_workspace(&repository);
-            for record in &skills {
-                let SkillOrigin::Npx { skill, .. } = &record.origin else {
-                    continue;
-                };
-                ensure_npx_skill(&workspace, &repository, skill)?;
-            }
-            // `skills update` performs the upstream check and refreshes only
-            // the source workspace. The Kitter library remains unchanged
-            // until the user presses the per-Skill update action.
-            npx_update(&workspace, None)?;
-            npx_lock_hashes(&workspace)
-        })();
-        let hashes = match result {
-            Ok(hashes) => hashes,
-            Err(error) => {
-                failures.push(
-                    t!(
-                        "errors.npx_check_failed",
-                        error = crate::i18n::error_diagnostic(&error)
-                    )
-                    .to_string(),
-                );
-                HashMap::new()
-            }
-        };
-        for record in skills {
-            let available = match &record.origin {
-                SkillOrigin::Npx {
-                    skill, source_hash, ..
-                } => hashes
-                    .get(skill)
-                    .is_some_and(|current| source_hash.as_deref() != Some(current.as_str())),
-                _ => false,
-            };
-            library.set_update_available_by_storage(&record.storage_name, available)?;
-            count += usize::from(available);
-            scanned += 1;
-            on_progress(UpdateCheckProgress {
-                scanned,
-                total,
-                current: Some(record.name.clone()),
+    let groups = groups.into_iter().collect::<Vec<_>>();
+    let data_dir = library.data_dir().to_path_buf();
+    let mut results = Vec::new();
+    // One job per repository/ref, at most eight concurrent network operations.
+    // Workers never touch the library; the caller publishes results/progress.
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        for _ in 0..groups.len().min(8) {
+            let sender = sender.clone();
+            let groups = &groups;
+            let next = &next;
+            let data_dir = &data_dir;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((key, skills)) = groups.get(index) else {
+                        break;
+                    };
+                    let result = remote::check_group(data_dir, key, skills);
+                    if sender.send((index, result)).is_err() {
+                        break;
+                    }
+                }
             });
         }
-    }
-
-    for record in other_records {
-        on_progress(UpdateCheckProgress {
-            scanned,
-            total,
-            current: Some(record.name.clone()),
-        });
-        match check_one(library, &record) {
-            Ok(available) => {
-                library.set_update_available_by_storage(&record.storage_name, available)?;
-                count += usize::from(available);
+        drop(sender);
+        for (index, result) in receiver {
+            let (_, skills) = &groups[index];
+            match result {
+                Ok(available) => {
+                    for (skill, available) in skills.iter().zip(available) {
+                        match available {
+                            Ok(available) => results.push((skill.record.clone(), available)),
+                            Err(error) => failures.push(format!(
+                                "{}: {}",
+                                skill.record.name,
+                                crate::i18n::error_diagnostic(&error)
+                            )),
+                        }
+                        scanned += 1;
+                        on_progress(UpdateCheckProgress {
+                            scanned,
+                            total,
+                            current: Some(skill.record.name.clone()),
+                        });
+                    }
+                }
+                Err(error) => {
+                    for skill in skills {
+                        failures.push(format!(
+                            "{}: {}",
+                            skill.record.name,
+                            crate::i18n::error_diagnostic(&error)
+                        ));
+                        scanned += 1;
+                        on_progress(UpdateCheckProgress {
+                            scanned,
+                            total,
+                            current: Some(skill.record.name.clone()),
+                        });
+                    }
+                }
             }
+        }
+    });
+    for record in other_records {
+        match check_one(library, &record) {
+            Ok(available) => results.push((record.clone(), available)),
             Err(error) => failures.push(format!(
                 "{}: {}",
                 record.name,
@@ -559,7 +586,13 @@ pub fn check_updates_with_progress(
             )),
         }
         scanned += 1;
+        on_progress(UpdateCheckProgress {
+            scanned,
+            total,
+            current: Some(record.name),
+        });
     }
+    let count = library.apply_update_results(&results)?;
     on_progress(UpdateCheckProgress {
         scanned,
         total,
@@ -583,17 +616,7 @@ fn check_one(library: &SkillLibrary, record: &SkillRecord) -> Result<bool> {
     let temp = TempDir::new()?;
     let source = match &record.origin {
         SkillOrigin::Builtin => return Ok(false),
-        SkillOrigin::Git { repository, subdir } => {
-            run(tool_command("git")
-                .args(["clone", "--depth", "1", repository])
-                .arg(temp.path().join("repo")))?;
-            find_skill_dir(
-                &subdir
-                    .as_ref()
-                    .map(|path| temp.path().join("repo").join(path))
-                    .unwrap_or_else(|| temp.path().join("repo")),
-            )?
-        }
+        SkillOrigin::Git { .. } => bail!(t!("errors.update_source_missing").to_string()),
         SkillOrigin::ClaudeMarketplace { plugin, skill } => find_claude_skill(plugin, skill)?,
         SkillOrigin::Local { path, .. } => path.clone(),
         SkillOrigin::Unknown => return Ok(false),
@@ -622,18 +645,45 @@ struct NpxLockEntry {
     computed_hash: Option<String>,
     #[serde(rename = "skillFolderHash", default)]
     skill_folder_hash: Option<String>,
+    #[serde(rename = "sourceUrl", default)]
+    source_url: Option<String>,
+    #[serde(rename = "skillPath", default)]
+    skill_path: Option<String>,
+    #[serde(rename = "ref", default)]
+    reference: Option<String>,
 }
 
 impl NpxLockEntry {
+    fn remote_source(&self, fallback: &str) -> Option<remote::RemoteSkill> {
+        let mut source =
+            remote::RemoteSkill::parse(self.source_url.as_deref().unwrap_or(fallback)).ok()?;
+        if self.reference.is_some() {
+            source.reference = self.reference.clone();
+        }
+        if let Some(path) = &self.skill_path {
+            source.skill_path = Some(
+                path.strip_suffix("SKILL.md")
+                    .unwrap_or(path)
+                    .trim_end_matches('/')
+                    .to_owned(),
+            );
+        }
+        Some(source)
+    }
+
     fn hash(self) -> Option<String> {
         self.skill_folder_hash.or(self.computed_hash)
     }
 }
 
 fn npx_workspace(repository: &str) -> PathBuf {
+    npx_workspace_in(&crate::config::app_data_dir(), repository)
+}
+
+fn npx_workspace_in(data_dir: &Path, repository: &str) -> PathBuf {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     repository.hash(&mut hasher);
-    crate::config::app_data_dir()
+    data_dir
         .join("npx-sources")
         .join(format!("{:016x}", hasher.finish()))
 }
@@ -683,11 +733,18 @@ fn npx_lock_hash(workspace: &Path, skill: &str) -> Result<Option<String>> {
 }
 
 fn npx_lock_hashes(workspace: &Path) -> Result<HashMap<String, String>> {
+    Ok(npx_lock_entries(workspace)?
+        .into_iter()
+        .filter_map(|(name, entry)| entry.hash().map(|hash| (name, hash)))
+        .collect())
+}
+
+fn npx_lock_entries(workspace: &Path) -> Result<HashMap<String, NpxLockEntry>> {
     let paths = [
-        workspace.join(".agents").join(".skill-lock.json"),
+        workspace.join(".agents/.skill-lock.json"),
         workspace.join("skills-lock.json"),
     ];
-    let mut hashes = HashMap::new();
+    let mut entries = HashMap::new();
     for path in paths {
         if !path.is_file() {
             continue;
@@ -697,13 +754,20 @@ fn npx_lock_hashes(workspace: &Path) -> Result<HashMap<String, String>> {
         })?;
         let lock: NpxLockFile = serde_json::from_slice(&bytes)
             .with_context(|| t!("errors.npx_lock_invalid", path = path.display()).to_string())?;
-        for (name, entry) in lock.skills {
-            if let Some(hash) = entry.hash() {
-                hashes.insert(name, hash);
-            }
-        }
+        entries.extend(lock.skills);
     }
-    Ok(hashes)
+    Ok(entries)
+}
+
+fn legacy_npx_source(
+    library: &SkillLibrary,
+    repository: &str,
+    skill: &str,
+) -> Option<remote::RemoteSkill> {
+    npx_lock_entries(&npx_workspace_in(library.data_dir(), repository))
+        .ok()?
+        .get(skill)?
+        .remote_source(repository)
 }
 
 fn same_tree(left: &Path, right: &Path) -> Result<bool> {
@@ -1305,7 +1369,7 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
         .unwrap();
         fs::write(
             scan_temp.path().join(".agents/.skill-lock.json"),
-            r#"{"skills":{"alpha":{"skillFolderHash":"fresh-hash"}}}"#,
+            r#"{"skills":{"alpha":{"skillFolderHash":"fresh-hash","sourceUrl":"https://github.com/owner/repository","ref":"stable","skillPath":"skills/custom-path/SKILL.md"}}}"#,
         )
         .unwrap();
 
@@ -1327,6 +1391,10 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
         let content =
             fs::read_to_string(library.skill_path("alpha").unwrap().join("SKILL.md")).unwrap();
         assert!(content.contains("fresh scan"));
+        let record = library.record("alpha").unwrap();
+        let locator = library.remote_skill_source(&record).unwrap();
+        assert_eq!(locator.reference.as_deref(), Some("stable"));
+        assert_eq!(locator.skill_path.as_deref(), Some("skills/custom-path"));
         assert!(matches!(
             library.record("alpha").unwrap().origin,
             SkillOrigin::Npx {

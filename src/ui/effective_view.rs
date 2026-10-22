@@ -339,6 +339,7 @@ mod tests {
     }
     fn summary(path: PathBuf) -> SkillSummary {
         SkillSummary {
+            version: None,
             path,
             installed_projects: 0,
             manual_only: false,

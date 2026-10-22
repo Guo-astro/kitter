@@ -1,6 +1,6 @@
 [package]
 name = "kitter"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "A simple, lightweight skill manager built in Rust"
 license = "Apache-2.0"
@@ -39,10 +39,16 @@ tempfile = "3.20"
 toml = "0.8"
 walkdir = "2.5"
 ignore = "0.4"
+sha1_smol = "1.0"
+wait-timeout = "0.2"
+url = "2.5"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 junction = "2.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [build-dependencies]
 winresource = "0.1.31"

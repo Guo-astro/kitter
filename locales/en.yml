@@ -154,6 +154,7 @@ context:
   manual: " · %{count} manual"
   name_only: " · %{count} name-only"
 errors:
+  update_check_timeout: "Checking for updates timed out. Try again."
   install_name_conflict: "Select only one source for “%{name}”"
   install_target_changed: "The installation at %{path} changed. Review it and try again."
   install_backup_kept: "Installed, but the previous files could not be removed. They are saved at %{path}: %{error}"
@@ -466,6 +467,7 @@ tags:
     one: "Delete #%{name}? %{count} skill will lose this tag."
     other: "Delete #%{name}? %{count} skills will lose this tag."
 updates:
+  available: "Update available"
   available_count:
     one: "%{count} skill can be updated"
     other: "%{count} skills can be updated"

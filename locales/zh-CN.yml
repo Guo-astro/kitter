@@ -154,6 +154,7 @@ context:
   manual: " · %{count} 手动"
   name_only: " · %{count} 仅名称"
 errors:
+  update_check_timeout: "检查更新超时，请重试。"
   install_name_conflict: "请只选择一个来源的“%{name}”"
   install_target_changed: "%{path} 的内容已变化，请检查后重试。"
   install_backup_kept: "安装已完成，但旧文件未能清理，已保留在 %{path}：%{error}"
@@ -466,6 +467,7 @@ tags:
     one: "删除 #%{name}？%{count} 个技能将失去这个标签。"
     other: "删除 #%{name}？%{count} 个技能将失去这个标签。"
 updates:
+  available: "有可用更新"
   available_count:
     one: "发现 %{count} 个可更新的技能"
     other: "发现 %{count} 个可更新的技能"

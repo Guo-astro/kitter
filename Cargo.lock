@@ -3551,7 +3551,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "kitter"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3564,6 +3564,7 @@ dependencies = [
  "gpui_platform",
  "ignore",
  "junction",
+ "libc",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-quartz-core 0.3.2",
@@ -3574,10 +3575,13 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha1_smol",
  "syn 2.0.119",
  "sys-locale",
  "tempfile",
  "toml 0.8.23",
+ "url",
+ "wait-timeout",
  "walkdir",
  "winresource",
 ]

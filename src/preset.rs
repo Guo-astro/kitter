@@ -868,6 +868,7 @@ mod tests {
                     fs::create_dir_all(&path).unwrap();
                     fs::write(path.join("SKILL.md"), format!("---\nname: {name}\n---\n")).unwrap();
                     SkillSummary {
+                        version: None,
                         record: SkillRecord {
                             name: name.to_string(),
                             storage_name: name.to_string(),

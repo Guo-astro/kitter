@@ -38,6 +38,8 @@ struct Registry {
     adopted_sources: HashMap<String, AdoptedSource>,
     #[serde(default)]
     trigger_overrides: HashMap<String, TriggerOverride>,
+    #[serde(default)]
+    remote_skill_sources: HashMap<String, crate::source::remote::RemoteSkill>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -221,6 +223,45 @@ impl SkillLibrary {
         &self.data_dir
     }
 
+    pub(crate) fn remote_skill_source(
+        &self,
+        record: &SkillRecord,
+    ) -> Option<&crate::source::remote::RemoteSkill> {
+        self.registry
+            .remote_skill_sources
+            .get(&record.identity_key())
+    }
+
+    pub(crate) fn set_remote_skill_source(
+        &mut self,
+        identity: String,
+        source: crate::source::remote::RemoteSkill,
+    ) -> Result<()> {
+        self.registry.remote_skill_sources.insert(identity, source);
+        self.save()
+    }
+
+    pub(crate) fn apply_update_results(
+        &mut self,
+        results: &[(SkillRecord, bool)],
+    ) -> Result<usize> {
+        // A check may take seconds. Preserve library changes made while it ran.
+        let mut latest = Self::open_in(self.data_dir.clone())?;
+        let mut available_count = 0;
+        for (checked, available) in results {
+            if let Some(record) = latest.registry.skills.get_mut(&checked.storage_name)
+                && record.identity_key() == checked.identity_key()
+                && record.last_operated_at == checked.last_operated_at
+            {
+                record.update_available = *available;
+                available_count += usize::from(*available);
+            }
+        }
+        latest.save()?;
+        *self = latest;
+        Ok(available_count)
+    }
+
     pub fn trigger_mode_by_storage(&self, storage_name: &str) -> TriggerMode {
         self.registry
             .trigger_overrides
@@ -288,7 +329,8 @@ impl SkillLibrary {
                 continue;
             }
             let storage_name = entry.file_name().to_string_lossy().into_owned();
-            let (_, description) = read_frontmatter(&path.join("SKILL.md")).unwrap_or_default();
+            let (_, description, version) =
+                read_frontmatter_details(&path.join("SKILL.md")).unwrap_or_default();
             let mut record = self
                 .registry
                 .skills
@@ -308,6 +350,7 @@ impl SkillLibrary {
             }
             record.description = description.unwrap_or_default();
             result.push(SkillSummary {
+                version,
                 installed_projects: self.install_count(&record.name, &path),
                 record,
                 manual_only: crate::effective_skills::is_manual_skill(&path),
@@ -854,6 +897,9 @@ impl SkillLibrary {
             }
         }
         presets.forget_skill(storage_name)?;
+        self.registry
+            .remote_skill_sources
+            .remove(&record.identity_key());
         self.registry.skills.remove(storage_name);
         self.registry.adopted_sources.remove(storage_name);
         self.registry.trigger_overrides.remove(storage_name);
@@ -1192,6 +1238,13 @@ fn migrated_group_id(source_key: &str, groups: &[SkillGroup]) -> String {
 }
 
 pub fn read_frontmatter(path: &Path) -> Result<(Option<String>, Option<String>)> {
+    let (name, description, _) = read_frontmatter_details(path)?;
+    Ok((name, description))
+}
+
+fn read_frontmatter_details(
+    path: &Path,
+) -> Result<(Option<String>, Option<String>, Option<String>)> {
     let content = fs::read_to_string(path)?;
     let mut lines = content.lines();
     if lines.next().is_some_and(|line| line.trim() == "---") {
@@ -1199,7 +1252,21 @@ pub fn read_frontmatter(path: &Path) -> Result<(Option<String>, Option<String>)>
             .take_while(|line| line.trim() != "---")
             .collect::<Vec<_>>();
         if let Ok(metadata) = serde_yaml::from_str::<Frontmatter>(&frontmatter.join("\n")) {
-            return Ok((metadata.name, metadata.description.map(trim_description)));
+            let version = metadata
+                .metadata
+                .as_ref()
+                .and_then(|value| value.get("version"))
+                .and_then(|value| match value {
+                    serde_yaml::Value::String(value) => Some(value.trim().to_owned()),
+                    serde_yaml::Value::Number(value) => Some(value.to_string()),
+                    _ => None,
+                })
+                .filter(|value| !value.is_empty());
+            return Ok((
+                metadata.name,
+                metadata.description.map(trim_description),
+                version,
+            ));
         }
         let mut name = None;
         let mut description = None;
@@ -1211,13 +1278,14 @@ pub fn read_frontmatter(path: &Path) -> Result<(Option<String>, Option<String>)>
                 description = Some(unquote(value));
             }
         }
-        return Ok((name, description));
+        return Ok((name, description, None));
     }
-    Ok((None, None))
+    Ok((None, None, None))
 }
 
 #[derive(Default, Deserialize)]
 struct Frontmatter {
+    metadata: Option<serde_yaml::Value>,
     name: Option<String>,
     description: Option<String>,
 }
@@ -1264,6 +1332,71 @@ pub(crate) fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declared_skill_versions_are_optional_and_do_not_require_semver() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("SKILL.md");
+        for (metadata, expected) in [
+            ("metadata:\n  version: \"1.2.0\"", Some("1.2.0")),
+            (
+                "metadata:\n  version: \"2026-10-preview\"",
+                Some("2026-10-preview"),
+            ),
+            ("metadata:\n  version: \"   \"", None),
+            ("metadata:\n  version: [1, 2]", None),
+            ("version: \"1.2.0\"", None),
+            ("", None),
+        ] {
+            fs::write(
+                &file,
+                format!("---\nname: demo\ndescription: Test\n{metadata}\n---\n"),
+            )
+            .unwrap();
+            assert_eq!(
+                read_frontmatter_details(&file).unwrap().2.as_deref(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn update_results_preserve_concurrent_library_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fixture_skill(&source, "demo");
+        let mut library = SkillLibrary::open_in(temp.path().join("data")).unwrap();
+        library
+            .import(
+                &source,
+                SkillRecord {
+                    name: "demo".into(),
+                    storage_name: String::new(),
+                    description: String::new(),
+                    origin: SkillOrigin::Unknown,
+                    update_available: false,
+                    group_id: None,
+                    last_operated_at: 1,
+                },
+            )
+            .unwrap();
+        let checked = library.record("demo").unwrap();
+        let mut concurrent = SkillLibrary::open_in(library.data_dir()).unwrap();
+        let group = concurrent.ensure_group("New group").unwrap();
+        concurrent.assign_group("demo", Some(&group)).unwrap();
+        library
+            .apply_update_results(&[(checked.clone(), true)])
+            .unwrap();
+        assert_eq!(library.record("demo").unwrap().group_id, Some(group));
+        // Simulate an installation completed after the check took its snapshot.
+        let mut replaced = library.record("demo").unwrap();
+        replaced.update_available = false;
+        library
+            .replace_by_storage(&source, checked.storage_name.clone(), replaced)
+            .unwrap();
+        assert_eq!(library.apply_update_results(&[(checked, true)]).unwrap(), 0);
+        assert!(!library.record("demo").unwrap().update_available);
+    }
 
     #[test]
     fn builtin_skill_is_manual_pinned_and_protected() {

@@ -2289,6 +2289,91 @@ mod e2e_tests {
     }
 
     #[test]
+    fn updates_are_visible_in_collapsed_groups_and_selected_skill_details() {
+        let _locale_guard = LOCALE_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let mut cx = TestAppContext::single();
+        init(&mut cx);
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fs::create_dir(&source).unwrap();
+        fs::write(
+            source.join("SKILL.md"),
+            "---\nname: demo\ndescription: Fixture\nmetadata:\n  version: \"1.2.0\"\n---\n",
+        )
+        .unwrap();
+        let (app, cx) = cx.add_window_view({
+            let data = temp.path().join("data");
+            move |window, cx| KitterApp::new_in(data, window, cx)
+        });
+        let group = app.update(cx, |app, cx| {
+            let group = app.model.library.ensure_group("Example").unwrap();
+            app.model
+                .library
+                .import(
+                    &source,
+                    crate::SkillRecord {
+                        name: "demo".into(),
+                        storage_name: String::new(),
+                        description: String::new(),
+                        origin: crate::SkillOrigin::Unknown,
+                        update_available: true,
+                        group_id: Some(group.clone()),
+                        last_operated_at: 0,
+                    },
+                )
+                .unwrap();
+            app.refresh(cx);
+            app.skills_view.selection.select_one("demo".into());
+            app.skills_view.collapsed_groups.insert(group.clone());
+            cx.notify();
+            group
+        });
+        let group_selector: &'static str =
+            Box::leak(format!("update-group-dot-{group}").into_boxed_str());
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        assert!(cx.debug_bounds(group_selector).is_some());
+        assert!(cx.debug_bounds("update-dot-demo").is_none());
+        assert!(cx.debug_bounds("update-skill").is_some());
+        assert!(cx.debug_bounds("skill-detail-version").is_some());
+        app.update(cx, |app, cx| {
+            assert_eq!(
+                app.selected_skill().unwrap().version.as_deref(),
+                Some("1.2.0")
+            );
+            app.skills_view.collapsed_groups.clear();
+            cx.notify();
+        });
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("update-dot-demo").is_some());
+        assert!(cx.debug_bounds(group_selector).is_none());
+        app.update(cx, |app, cx| {
+            app.model
+                .library
+                .set_update_available("demo", false)
+                .unwrap();
+            fs::write(
+                app.model
+                    .library
+                    .skill_path("demo")
+                    .unwrap()
+                    .join("SKILL.md"),
+                "---\nname: demo\ndescription: No declared version\n---\n",
+            )
+            .unwrap();
+            app.refresh(cx);
+        });
+        cx.refresh().unwrap();
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("update-dot-demo").is_none());
+        assert!(cx.debug_bounds("update-skill").is_none());
+        assert!(cx.debug_bounds("skill-detail-version").is_none());
+    }
+
+    #[test]
     fn installation_conflicts_require_confirmation_and_back_keeps_files() {
         let _locale_guard = LOCALE_LOCK
             .lock()

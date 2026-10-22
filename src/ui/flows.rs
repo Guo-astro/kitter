@@ -112,12 +112,12 @@ impl KitterApp {
             let worker = cx.background_executor().spawn(async move {
                 let result = (|| {
                     let mut library = SkillLibrary::open_in(data_dir)?;
-                    let count = source::check_updates_with_progress(&mut library, |snapshot| {
+                    let result = source::check_updates_with_progress(&mut library, |snapshot| {
                         *worker_progress
                             .lock()
                             .unwrap_or_else(|error| error.into_inner()) = snapshot;
-                    })?;
-                    Ok::<_, anyhow::Error>((library, count))
+                    });
+                    Ok::<_, anyhow::Error>((library, result))
                 })();
                 worker_done.store(true, Ordering::Release);
                 result
@@ -143,17 +143,21 @@ impl KitterApp {
             let _ = this.update(cx, |this, cx| {
                 this.model.update_check = None;
                 let message = match result {
-                    Ok((library, 0)) => {
+                    Ok((library, Ok(0))) => {
                         this.model.library = library;
                         t!("common.updates_current").to_string()
                     }
-                    Ok((library, count)) => {
+                    Ok((library, Ok(count))) => {
                         this.model.library = library;
                         crate::i18n::tn(
                             "updates.available_count",
                             count,
                             &[("count", (count).to_string())],
                         )
+                    }
+                    Ok((library, Err(error))) => {
+                        this.model.library = library;
+                        this.error_message(error)
                     }
                     Err(error) => this.error_message(error),
                 };

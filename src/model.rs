@@ -183,6 +183,8 @@ pub struct SkillGroup {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SkillSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
     pub record: SkillRecord,
     pub path: PathBuf,
     pub installed_projects: usize,

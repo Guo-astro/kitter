@@ -143,11 +143,38 @@ impl KitterApp {
                 .flex_1()
                 .child(
                     div()
-                        .font_family(MONO)
-                        .text_size(px(FS_BODY))
-                        .font_weight(FontWeight::MEDIUM)
-                        .truncate()
-                        .child(name.clone()),
+                        .flex()
+                        .items_center()
+                        .gap(px(7.))
+                        .min_w_0()
+                        .child(
+                            div()
+                                .min_w_0()
+                                .font_family(MONO)
+                                .text_size(px(FS_BODY))
+                                .font_weight(FontWeight::MEDIUM)
+                                .truncate()
+                                .child(name.clone()),
+                        )
+                        .when(skill.record.update_available, |line| {
+                            line.child(
+                                kit::count(p, "●")
+                                    .id(ElementId::Name(
+                                        format!("update-dot-{storage_name}").into(),
+                                    ))
+                                    .debug_selector({
+                                        let storage = storage_name.clone();
+                                        move || format!("update-dot-{storage}")
+                                    })
+                                    .flex_none()
+                                    .text_size(px(8.))
+                                    .text_color(p.accent)
+                                    .tooltip(|window, cx| {
+                                        Tooltip::new(t!("updates.available").to_string())
+                                            .build(window, cx)
+                                    }),
+                            )
+                        }),
                 )
                 .child(
                     div().text_size(px(FS_SMALL)).text_color(p.muted).child(
@@ -819,11 +846,44 @@ impl KitterApp {
             div()
                 .min_w_0()
                 .flex_1()
-                .font_family(MONO)
-                .text_size(px(FS_BODY))
-                .font_weight(FontWeight::MEDIUM)
-                .truncate()
-                .child(group_label),
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .child(
+                    div()
+                        .min_w_0()
+                        .font_family(MONO)
+                        .text_size(px(FS_BODY))
+                        .font_weight(FontWeight::MEDIUM)
+                        .truncate()
+                        .child(group_label),
+                )
+                .when(
+                    collapsed
+                        && self.model.skills.iter().any(|skill| {
+                            skill.record.group_id.as_deref() == Some(group_id.as_str())
+                                && skill.record.update_available
+                        }),
+                    |row| {
+                        row.child(
+                            kit::count(p, "●")
+                                .id(ElementId::Name(
+                                    format!("update-group-dot-{group_id}").into(),
+                                ))
+                                .debug_selector({
+                                    let group = group_id.clone();
+                                    move || format!("update-group-dot-{group}")
+                                })
+                                .flex_none()
+                                .text_size(px(8.))
+                                .text_color(p.accent)
+                                .tooltip(|window, cx| {
+                                    Tooltip::new(t!("updates.available").to_string())
+                                        .build(window, cx)
+                                }),
+                        )
+                    },
+                ),
         )
         .drag_over::<SkillDrag>(move |style, _, _, _| style.bg(p.selected))
         .on_drop(cx.listener(move |this, drag: &SkillDrag, _, cx| {
@@ -1451,12 +1511,15 @@ impl KitterApp {
         if skill.record.update_available {
             let update_name = storage_name.clone();
             actions = actions.child(
-                self.labeled_icon_button(
+                kit::button(
+                    p,
                     "update-skill",
-                    "icons/rotate-cw.svg",
-                    t!("skills.update").to_string(),
-                    cx,
+                    kit::ButtonKind::Secondary,
+                    kit::Size::Sm,
+                    self.model.updating_skill.is_none(),
                 )
+                .child(Self::icon("icons/rotate-cw.svg", ICON_SM, p.secondary))
+                .child(t!("skills.update").to_string())
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, _, _, cx| {
@@ -1637,6 +1700,15 @@ impl KitterApp {
                         window,
                         cx,
                     ))
+                    .when_some(skill.version.clone(), |title, version| {
+                        title.child(
+                            kit::count(p, version)
+                                .id("skill-detail-version")
+                                .debug_selector(|| "skill-detail-version".into())
+                                .max_w(px(140.))
+                                .truncate(),
+                        )
+                    })
                     .when(skill.manual_only, |title| {
                         title.child(self.manual_skill_badge())
                     }),
@@ -2101,6 +2173,7 @@ mod tests {
 
     fn skill(name: &str, group_id: Option<&str>) -> SkillSummary {
         SkillSummary {
+            version: None,
             record: SkillRecord {
                 name: name.into(),
                 storage_name: format!("storage-{name}"),
