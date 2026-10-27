@@ -291,6 +291,19 @@ pub(super) fn input(p: Palette, state: &Entity<InputState>) -> Input {
         .text_size(px(FS_BODY))
 }
 
+/// Multi-line text field that grows with its content.
+pub(super) fn textarea(
+    p: Palette,
+    state: &Entity<gpui_component::input::TextareaState>,
+) -> gpui_component::input::Textarea {
+    gpui_component::input::Textarea::new(state)
+        .w_full()
+        .rounded(px(R_MD))
+        .bg(p.surface)
+        .border_color(p.border_strong)
+        .text_size(px(FS_BODY))
+}
+
 pub(super) fn search_input(p: Palette, state: &Entity<InputState>) -> Input {
     input(p, state).prefix(KitterApp::icon("icons/search.svg", ICON_MD, p.muted))
 }
@@ -742,6 +755,20 @@ pub(super) fn progress_bar(p: Palette, ratio: f32) -> Div {
                 .bg(p.text)
                 .w(relative(ratio.clamp(0., 1.))),
         )
+}
+
+/// Vertical scrollbar that fades in while scrolling and can be dragged.
+/// Add it as a sibling of the scrolling element inside a `relative()` box;
+/// inside the scrolling element it would scroll away with the content.
+pub(super) fn scrollbar<H>(id: impl Into<ElementId>, handle: &H) -> Div
+where
+    H: gpui_component::scroll::ScrollbarHandle + Clone + 'static,
+{
+    div().absolute().inset_0().child(
+        gpui_component::scroll::Scrollbar::vertical(handle)
+            .id(id)
+            .viewport_from_layout(),
+    )
 }
 
 /// Centered placeholder for empty lists.

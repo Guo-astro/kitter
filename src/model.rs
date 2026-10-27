@@ -2,6 +2,14 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalInstallMode {
+    #[default]
+    Link,
+    Copy,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SkillOrigin {
@@ -24,6 +32,10 @@ pub enum SkillOrigin {
         path: PathBuf,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_root: Option<PathBuf>,
+        #[serde(default)]
+        install_mode: LocalInstallMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_hash: Option<String>,
     },
     #[default]
     Unknown,
@@ -47,7 +59,9 @@ impl SkillOrigin {
                 repository: repository.clone(),
                 subdir: subdir.clone(),
             },
-            Self::Local { path, source_root } => SkillSource::Local {
+            Self::Local {
+                path, source_root, ..
+            } => SkillSource::Local {
                 path: source_root.clone().unwrap_or_else(|| path.clone()),
             },
             Self::Unknown => SkillSource::Unknown,
@@ -148,6 +162,8 @@ pub struct SkillRecord {
     pub storage_name: String,
     #[serde(skip)]
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_description: Option<String>,
     #[serde(default)]
     pub origin: SkillOrigin,
     #[serde(default)]
@@ -183,12 +199,21 @@ pub struct SkillGroup {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SkillSummary {
+    /// The current description from SKILL.md, before any display override.
+    pub original_description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
     pub record: SkillRecord,
     pub path: PathBuf,
     pub installed_projects: usize,
     pub manual_only: bool,
+}
+
+impl SkillSummary {
+    /// The description displayed and searched in Kitter.
+    pub fn description(&self) -> &str {
+        &self.record.description
+    }
 }
 
 pub use crate::agent_plugins::InstallTarget;

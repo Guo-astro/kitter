@@ -45,6 +45,7 @@ mod agents_settings;
 mod badges;
 mod components;
 mod effective_view;
+mod file_tree;
 mod flows;
 mod install_flow;
 mod kit;
@@ -156,6 +157,8 @@ enum PresetTab {
 enum PresetEdit {
     Create,
     Rename(String),
+    NewFile(String),
+    RenameFile(String, PathBuf),
 }
 
 #[derive(Clone)]
@@ -163,6 +166,9 @@ enum PresetConfirmation {
     Delete(String),
     Uninstall(String, PathBuf),
     Overwrite(String, Vec<PathBuf>),
+    DeleteFile(String, PathBuf),
+    /// Project files that already exist with different content.
+    Conflicts(Vec<PathBuf>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -497,6 +503,22 @@ impl KitterApp {
         let skill_search = cx.new(|cx| {
             InputState::new(window, cx).placeholder(t!("common.search_skills").to_string())
         });
+        let description_input = cx.new(|cx| {
+            gpui_component::input::TextareaState::new(window, cx)
+                .auto_grow(1, 8)
+                .submit_on_enter(true)
+        });
+        cx.subscribe_in(
+            &description_input,
+            window,
+            |this, _, event: &InputEvent, _, cx| match event {
+                InputEvent::PressEnter { shift: false, .. } | InputEvent::Blur => {
+                    this.commit_description_edit(cx)
+                }
+                _ => {}
+            },
+        )
+        .detach();
         let project_search = cx.new(|cx| {
             InputState::new(window, cx).placeholder(t!("common.search_projects").to_string())
         });
@@ -777,12 +799,15 @@ impl KitterApp {
             },
             skills_view: SkillsState {
                 expanded_description: None,
+                editing_description: None,
+                description_input,
                 tab: DetailTab::Installs,
                 selection: SkillSelection::new(selected),
                 selected_file: PathBuf::from("SKILL.md"),
                 skill_search,
                 content_snapshot: RefCell::new(None),
                 content_scroll: ScrollHandle::new(),
+                content_tree_scroll: ScrollHandle::new(),
                 list: ListState::new(0, ListAlignment::Top, px(100.)),
                 list_rows: RefCell::new(Arc::from([])),
                 selectable_text_handles: RefCell::new(BTreeMap::new()),
@@ -807,6 +832,8 @@ impl KitterApp {
                 context_estimates: RefCell::new(BTreeMap::new()),
                 context_estimate_tasks: RefCell::new(BTreeMap::new()),
                 scan_generation: 0,
+                list_scroll: ScrollHandle::new(),
+                skills_scroll: UniformListScrollHandle::new(),
             },
             add_flow: AddFlowState {
                 kind: AddKind::Npx,
@@ -821,6 +848,7 @@ impl KitterApp {
                 selected: HashSet::new(),
                 error: None,
                 group_enabled: true,
+                local_mode: crate::LocalInstallMode::Link,
                 group_name: None,
                 primary_input: add_primary_input,
                 source_select: add_source_select,
@@ -872,10 +900,15 @@ impl KitterApp {
                 error: None,
                 agents_md: preset_agents_md,
                 agents_md_for: RefCell::new(None),
+                selected_file: PathBuf::from("AGENTS.md"),
+                collapsed_dirs: HashSet::new(),
+                tree_scroll: ScrollHandle::new(),
+                pending_conflict: None,
                 skill_search: preset_skill_search,
                 picked_skills: HashSet::new(),
                 confirmation: None,
                 statuses: RefCell::new(BTreeMap::new()),
+                list_scroll: ScrollHandle::new(),
             },
         }
     }
@@ -2393,6 +2426,7 @@ mod e2e_tests {
                         name: "demo".into(),
                         storage_name: String::new(),
                         description: String::new(),
+                        custom_description: None,
                         origin: crate::SkillOrigin::Git {
                             repository: repo.to_string_lossy().into_owned(),
                             subdir: None,
@@ -2477,6 +2511,7 @@ mod e2e_tests {
                         name: "demo".into(),
                         storage_name: String::new(),
                         description: String::new(),
+                        custom_description: None,
                         origin: crate::SkillOrigin::Unknown,
                         update_available: true,
                         group_id: Some(group.clone()),
@@ -2673,6 +2708,7 @@ mod e2e_tests {
                             name: name.into(),
                             storage_name: String::new(),
                             description: "Fixture".into(),
+                            custom_description: None,
                             origin: crate::SkillOrigin::Unknown,
                             update_available: false,
                             group_id: None,
@@ -2860,60 +2896,74 @@ fn minimum_window_size(cx: &App) -> Size<Pixels> {
     fit_minimum_window_size(cx.primary_display().map(|display| display.bounds().size))
 }
 
+fn open_main_window(cx: &mut App) {
+    cx.open_window(
+        WindowOptions {
+            titlebar: Some(TitlebarOptions {
+                title: Some("Kitter".into()),
+                appears_transparent: cfg!(target_os = "macos"),
+                traffic_light_position: cfg!(target_os = "macos").then(|| point(px(16.), px(17.))),
+                ..Default::default()
+            }),
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None,
+                initial_window_size(cx),
+                cx,
+            ))),
+            window_min_size: Some(minimum_window_size(cx)),
+            is_movable: true,
+            app_owns_titlebar_drag: cfg!(target_os = "macos"),
+            window_background: if cfg!(target_os = "macos") {
+                WindowBackgroundAppearance::Blurred
+            } else {
+                WindowBackgroundAppearance::Opaque
+            },
+            ..Default::default()
+        },
+        |window, cx| {
+            let view = cx.new(|cx| {
+                let app = KitterApp::new(window, cx);
+                cx.observe_window_bounds(window, |_, window, cx| {
+                    crate::platform::update_soft_window_shadow(window);
+                    cx.notify();
+                })
+                .detach();
+                app
+            });
+            crate::platform::configure_window_material(window, cx.theme().is_dark());
+            // Kitter uses the platform window decorations. The component Root's
+            // client-side border adds a full-window mouse-move layer that is
+            // only needed by borderless Linux windows.
+            cx.new(|cx| {
+                Root::new(view, window, cx)
+                    .bordered(false)
+                    .bg(cx.theme().background)
+            })
+        },
+    )
+    .expect("failed to open Kitter window");
+}
+
 pub fn run() {
-    gpui_platform::application()
-        .with_assets(crate::assets::Assets)
-        .run(|cx: &mut App| {
-            cx.on_action(quit);
-            cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
-            cx.set_app_identity("dev.kitter.app", "Kitter");
-            gpui_component::init(cx);
-            crate::assets::register_fonts(cx).expect("failed to register fonts");
-            cx.open_window(
-                WindowOptions {
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("Kitter".into()),
-                        appears_transparent: cfg!(target_os = "macos"),
-                        traffic_light_position: cfg!(target_os = "macos")
-                            .then(|| point(px(16.), px(17.))),
-                        ..Default::default()
-                    }),
-                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                        None,
-                        initial_window_size(cx),
-                        cx,
-                    ))),
-                    window_min_size: Some(minimum_window_size(cx)),
-                    is_movable: true,
-                    app_owns_titlebar_drag: cfg!(target_os = "macos"),
-                    window_background: if cfg!(target_os = "macos") {
-                        WindowBackgroundAppearance::Blurred
-                    } else {
-                        WindowBackgroundAppearance::Opaque
-                    },
-                    ..Default::default()
-                },
-                |window, cx| {
-                    let view = cx.new(|cx| {
-                        let app = KitterApp::new(window, cx);
-                        cx.observe_window_bounds(window, |_, window, cx| {
-                            crate::platform::update_soft_window_shadow(window);
-                            cx.notify();
-                        })
-                        .detach();
-                        app
-                    });
-                    crate::platform::configure_window_material(window, cx.theme().is_dark());
-                    // Kitter uses the platform window decorations. The component Root's
-                    // client-side border adds a full-window mouse-move layer that is
-                    // only needed by borderless Linux windows.
-                    cx.new(|cx| {
-                        Root::new(view, window, cx)
-                            .bordered(false)
-                            .bg(cx.theme().background)
-                    })
-                },
-            )
-            .expect("failed to open Kitter window");
-        });
+    let app = gpui_platform::application().with_assets(crate::assets::Assets);
+    app.on_reopen(|cx| {
+        if cx.windows().is_empty() {
+            open_main_window(cx);
+        }
+    });
+    app.run(|cx: &mut App| {
+        cx.on_action(quit);
+        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+        cx.set_app_identity("dev.kitter.app", "Kitter");
+        gpui_component::init(cx);
+        crate::assets::register_fonts(cx).expect("failed to register fonts");
+        // Kitter has nothing to do in the background, so closing the window quits.
+        cx.on_window_closed(|cx, _| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
+        open_main_window(cx);
+    });
 }

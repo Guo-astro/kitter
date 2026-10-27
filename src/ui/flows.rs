@@ -240,6 +240,7 @@ impl KitterApp {
         let group_name = (self.add_flow.selected.len() > 1 && self.add_flow.group_enabled)
             .then(|| self.add_flow.group_name.clone())
             .flatten();
+        let local_mode = self.add_flow.local_mode;
         let data_dir = self.model.library.data_dir().to_path_buf();
         self.add_flow.task = Some(AddTask::Importing);
         self.add_flow.error = None;
@@ -249,8 +250,12 @@ impl KitterApp {
                 .background_executor()
                 .spawn(async move {
                     let mut library = SkillLibrary::open_in(data_dir)?;
-                    let summary =
-                        scan.import_selected(&mut library, &selected, group_name.as_deref())?;
+                    let summary = scan.import_selected_with_mode(
+                        &mut library,
+                        &selected,
+                        group_name.as_deref(),
+                        local_mode,
+                    )?;
                     Ok::<_, anyhow::Error>((library, summary))
                 })
                 .await;

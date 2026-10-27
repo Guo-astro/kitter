@@ -13,6 +13,7 @@ use walkdir::WalkDir;
 
 use crate::{SkillLibrary, SkillOrigin, SkillRecord};
 
+pub(crate) mod local;
 pub(crate) mod remote;
 mod updates;
 pub use updates::{
@@ -95,6 +96,17 @@ impl SkillScan {
         selected: &HashSet<String>,
         group_name: Option<&str>,
     ) -> Result<ImportSummary> {
+        self.import_selected_with_mode(library, selected, group_name, crate::LocalInstallMode::Link)
+    }
+
+    /// The mode applies only to local folders. Existing identities are skipped.
+    pub fn import_selected_with_mode(
+        self,
+        library: &mut SkillLibrary,
+        selected: &HashSet<String>,
+        group_name: Option<&str>,
+        install_mode: crate::LocalInstallMode,
+    ) -> Result<ImportSummary> {
         if selected.is_empty() {
             crate::user_bail!("errors.skill_selection_required");
         }
@@ -154,6 +166,8 @@ impl SkillScan {
                 ScanOrigin::Local { root, .. } => SkillOrigin::Local {
                     path: skill.path.clone(),
                     source_root: Some(root.clone()),
+                    install_mode,
+                    source_hash: None,
                 }
                 .identity_key(&skill.name),
             };
@@ -182,6 +196,8 @@ impl SkillScan {
                     SkillOrigin::Local {
                         path: skill.path.clone(),
                         source_root: Some(root.clone()),
+                        install_mode,
+                        source_hash: None,
                     },
                 ),
             };
@@ -197,6 +213,7 @@ impl SkillScan {
                     name: skill.name,
                     storage_name: String::new(),
                     description: skill.description,
+                    custom_description: None,
                     origin: skill_origin,
                     update_available: false,
                     group_id: group_id.clone(),
@@ -406,7 +423,13 @@ fn update_record(library: &mut SkillLibrary, mut record: SkillRecord) -> Result<
     if library.is_linked_source(&storage_name) {
         crate::user_bail!("errors.linked_update_required");
     }
-    if matches!(record.origin, SkillOrigin::Local { .. }) {
+    if matches!(
+        record.origin,
+        SkillOrigin::Local {
+            install_mode: crate::LocalInstallMode::Link,
+            ..
+        }
+    ) {
         let candidate = crate::adoption::AdoptionCandidate::from_local_record(&record)?;
         library.adopt(&candidate, &[])?;
         return Ok(());
@@ -445,7 +468,28 @@ fn update_record(library: &mut SkillLibrary, mut record: SkillRecord) -> Result<
                     .unwrap_or_else(|| temp.path().join("repo")),
             )?
         }
-        SkillOrigin::Local { path, .. } => path.clone(),
+        SkillOrigin::Local {
+            path,
+            source_root,
+            install_mode,
+            ..
+        } => {
+            if !path.try_exists()? {
+                return Ok(());
+            }
+            if !path.join("SKILL.md").is_file() {
+                crate::user_bail!("errors.skill_marker_missing");
+            }
+            let snapshot = temp.path().join("local");
+            local::copy_tree(&path, &snapshot)?;
+            updated_origin = Some(SkillOrigin::Local {
+                path,
+                source_root,
+                install_mode,
+                source_hash: Some(local::tree_hash(&snapshot)?),
+            });
+            snapshot
+        }
         SkillOrigin::Unknown => crate::user_bail!("errors.update_source_missing"),
     };
     // Downloading may take seconds. Keep changes made to the library meanwhile,
@@ -656,6 +700,18 @@ fn check_one(library: &SkillLibrary, record: &SkillRecord) -> Result<bool> {
         SkillOrigin::Builtin => return Ok(false),
         SkillOrigin::Git { .. } => bail!(t!("errors.update_source_missing").to_string()),
         SkillOrigin::ClaudeMarketplace { plugin, skill } => find_claude_skill(plugin, skill)?,
+        SkillOrigin::Local {
+            path,
+            install_mode: crate::LocalInstallMode::Copy,
+            source_hash,
+            ..
+        } => {
+            if !path.try_exists()? {
+                return Ok(false);
+            }
+            let current = local::tree_hash(path)?;
+            return Ok(source_hash.as_ref().is_some_and(|hash| hash != &current));
+        }
         SkillOrigin::Local { path, .. } => path.clone(),
         SkillOrigin::Unknown => return Ok(false),
         SkillOrigin::Npx { .. } => return Ok(false),
@@ -1336,6 +1392,7 @@ printf 'call\n' >> "$KITTER_IMPORT_FIXTURE/calls"
                         name: name.into(),
                         storage_name: String::new(),
                         description: String::new(),
+                        custom_description: None,
                         origin: SkillOrigin::Unknown,
                         update_available: false,
                         group_id: None,

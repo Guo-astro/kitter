@@ -1,5 +1,25 @@
 use super::*;
-use crate::preset::{AgentsMdState, Preset, PresetStatus, PresetStore, SyncReport};
+use crate::preset::{
+    AgentsMdState, FileConflictDecision, FileDecisions, FileState, Preset, PresetStatus,
+    PresetStore, SyncReport,
+};
+
+const AGENTS_MD: &str = "AGENTS.md";
+
+/// An install or sync that stopped because project files already exist.
+pub(super) enum ConflictAction {
+    Install {
+        id: String,
+        project: PathBuf,
+        targets: Vec<InstallTarget>,
+        plan: project::InstallPlan,
+    },
+    Sync {
+        id: String,
+        projects: Vec<PathBuf>,
+        overwrite: bool,
+    },
+}
 
 impl KitterApp {
     pub(super) fn reload_presets(&mut self) {
@@ -27,7 +47,17 @@ impl KitterApp {
     }
 
     pub(super) fn select_preset(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.presets_view.selected.as_deref() != Some(id.as_str()) {
+            self.presets_view.selected_file = PathBuf::from(AGENTS_MD);
+            self.presets_view.collapsed_dirs.clear();
+        }
         self.presets_view.selected = Some(id);
+        cx.notify();
+    }
+
+    pub(super) fn select_preset_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.save_preset_agents_md(cx);
+        self.presets_view.selected_file = path;
         cx.notify();
     }
 
@@ -60,15 +90,23 @@ impl KitterApp {
         cx: &mut Context<Self>,
     ) {
         let value = match &edit {
-            PresetEdit::Create => String::new(),
+            PresetEdit::Create | PresetEdit::NewFile(_) => String::new(),
             PresetEdit::Rename(id) => self
                 .presets_view
                 .store
                 .preset(id)
                 .map(|preset| preset.name.clone())
                 .unwrap_or_default(),
+            PresetEdit::RenameFile(_, path) => path.to_string_lossy().into_owned(),
+        };
+        let placeholder = match &edit {
+            PresetEdit::Create | PresetEdit::Rename(_) => t!("presets.name_placeholder"),
+            PresetEdit::NewFile(_) | PresetEdit::RenameFile(..) => {
+                t!("presets.file_path_placeholder")
+            }
         };
         self.presets_view.name_input.update(cx, |input, cx| {
+            input.set_placeholder(placeholder.to_string(), window, cx);
             input.set_value(value, window, cx);
         });
         self.presets_view.edit = Some(edit);
@@ -95,12 +133,32 @@ impl KitterApp {
                 .create(&name)
                 .map(|preset| Some(preset.id)),
             PresetEdit::Rename(id) => self.presets_view.store.rename(id, &name).map(|_| None),
+            PresetEdit::NewFile(id) => self.create_preset_file(id, Path::new(&name)).map(|_| None),
+            PresetEdit::RenameFile(id, from) => {
+                let to = PathBuf::from(&name);
+                let result = if to == *from {
+                    Ok(())
+                } else if self.preset_file_exists(id, &to) {
+                    Err(anyhow::anyhow!(t!("presets.file_exists").to_string()))
+                } else {
+                    self.save_preset_agents_md(cx);
+                    self.presets_view.store.rename_file(id, from, &to)
+                };
+                result.map(|_| {
+                    if self.presets_view.selected_file == *from {
+                        self.presets_view.selected_file = to;
+                    }
+                    *self.presets_view.agents_md_for.borrow_mut() = None;
+                    None
+                })
+            }
         };
         match result {
             Ok(created) => {
                 if let Some(id) = created {
                     self.presets_view.selected = Some(id);
                     self.presets_view.tab = PresetTab::Skills;
+                    self.presets_view.selected_file = PathBuf::from(AGENTS_MD);
                 }
                 self.close_dialog(cx);
                 self.refresh(cx);
@@ -185,40 +243,129 @@ impl KitterApp {
         }
     }
 
-    /// Load the selected preset's AGENTS.md into the editor when the
-    /// selection changes. Called while rendering the AGENTS.md tab.
+    /// The preset's instruction files, AGENTS.md first.
+    pub(super) fn preset_files(&self, id: &str) -> Vec<PathBuf> {
+        let mut files = vec![PathBuf::from(AGENTS_MD)];
+        files.extend(self.presets_view.store.files(id).unwrap_or_default());
+        files
+    }
+
+    fn preset_file_exists(&self, id: &str, path: &Path) -> bool {
+        self.preset_files(id).iter().any(|file| file == path)
+    }
+
+    fn read_preset_file(&self, id: &str, path: &Path) -> anyhow::Result<String> {
+        if path == Path::new(AGENTS_MD) {
+            self.presets_view.store.agents_md(id)
+        } else {
+            self.presets_view.store.read_file(id, path)
+        }
+    }
+
+    fn create_preset_file(&mut self, id: &str, path: &Path) -> anyhow::Result<()> {
+        if self.preset_file_exists(id, path) {
+            anyhow::bail!(t!("presets.file_exists").to_string());
+        }
+        self.presets_view.store.write_file(id, path, "")?;
+        self.reload_preset_editor();
+        self.presets_view.selected_file = path.to_path_buf();
+        Ok(())
+    }
+
+    /// Adds dropped files, or every file inside dropped folders, keeping the
+    /// folder name as the first path component.
+    pub(super) fn add_dropped_preset_files(
+        &mut self,
+        id: String,
+        paths: &[PathBuf],
+        cx: &mut Context<Self>,
+    ) {
+        let mut added = None;
+        let mut error = None;
+        for source in paths {
+            let Some(base) = source.parent() else {
+                continue;
+            };
+            let files = walkdir::WalkDir::new(source)
+                .sort_by_file_name()
+                .into_iter()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_type().is_file());
+            for entry in files {
+                let Ok(relative) = entry.path().strip_prefix(base) else {
+                    continue;
+                };
+                let result = std::fs::read(entry.path())
+                    .map_err(anyhow::Error::from)
+                    .and_then(|content| self.presets_view.store.write_file(&id, relative, content));
+                match result {
+                    Ok(()) => {
+                        added.get_or_insert_with(|| relative.to_path_buf());
+                    }
+                    Err(failure) => {
+                        error.get_or_insert(failure);
+                    }
+                }
+            }
+        }
+        if let Some(path) = added {
+            self.save_preset_agents_md(cx);
+            self.presets_view.selected_file = path;
+            *self.presets_view.agents_md_for.borrow_mut() = None;
+            self.presets_view.statuses.borrow_mut().clear();
+        }
+        if let Some(error) = error {
+            self.show_notice(self.error_message(error), cx);
+        }
+        cx.notify();
+    }
+
+    /// Load the selected preset file into the editor when the selection
+    /// changes. Called while rendering the instructions tab.
     pub(super) fn load_preset_agents_md(&self, id: &str, window: &mut Window, cx: &mut App) {
-        if self.presets_view.agents_md_for.borrow().as_deref() == Some(id) {
+        let key = (id.to_string(), self.presets_view.selected_file.clone());
+        if self.presets_view.agents_md_for.borrow().as_ref() == Some(&key) {
             return;
         }
-        let content = self.presets_view.store.agents_md(id).unwrap_or_default();
+        let content = self.read_preset_file(id, &key.1).unwrap_or_default();
         self.presets_view.agents_md.update(cx, |editor, cx| {
             if editor.value().as_ref() != content {
                 editor.set_value(content, window, cx);
             }
         });
-        *self.presets_view.agents_md_for.borrow_mut() = Some(id.to_string());
+        *self.presets_view.agents_md_for.borrow_mut() = Some(key);
     }
 
     pub(super) fn save_preset_agents_md(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.presets_view.agents_md_for.borrow().clone() else {
-            return;
-        };
-        let content = self.presets_view.agents_md.read(cx).value().to_string();
-        if self
-            .presets_view
-            .store
-            .agents_md(&id)
-            .is_ok_and(|current| current == content)
-        {
-            return;
-        }
-        if let Err(error) = self.presets_view.store.set_agents_md(&id, &content) {
+        if let Err(error) = self.write_editor_to_preset(cx) {
             self.show_notice(self.error_message(error), cx);
             return;
         }
-        self.presets_view.statuses.borrow_mut().clear();
         cx.notify();
+    }
+
+    fn reload_preset_editor(&mut self) {
+        *self.presets_view.agents_md_for.borrow_mut() = None;
+    }
+
+    fn write_editor_to_preset(&mut self, cx: &mut Context<Self>) -> anyhow::Result<()> {
+        let Some((id, path)) = self.presets_view.agents_md_for.borrow().clone() else {
+            return Ok(());
+        };
+        let content = self.presets_view.agents_md.read(cx).value().to_string();
+        if self
+            .read_preset_file(&id, &path)
+            .is_ok_and(|current| current == content)
+        {
+            return Ok(());
+        }
+        if path == Path::new(AGENTS_MD) {
+            self.presets_view.store.set_agents_md(&id, &content)?;
+        } else {
+            self.presets_view.store.write_file(&id, &path, &content)?;
+        }
+        self.presets_view.statuses.borrow_mut().clear();
+        Ok(())
     }
 
     pub(super) fn open_preset_install_dialog(
@@ -260,12 +407,47 @@ impl KitterApp {
             .into_iter()
             .filter(|target| self.install_flow.selected_targets.contains(target))
             .collect::<Vec<_>>();
-        let result = self.presets_view.store.install_reviewed(
+        let conflicts = self
+            .presets_view
+            .store
+            .file_conflicts(&id, &project)
+            .unwrap_or_default();
+        if !conflicts.is_empty() {
+            self.close_dialog(cx);
+            self.ask_file_conflicts(
+                ConflictAction::Install {
+                    id,
+                    project,
+                    targets,
+                    plan,
+                },
+                conflicts
+                    .into_iter()
+                    .map(|conflict| conflict.path)
+                    .collect(),
+                cx,
+            );
+            return;
+        }
+        self.finish_preset_install(id, project, targets, plan, &FileDecisions::new(), cx);
+    }
+
+    fn finish_preset_install(
+        &mut self,
+        id: String,
+        project: PathBuf,
+        targets: Vec<InstallTarget>,
+        plan: project::InstallPlan,
+        decisions: &FileDecisions,
+        cx: &mut Context<Self>,
+    ) {
+        let result = self.presets_view.store.install_reviewed_with_files(
             &id,
             &project,
             &targets,
             &self.model.skills,
             plan,
+            decisions,
         );
         if result.is_ok() && !self.install_flow.global {
             self.model.library.config.touch_project(&project);
@@ -289,8 +471,13 @@ impl KitterApp {
         cx: &mut Context<Self>,
     ) {
         let (modified, clean): (Vec<_>, Vec<_>) = projects.into_iter().partition(|project| {
-            self.preset_status(&id, project)
-                .is_some_and(|status| status.agents_md == AgentsMdState::Modified)
+            self.preset_status(&id, project).is_some_and(|status| {
+                status.agents_md == AgentsMdState::Modified
+                    || status
+                        .files
+                        .iter()
+                        .any(|file| file.state == FileState::Modified && !file.removed)
+            })
         });
         if !clean.is_empty() {
             self.run_preset_sync(&id, &clean, false, cx);
@@ -308,14 +495,52 @@ impl KitterApp {
         overwrite: bool,
         cx: &mut Context<Self>,
     ) {
+        let conflicts = projects
+            .iter()
+            .flat_map(|project| {
+                self.presets_view
+                    .store
+                    .file_conflicts(id, project)
+                    .unwrap_or_default()
+            })
+            .map(|conflict| conflict.path)
+            .collect::<std::collections::BTreeSet<_>>();
+        if !conflicts.is_empty() {
+            self.ask_file_conflicts(
+                ConflictAction::Sync {
+                    id: id.to_string(),
+                    projects: projects.to_vec(),
+                    overwrite,
+                },
+                conflicts.into_iter().collect(),
+                cx,
+            );
+            return;
+        }
+        self.finish_preset_sync(id, projects, overwrite, None, cx);
+    }
+
+    fn finish_preset_sync(
+        &mut self,
+        id: &str,
+        projects: &[PathBuf],
+        overwrite: bool,
+        decision: Option<FileConflictDecision>,
+        cx: &mut Context<Self>,
+    ) {
         let mut report = SyncReport::default();
         let mut error = None;
         for project in projects {
-            match self
-                .presets_view
-                .store
-                .sync(id, project, &self.model.skills, overwrite)
-            {
+            let decisions = decision
+                .map(|decision| self.conflict_decisions(id, project, decision))
+                .unwrap_or_default();
+            match self.presets_view.store.sync_with_files(
+                id,
+                project,
+                &self.model.skills,
+                overwrite,
+                &decisions,
+            ) {
                 Ok(partial) => {
                     report.installed += partial.installed;
                     report.removed += partial.removed;
@@ -330,6 +555,68 @@ impl KitterApp {
             Some(error) => self.show_notice(self.error_message(error), cx),
             None => self.show_preset_report(&report, t!("presets.synced"), cx),
         }
+    }
+
+    fn ask_file_conflicts(
+        &mut self,
+        action: ConflictAction,
+        paths: Vec<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        self.presets_view.pending_conflict = Some(action);
+        self.presets_view.confirmation = Some(PresetConfirmation::Conflicts(paths));
+        self.open_dialog(DialogKind::PresetConfirm, cx);
+    }
+
+    fn conflict_decisions(
+        &self,
+        id: &str,
+        project: &Path,
+        decision: FileConflictDecision,
+    ) -> FileDecisions {
+        self.presets_view
+            .store
+            .file_conflicts(id, project)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|conflict| (conflict.path, decision))
+            .collect()
+    }
+
+    pub(super) fn resolve_file_conflicts(
+        &mut self,
+        decision: FileConflictDecision,
+        cx: &mut Context<Self>,
+    ) {
+        self.presets_view.confirmation = None;
+        self.close_dialog(cx);
+        match self.presets_view.pending_conflict.take() {
+            Some(ConflictAction::Install {
+                id,
+                project,
+                targets,
+                plan,
+            }) => {
+                let decisions = self.conflict_decisions(&id, &project, decision);
+                self.finish_preset_install(id, project, targets, plan, &decisions, cx);
+            }
+            Some(ConflictAction::Sync {
+                id,
+                projects,
+                overwrite,
+            }) => self.finish_preset_sync(&id, &projects, overwrite, Some(decision), cx),
+            None => {}
+        }
+    }
+
+    pub(super) fn request_preset_file_delete(
+        &mut self,
+        id: String,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        self.presets_view.confirmation = Some(PresetConfirmation::DeleteFile(id, path));
+        self.open_dialog(DialogKind::PresetConfirm, cx);
     }
 
     pub(super) fn request_preset_uninstall(
@@ -364,6 +651,22 @@ impl KitterApp {
             ),
             PresetConfirmation::Overwrite(id, projects) => {
                 self.run_preset_sync(&id, &projects, true, cx);
+                return;
+            }
+            PresetConfirmation::DeleteFile(id, path) => {
+                self.reload_preset_editor();
+                if let Err(error) = self.presets_view.store.delete_file(&id, &path) {
+                    self.show_notice(self.error_message(error), cx);
+                }
+                if self.presets_view.selected_file == path {
+                    self.presets_view.selected_file = PathBuf::from(AGENTS_MD);
+                }
+                self.presets_view.statuses.borrow_mut().clear();
+                cx.notify();
+                return;
+            }
+            PresetConfirmation::Conflicts(_) => {
+                self.resolve_file_conflicts(FileConflictDecision::Overwrite, cx);
                 return;
             }
         };

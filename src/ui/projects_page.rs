@@ -480,6 +480,7 @@ impl KitterApp {
             .flex_1()
             .min_h_0()
             .px(px(8.))
+            .track_scroll(&self.projects_view.list_scroll)
             .overflow_y_scroll();
         if projects.is_empty() {
             recent_rows = recent_rows.child(
@@ -669,7 +670,19 @@ impl KitterApp {
                     .child(kit::search_input(p, &self.projects_view.project_search).small()),
             )
             .child(global_row)
-            .child(recent_rows);
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(recent_rows)
+                    .child(kit::scrollbar(
+                        "projects-scrollbar",
+                        &self.projects_view.list_scroll,
+                    )),
+            );
 
         let selected_root = if self.projects_view.global_project_view {
             global_root.as_ref()
@@ -774,22 +787,36 @@ impl KitterApp {
                 let indices = visible_indices.clone();
                 let project = open_project.clone();
                 skills = skills.child(
-                    uniform_list(
-                        "project-skills-virtual-list",
-                        row_count,
-                        cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                            range
-                                .map(|index| {
-                                    let index =
-                                        indices.as_ref().map_or(index, |indices| indices[index]);
-                                    this.project_skill_row(&rows[index], &project, cx)
-                                })
-                                .collect()
-                        }),
-                    )
-                    .debug_selector(|| "project-skills-virtual-list".into())
-                    .flex_1()
-                    .min_h_0(),
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            uniform_list(
+                                "project-skills-virtual-list",
+                                row_count,
+                                cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+                                    range
+                                        .map(|index| {
+                                            let index = indices
+                                                .as_ref()
+                                                .map_or(index, |indices| indices[index]);
+                                            this.project_skill_row(&rows[index], &project, cx)
+                                        })
+                                        .collect()
+                                }),
+                            )
+                            .debug_selector(|| "project-skills-virtual-list".into())
+                            .track_scroll(&self.projects_view.skills_scroll)
+                            .flex_1()
+                            .min_h_0(),
+                        )
+                        .child(kit::scrollbar(
+                            "project-skills-scrollbar",
+                            &self.projects_view.skills_scroll,
+                        )),
                 );
             }
 

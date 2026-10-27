@@ -16,6 +16,12 @@ use crate::{InstallTarget, SkillSummary, agents::installation_root, config, proj
 
 const AGENTS_MD: &str = "AGENTS.md";
 
+mod files;
+pub use files::{
+    FileConflict, FileConflictDecision, FileDecisions, FileState, FileStatus, OwnedFile,
+    PresetFileConflicts,
+};
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Preset {
     pub id: String,
@@ -40,6 +46,12 @@ pub struct PresetInstallation {
     /// Hash of the AGENTS.md block body last written by Kitter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agents_md_hash: Option<String>,
+    #[serde(default)]
+    pub files: Vec<OwnedFile>,
+    #[serde(default)]
+    pub created_dirs: Vec<PathBuf>,
+    #[serde(default)]
+    pub skipped_files: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +82,7 @@ pub struct PresetStatus {
     pub missing_skills: Vec<String>,
     pub extra_skills: Vec<String>,
     pub agents_md: AgentsMdState,
+    pub files: Vec<FileStatus>,
 }
 
 impl PresetStatus {
@@ -77,6 +90,10 @@ impl PresetStatus {
         !self.missing_skills.is_empty()
             || !self.extra_skills.is_empty()
             || self.agents_md != AgentsMdState::Current
+            || self
+                .files
+                .iter()
+                .any(|file| file.state != FileState::Current)
     }
 }
 
@@ -317,6 +334,17 @@ impl PresetStore {
         targets: &[InstallTarget],
         skills: &[SkillSummary],
     ) -> Result<SyncReport> {
+        self.install_with_files(id, project, targets, skills, &FileDecisions::new())
+    }
+
+    pub fn install_with_files(
+        &mut self,
+        id: &str,
+        project: &Path,
+        targets: &[InstallTarget],
+        skills: &[SkillSummary],
+        decisions: &FileDecisions,
+    ) -> Result<SyncReport> {
         self.preset(id)?;
         if targets.is_empty() {
             crate::user_bail!("errors.install_location_required");
@@ -324,6 +352,7 @@ impl PresetStore {
         if !project.is_dir() {
             crate::user_bail!("errors.project_missing", path = project.display());
         }
+        self.check_file_decisions(id, project, decisions)?;
         let project = project_key(project);
         let project = project.as_path();
         match self
@@ -345,9 +374,12 @@ impl PresetStore {
                 targets: targets.to_vec(),
                 owned: Vec::new(),
                 agents_md_hash: None,
+                files: Vec::new(),
+                created_dirs: Vec::new(),
+                skipped_files: Vec::new(),
             }),
         }
-        self.sync(id, project, skills, true)
+        self.sync_with_files(id, project, skills, true, decisions)
     }
 
     /// Keep ownership of links created by the reviewed installation plan so
@@ -360,6 +392,19 @@ impl PresetStore {
         skills: &[SkillSummary],
         plan: project::InstallPlan,
     ) -> Result<SyncReport> {
+        self.install_reviewed_with_files(id, project, targets, skills, plan, &FileDecisions::new())
+    }
+
+    pub fn install_reviewed_with_files(
+        &mut self,
+        id: &str,
+        project: &Path,
+        targets: &[InstallTarget],
+        skills: &[SkillSummary],
+        plan: project::InstallPlan,
+        decisions: &FileDecisions,
+    ) -> Result<SyncReport> {
+        self.check_file_decisions(id, project, decisions)?;
         let preset = self.preset(id)?.clone();
         let mut created = Vec::new();
         let mut changed_skills = HashSet::new();
@@ -380,7 +425,7 @@ impl PresetStore {
             }
         }
         plan.execute()?;
-        let mut report = self.install(id, project, targets, skills)?;
+        let mut report = self.install_with_files(id, project, targets, skills, decisions)?;
         let index = self.installation_index(id, &project_key(project)).unwrap();
         let owned = &mut self.document.installations[index].owned;
         for link in created {
@@ -425,6 +470,7 @@ impl PresetStore {
             }
         }
         status.agents_md = self.agents_md_state(id, installation)?;
+        status.files = self.file_status(id, project)?;
         Ok(status)
     }
 
@@ -436,6 +482,23 @@ impl PresetStore {
         project: &Path,
         skills: &[SkillSummary],
         overwrite_modified: bool,
+    ) -> Result<SyncReport> {
+        self.sync_with_files(
+            id,
+            project,
+            skills,
+            overwrite_modified,
+            &FileDecisions::new(),
+        )
+    }
+
+    pub fn sync_with_files(
+        &mut self,
+        id: &str,
+        project: &Path,
+        skills: &[SkillSummary],
+        overwrite_modified: bool,
+        decisions: &FileDecisions,
     ) -> Result<SyncReport> {
         let project = project_key(project);
         let project = project.as_path();
@@ -449,6 +512,26 @@ impl PresetStore {
             crate::user_bail!("errors.preset_agents_md_modified");
         }
 
+        self.check_file_decisions(id, project, decisions)?;
+        let modified = self
+            .file_status(id, project)?
+            .into_iter()
+            .filter(|f| f.state == FileState::Modified && !f.removed)
+            .map(|f| f.path)
+            .collect::<Vec<_>>();
+        if !modified.is_empty() && !overwrite_modified {
+            crate::user_bail!(
+                "errors.preset_files_modified",
+                paths = modified
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            );
+        }
+
+        let mut file_installation = installation.clone();
+        self.sync_files(id, &mut file_installation, decisions)?;
         let mut report = SyncReport::default();
         let mut owned = installation.owned.clone();
         for storage_name in &preset.skills {
@@ -503,6 +586,9 @@ impl PresetStore {
         let installation = &mut self.document.installations[index];
         installation.owned = owned;
         installation.agents_md_hash = hash;
+        installation.files = file_installation.files;
+        installation.created_dirs = file_installation.created_dirs;
+        installation.skipped_files = file_installation.skipped_files;
         self.save()?;
         Ok(report)
     }
@@ -520,7 +606,11 @@ impl PresetStore {
         let index = self.installation_index(id, project).ok_or_else(|| {
             crate::user_error!("errors.preset_not_installed", path = project.display())
         })?;
-        let installation = self.document.installations.remove(index);
+        let installation = self.document.installations[index].clone();
+        files::release_files(project, &installation.files)?;
+        let mut dirs = installation.created_dirs.clone();
+        files::cleanup_dirs(project, &mut dirs);
+        self.document.installations.remove(index);
         let mut report = SyncReport::default();
         self.release_links(project, id, &installation.owned, skills, &mut report);
         if !is_home(project) {
@@ -871,11 +961,13 @@ mod tests {
                     fs::create_dir_all(&path).unwrap();
                     fs::write(path.join("SKILL.md"), format!("---\nname: {name}\n---\n")).unwrap();
                     SkillSummary {
+                        original_description: String::new(),
                         version: None,
                         record: SkillRecord {
                             name: name.to_string(),
                             storage_name: name.to_string(),
                             description: String::new(),
+                            custom_description: None,
                             origin: SkillOrigin::Unknown,
                             update_available: false,
                             group_id: None,
@@ -914,6 +1006,344 @@ mod tests {
 
     fn universal() -> Vec<InstallTarget> {
         vec![InstallTarget::universal()]
+    }
+
+    #[test]
+    fn preset_file_crud_validates_paths_and_text() {
+        let fixture = Fixture::new(&[]);
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        for path in [
+            "",
+            "../secret",
+            "docs/../secret",
+            "/tmp/secret",
+            "AGENTS.md",
+            "./AGENTS.md",
+            "docs/AGENTS.md",
+            "C:/secret",
+            "docs\\..\\secret",
+        ] {
+            assert!(
+                store.write_file(&id, Path::new(path), "text").is_err(),
+                "{path}"
+            );
+            assert!(store.read_file(&id, Path::new(path)).is_err(), "{path}");
+            assert!(store.delete_file(&id, Path::new(path)).is_err(), "{path}");
+        }
+        for bytes in [&[0xff_u8][..], b"binary\0content", b"bad\x01text"] {
+            assert!(store.write_file(&id, Path::new("bad"), bytes).is_err());
+        }
+        let path = Path::new("docs/conventions.md");
+        store.write_file(&id, path, "Hello 世界\n").unwrap();
+        assert_eq!(store.files(&id).unwrap(), [path]);
+        assert_eq!(store.read_file(&id, path).unwrap(), "Hello 世界\n");
+        store.write_file(&id, path, "updated").unwrap();
+        let moved = Path::new(".cursor/rules/swift.mdc");
+        store.rename_file(&id, path, moved).unwrap();
+        assert_eq!(store.read_file(&id, moved).unwrap(), "updated");
+        store.write_file(&id, path, "keep").unwrap();
+        assert!(store.rename_file(&id, moved, path).is_err());
+        store.delete_file(&id, path).unwrap();
+        store.delete_file(&id, moved).unwrap();
+        assert!(store.files(&id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn file_installation_conflicts_are_preflighted_and_decided_per_path() {
+        let fixture = Fixture::new(&["alpha"]);
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        store.add_skills(&id, &names(&["alpha"])).unwrap();
+        for path in ["overwrite", "skip", "identical", "new/deep/file"] {
+            store.write_file(&id, Path::new(path), "desired").unwrap();
+        }
+        fs::write(fixture.project.join("overwrite"), "old").unwrap();
+        fs::write(fixture.project.join("skip"), "mine").unwrap();
+        fs::write(fixture.project.join("identical"), "desired").unwrap();
+        let error = store
+            .install(&id, &fixture.project, &universal(), &fixture.skills)
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<PresetFileConflicts>().unwrap().paths,
+            [Path::new("overwrite"), Path::new("skip")]
+        );
+        assert!(store.installation(&id, &fixture.project).is_none());
+        assert!(!fixture.link("alpha").exists());
+        assert!(!fixture.project.join("new").exists());
+        let mut decisions = FileDecisions::new();
+        decisions.insert("overwrite".into(), FileConflictDecision::Overwrite);
+        decisions.insert("skip".into(), FileConflictDecision::Skip);
+        store
+            .install_with_files(
+                &id,
+                &fixture.project,
+                &universal(),
+                &fixture.skills,
+                &decisions,
+            )
+            .unwrap();
+        let installation = store.installation(&id, &fixture.project).unwrap();
+        assert_eq!(installation.files.len(), 3);
+        assert!(
+            !installation
+                .files
+                .iter()
+                .any(|f| f.path == Path::new("skip"))
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.project.join("overwrite")).unwrap(),
+            "desired"
+        );
+        let mut store = fixture.store();
+        store
+            .write_file(&id, Path::new("skip"), "new desired")
+            .unwrap();
+        store
+            .sync(&id, &fixture.project, &fixture.skills, false)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.project.join("skip")).unwrap(),
+            "mine"
+        );
+        store
+            .uninstall(&id, &fixture.project, &fixture.skills)
+            .unwrap();
+        assert!(!fixture.project.join("identical").exists());
+        assert!(!fixture.project.join("new").exists());
+        assert!(fixture.project.join("skip").exists());
+    }
+
+    #[test]
+    fn file_sync_requires_confirmation_and_preserves_edits_on_removal() {
+        let fixture = Fixture::new(&[]);
+        fs::create_dir(fixture.project.join("existing")).unwrap();
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        for path in ["existing/keep", "created/deep/clean", "created/edited"] {
+            store.write_file(&id, Path::new(path), "v1").unwrap();
+        }
+        store
+            .install(&id, &fixture.project, &universal(), &[])
+            .unwrap();
+        assert!(
+            !store
+                .status(&id, &fixture.project, &[])
+                .unwrap()
+                .needs_sync()
+        );
+        store
+            .write_file(&id, Path::new("created/deep/clean"), "v2")
+            .unwrap();
+        assert!(
+            store
+                .status(&id, &fixture.project, &[])
+                .unwrap()
+                .needs_sync()
+        );
+        store.sync(&id, &fixture.project, &[], false).unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.project.join("created/deep/clean")).unwrap(),
+            "v2"
+        );
+        fs::write(fixture.project.join("created/deep/clean"), "mine").unwrap();
+        assert_eq!(
+            store
+                .status(&id, &fixture.project, &[])
+                .unwrap()
+                .files
+                .iter()
+                .find(|f| f.path == Path::new("created/deep/clean"))
+                .unwrap()
+                .state,
+            FileState::Modified
+        );
+        assert!(store.sync(&id, &fixture.project, &[], false).is_err());
+        assert_eq!(
+            fs::read_to_string(fixture.project.join("created/deep/clean")).unwrap(),
+            "mine"
+        );
+        store.sync(&id, &fixture.project, &[], true).unwrap();
+        fs::write(fixture.project.join("created/edited"), "my edits").unwrap();
+        store.delete_file(&id, Path::new("created/edited")).unwrap();
+        store
+            .delete_file(&id, Path::new("created/deep/clean"))
+            .unwrap();
+        let status = store.status(&id, &fixture.project, &[]).unwrap();
+        assert!(
+            status
+                .files
+                .iter()
+                .any(|f| f.removed && f.state == FileState::Modified)
+        );
+        store.sync(&id, &fixture.project, &[], false).unwrap();
+        assert!(!fixture.project.join("created/deep").exists());
+        assert!(fixture.project.join("created/edited").exists());
+        assert!(
+            !store
+                .installation(&id, &fixture.project)
+                .unwrap()
+                .files
+                .iter()
+                .any(|f| f.path == Path::new("created/edited"))
+        );
+        assert!(
+            !store
+                .status(&id, &fixture.project, &[])
+                .unwrap()
+                .needs_sync()
+        );
+        // Local changes to a still-managed file survive uninstall too.
+        fs::write(fixture.project.join("existing/keep"), "keep my changes").unwrap();
+        store.uninstall(&id, &fixture.project, &[]).unwrap();
+        assert!(fixture.project.join("existing/keep").exists());
+        assert!(fixture.project.join("created/edited").exists());
+        assert!(fixture.project.join("existing").is_dir());
+    }
+
+    #[test]
+    fn new_files_conflict_during_sync_and_unresolved_conflicts_do_not_update_other_files() {
+        let fixture = Fixture::new(&[]);
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        store.write_file(&id, Path::new("old"), "v1").unwrap();
+        store
+            .install(&id, &fixture.project, &universal(), &[])
+            .unwrap();
+        store.write_file(&id, Path::new("old"), "v2").unwrap();
+        store.write_file(&id, Path::new("new"), "desired").unwrap();
+        fs::write(fixture.project.join("new"), "mine").unwrap();
+        assert_eq!(
+            store.file_conflicts(&id, &fixture.project).unwrap(),
+            [FileConflict { path: "new".into() }]
+        );
+        assert!(
+            store
+                .sync(&id, &fixture.project, &[], true)
+                .unwrap_err()
+                .downcast_ref::<PresetFileConflicts>()
+                .is_some()
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.project.join("old")).unwrap(),
+            "v1"
+        );
+        let decisions = [(PathBuf::from("new"), FileConflictDecision::Overwrite)]
+            .into_iter()
+            .collect();
+        store
+            .sync_with_files(&id, &fixture.project, &[], false, &decisions)
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(fixture.project.join("new")).unwrap(),
+            "desired"
+        );
+    }
+
+    #[test]
+    fn old_installations_default_to_no_managed_files() {
+        let installation: PresetInstallation = serde_json::from_value(serde_json::json!({
+            "preset": "old", "project": "/project", "targets": ["universal"]
+        }))
+        .unwrap();
+        assert!(installation.files.is_empty());
+        assert!(installation.created_dirs.is_empty());
+        assert!(installation.skipped_files.is_empty());
+    }
+
+    #[test]
+    fn identical_new_files_need_sync_and_local_deletions_need_confirmation() {
+        let fixture = Fixture::new(&[]);
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        store
+            .install(&id, &fixture.project, &universal(), &[])
+            .unwrap();
+        store.write_file(&id, Path::new("same"), "same").unwrap();
+        fs::write(fixture.project.join("same"), "same").unwrap();
+        assert!(
+            store
+                .status(&id, &fixture.project, &[])
+                .unwrap()
+                .needs_sync()
+        );
+        assert!(
+            store
+                .file_conflicts(&id, &fixture.project)
+                .unwrap()
+                .is_empty()
+        );
+        store.sync(&id, &fixture.project, &[], false).unwrap();
+        assert!(
+            !store
+                .status(&id, &fixture.project, &[])
+                .unwrap()
+                .needs_sync()
+        );
+        fs::remove_file(fixture.project.join("same")).unwrap();
+        assert_eq!(
+            store.status(&id, &fixture.project, &[]).unwrap().files[0].state,
+            FileState::Modified
+        );
+        assert!(store.sync(&id, &fixture.project, &[], false).is_err());
+        assert!(!fixture.project.join("same").exists());
+        store.sync(&id, &fixture.project, &[], true).unwrap();
+        assert!(fixture.project.join("same").exists());
+    }
+
+    #[test]
+    fn reviewed_install_checks_files_before_executing_skill_plan() {
+        let fixture = Fixture::new(&["alpha"]);
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        store.add_skills(&id, &names(&["alpha"])).unwrap();
+        store
+            .write_file(&id, Path::new("conflict"), "desired")
+            .unwrap();
+        fs::write(fixture.project.join("conflict"), "mine").unwrap();
+        let mut plan = project::InstallPlan::default();
+        plan.add(
+            &fixture.project,
+            &fixture.skills[0].path,
+            "alpha",
+            &universal(),
+        )
+        .unwrap();
+        assert!(
+            store
+                .install_reviewed(&id, &fixture.project, &universal(), &fixture.skills, plan)
+                .is_err()
+        );
+        assert!(!fixture.link("alpha").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preset_files_reject_symlinks_in_storage_and_projects() {
+        use std::os::unix::fs::symlink;
+        let fixture = Fixture::new(&[]);
+        let mut store = fixture.store();
+        let id = store.create("files").unwrap().id;
+        store
+            .write_file(&id, Path::new("docs/file"), "desired")
+            .unwrap();
+        let external = fixture.data.join("external");
+        fs::create_dir_all(&external).unwrap();
+        fs::write(external.join("file"), "keep").unwrap();
+        symlink(&external, fixture.project.join("docs")).unwrap();
+        assert!(
+            store
+                .install(&id, &fixture.project, &universal(), &[])
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(external.join("file")).unwrap(), "keep");
+        symlink(&external, store.preset_dir(&id).join("files/escape")).unwrap();
+        assert!(store.files(&id).is_err());
+        assert!(
+            store
+                .write_file(&id, Path::new("escape/file"), "bad")
+                .is_err()
+        );
     }
 
     #[test]

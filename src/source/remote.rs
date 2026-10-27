@@ -618,6 +618,7 @@ mod tests {
                 name: name.into(),
                 storage_name: String::new(),
                 description: String::new(),
+                custom_description: None,
                 origin: SkillOrigin::Git {
                     repository: repo.to_str().unwrap().into(),
                     subdir: Some(format!("skills/{name}")),
@@ -779,6 +780,7 @@ mod tests {
                     name: "display-name".into(),
                     storage_name: String::new(),
                     description: String::new(),
+                    custom_description: None,
                     origin: origin.clone(),
                     update_available: false,
                     group_id: None,

@@ -12,6 +12,7 @@ impl KitterApp {
             .min_h_0()
             .px(px(8.))
             .py(px(8.))
+            .track_scroll(&self.presets_view.list_scroll)
             .overflow_y_scroll();
         for preset in presets {
             rows = rows.child(self.preset_list_row(preset, cx));
@@ -43,7 +44,19 @@ impl KitterApp {
                     })),
                 ),
             )
-            .child(rows);
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(rows)
+                    .child(kit::scrollbar(
+                        "presets-scrollbar",
+                        &self.presets_view.list_scroll,
+                    )),
+            );
         layout::content(
             &self.shell.content_layout,
             self.content_pane_width(window, cx),
@@ -211,7 +224,7 @@ impl KitterApp {
             ))
             .child(self.preset_tab_button(
                 "preset-tab-agents-md",
-                "AGENTS.md".to_string(),
+                t!("presets.instructions").to_string(),
                 PresetTab::AgentsMd,
                 cx,
             ))
@@ -408,13 +421,178 @@ impl KitterApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Div {
+        let p = self.palette();
+        let files = self.preset_files(&preset.id);
+        if !files.contains(&self.presets_view.selected_file) {
+            // The selected file was removed elsewhere, e.g. by the CLI.
+            let app = cx.entity().downgrade();
+            window.defer(cx, move |_, cx| {
+                let _ = app.update(cx, |this, cx| {
+                    this.presets_view.selected_file = PathBuf::from("AGENTS.md");
+                    cx.notify();
+                });
+            });
+        }
         self.load_preset_agents_md(&preset.id, window, cx);
-        div().flex_1().min_h_0().px(px(24.)).py(px(16.)).child(
-            Editor::new(&self.presets_view.agents_md)
-                .h_full()
-                .font_family(MONO)
-                .text_size(px(FS_BODY)),
-        )
+        let new_file_id = preset.id.clone();
+        let mut tree = div()
+            .id("preset-files-tree")
+            .size_full()
+            .py(px(8.))
+            .track_scroll(&self.presets_view.tree_scroll)
+            .overflow_y_scroll();
+        for entry in file_tree::rows(
+            p,
+            "preset-",
+            &files,
+            Some(Path::new("AGENTS.md")),
+            &self.presets_view.selected_file,
+            &self.presets_view.collapsed_dirs,
+        ) {
+            let path = entry.path;
+            if entry.directory {
+                tree = tree.child(entry.row.on_click(cx.listener(move |this, _, _, cx| {
+                    let collapsed = &mut this.presets_view.collapsed_dirs;
+                    if !collapsed.remove(&path) {
+                        collapsed.insert(path.clone());
+                    }
+                    cx.notify();
+                })));
+                continue;
+            }
+            let select_path = path.clone();
+            let row = entry.row.on_click(cx.listener(move |this, _, _, cx| {
+                this.select_preset_file(select_path.clone(), cx);
+            }));
+            if path == Path::new("AGENTS.md") {
+                tree = tree.child(row);
+                continue;
+            }
+            let app = cx.entity().downgrade();
+            let id = preset.id.clone();
+            let danger = p.danger;
+            tree = tree.child(row.context_menu(move |menu, _, _| {
+                let (rename_app, rename_id, rename_path) = (app.clone(), id.clone(), path.clone());
+                let (delete_app, delete_id, delete_path) = (app.clone(), id.clone(), path.clone());
+                menu.item(
+                    PopupMenuItem::new(t!("common.rename").to_string())
+                        .icon(Icon::default().path("icons/pencil.svg"))
+                        .on_click(move |_, window, cx| {
+                            let _ = rename_app.update(cx, |this, cx| {
+                                this.open_preset_name_dialog(
+                                    PresetEdit::RenameFile(rename_id.clone(), rename_path.clone()),
+                                    window,
+                                    cx,
+                                );
+                            });
+                        }),
+                )
+                .item(
+                    Self::danger_menu_item(t!("common.delete").to_string(), danger).on_click(
+                        move |_, _, cx| {
+                            let _ = delete_app.update(cx, |this, cx| {
+                                this.request_preset_file_delete(
+                                    delete_id.clone(),
+                                    delete_path.clone(),
+                                    cx,
+                                );
+                            });
+                        },
+                    ),
+                )
+            }));
+        }
+        let drop_id = preset.id.clone();
+        let tree_panel = div()
+            .id("preset-files-panel")
+            .relative()
+            .w(px(220.))
+            .h_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .bg(p.surface)
+            .drag_over::<ExternalPaths>(move |panel, _, _, _| panel.bg(p.hover))
+            .on_drop(cx.listener(move |this, paths: &ExternalPaths, _, cx| {
+                this.add_dropped_preset_files(drop_id.clone(), paths.paths(), cx);
+            }))
+            .child(
+                div()
+                    .h(px(40.))
+                    .flex_none()
+                    .px(px(8.))
+                    .flex()
+                    .items_center()
+                    .justify_end()
+                    .child(
+                        kit::icon_button(
+                            p,
+                            "preset-new-file",
+                            "icons/plus.svg",
+                            kit::IconKind::Ghost,
+                            kit::Size::Sm,
+                        )
+                        .tooltip(|window, cx| {
+                            Tooltip::new(t!("presets.new_file").to_string()).build(window, cx)
+                        })
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.open_preset_name_dialog(
+                                    PresetEdit::NewFile(new_file_id.clone()),
+                                    window,
+                                    cx,
+                                );
+                            },
+                        )),
+                    ),
+            )
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .child(tree)
+                    .child(kit::scrollbar(
+                        "preset-files-scrollbar",
+                        &self.presets_view.tree_scroll,
+                    )),
+            );
+        let editor = div()
+            .min_w_0()
+            .flex_1()
+            .h_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .h(px(40.))
+                    .flex_none()
+                    .px(px(16.))
+                    .border_b_1()
+                    .border_color(p.border)
+                    .bg(p.surface)
+                    .flex()
+                    .items_center()
+                    .font_family(MONO)
+                    .text_size(px(FS_SMALL))
+                    .text_color(p.secondary)
+                    .child(self.presets_view.selected_file.display().to_string()),
+            )
+            .child(
+                div().flex_1().min_h_0().px(px(8.)).py(px(8.)).child(
+                    Editor::new(&self.presets_view.agents_md)
+                        .h_full()
+                        .bordered(false)
+                        .font_family(MONO)
+                        .text_size(px(FS_BODY)),
+                ),
+            );
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .child(tree_panel)
+            .child(editor)
     }
 
     fn preset_projects_tab(&self, preset: &Preset, cx: &mut Context<Self>) -> Div {
@@ -679,17 +857,12 @@ impl KitterApp {
     }
 
     pub(super) fn preset_name_modal(&self, cx: &mut Context<Self>) -> Div {
-        let creating = self.presets_view.edit == Some(PresetEdit::Create);
-        let title = if creating {
-            t!("presets.new").to_string()
-        } else {
-            t!("common.rename").to_string()
+        let (title, confirm) = match &self.presets_view.edit {
+            Some(PresetEdit::Create) => (t!("presets.new"), t!("presets.create")),
+            Some(PresetEdit::NewFile(_)) => (t!("presets.new_file"), t!("presets.create")),
+            _ => (t!("common.rename"), t!("presets.save")),
         };
-        let confirm = if creating {
-            t!("presets.create").to_string()
-        } else {
-            t!("presets.save").to_string()
-        };
+        let (title, confirm) = (title.to_string(), confirm.to_string());
         let p = self.palette();
         let body = kit::form()
             .gap(px(8.))
@@ -824,6 +997,37 @@ impl KitterApp {
                 .text_color(p.secondary)
                 .child(text)
         };
+        let path_list = |paths: Vec<String>| {
+            div()
+                .mt(px(8.))
+                .font_family(MONO)
+                .text_size(px(FS_SMALL))
+                .text_color(p.secondary)
+                .children(paths.into_iter().map(|path| div().child(path)))
+        };
+        if let PresetConfirmation::Conflicts(paths) = &confirmation {
+            return self.action_dialog(
+                "preset-file-conflicts",
+                t!("presets.conflicts_title").to_string(),
+                div()
+                    .child(message(t!("presets.conflicts_hint").to_string()))
+                    .child(path_list(
+                        paths
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect(),
+                    )),
+                t!("presets.overwrite").to_string(),
+                true,
+                true,
+                t!("presets.skip").to_string(),
+                |this, cx| {
+                    this.resolve_file_conflicts(crate::preset::FileConflictDecision::Skip, cx)
+                },
+                |this, cx| this.confirm_preset_action(cx),
+                cx,
+            );
+        }
         let (key, title, body, confirm) = match &confirmation {
             PresetConfirmation::Delete(id) => {
                 let installed = self.presets_view.store.installations(id).next().is_some();
@@ -878,6 +1082,15 @@ impl KitterApp {
                     t!("presets.overwrite").to_string(),
                 )
             }
+            PresetConfirmation::DeleteFile(_, path) => (
+                "delete-preset-file",
+                t!("presets.delete_file_title").to_string(),
+                div().child(message(
+                    t!("install.delete_confirm", name = path.display()).to_string(),
+                )),
+                t!("common.delete").to_string(),
+            ),
+            PresetConfirmation::Conflicts(_) => unreachable!(),
         };
         self.action_dialog(
             key,

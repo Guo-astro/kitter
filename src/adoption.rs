@@ -47,7 +47,10 @@ pub struct AdoptionCandidate {
 
 impl AdoptionCandidate {
     pub(crate) fn from_local_record(record: &SkillRecord) -> Result<Self> {
-        let SkillOrigin::Local { path, source_root } = &record.origin else {
+        let SkillOrigin::Local {
+            path, source_root, ..
+        } = &record.origin
+        else {
             unreachable!("local record required");
         };
         let source = path.canonicalize()?;
@@ -61,6 +64,8 @@ impl AdoptionCandidate {
                 // Keep the saved identity so adoption finds the existing library entry.
                 path: path.clone(),
                 source_root: source_root.clone(),
+                install_mode: crate::LocalInstallMode::Link,
+                source_hash: None,
             },
             source,
             references: Vec::new(),
@@ -92,6 +97,7 @@ impl AdoptionCandidate {
             name: self.name.clone(),
             storage_name: String::new(),
             description: self.description.clone(),
+            custom_description: None,
             origin: self.origin.clone(),
             update_available: false,
             group_id: None,
@@ -522,6 +528,8 @@ impl Scanner<'_> {
             .unwrap_or_else(|| SkillOrigin::Local {
                 path: source.clone(),
                 source_root: None,
+                install_mode: crate::LocalInstallMode::Link,
+                source_hash: None,
             });
         let reference = SkillReference {
             path: entry.into(),
@@ -931,6 +939,8 @@ mod tests {
                         SkillOrigin::Local {
                             path: path.clone(),
                             source_root: None,
+                            install_mode: crate::LocalInstallMode::Link,
+                            source_hash: None,
                         }
                     },
                 )

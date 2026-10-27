@@ -19,7 +19,10 @@ use kitter::{
         plugin_dir,
     },
     effective_skills::{self, AgentContextEstimate, AgentId, group_effective_skills},
-    preset::{AgentsMdState, Preset, PresetStore, SkillFailure},
+    preset::{
+        AgentsMdState, FileConflictDecision, FileDecisions, FileState, FileStatus, Preset,
+        PresetStore, SkillFailure,
+    },
     project, source,
     tags::{TagId, TagState, load_tag_states, save_tag_states},
 };
@@ -58,6 +61,14 @@ enum Command {
         skill: String,
         #[arg(long)]
         json: bool,
+    },
+    #[command(about = t!("cli.describe_help").to_string())]
+    Describe {
+        skill: String,
+        #[arg(required_unless_present = "reset", conflicts_with = "reset")]
+        text: Option<String>,
+        #[arg(long, help = t!("cli.describe_reset_help").to_string())]
+        reset: bool,
     },
     /// List files in one skill
     Files { skill: String },
@@ -197,6 +208,8 @@ enum AddSource {
     /// Recursively discover skills below a local folder
     Local {
         path: PathBuf,
+        #[arg(long, help = t!("cli.copy_help").to_string())]
+        copy: bool,
         /// Import only these discovered skill names; defaults to all
         #[arg(long = "skill")]
         skills: Vec<String>,
@@ -355,7 +368,13 @@ enum PresetAction {
         #[arg(long)]
         clear: bool,
     },
+    #[command(about = t!("cli.preset_files_help").to_string())]
+    File {
+        #[command(subcommand)]
+        action: PresetFileAction,
+    },
     /// Install a preset into a project
+    #[command(alias = "apply")]
     Install {
         preset: String,
         #[arg(long)]
@@ -365,6 +384,10 @@ enum PresetAction {
         /// Confirm overwriting existing skills
         #[arg(short, long)]
         yes: bool,
+        #[arg(long, conflicts_with = "skip_conflicts", help = t!("cli.overwrite_conflicts_help").to_string())]
+        overwrite_conflicts: bool,
+        #[arg(long, help = t!("cli.skip_conflicts_help").to_string())]
+        skip_conflicts: bool,
     },
     /// Sync projects with the latest preset content
     Sync {
@@ -373,9 +396,12 @@ enum PresetAction {
         /// Only sync this project; defaults to every project
         #[arg(long)]
         project: Option<PathBuf>,
-        /// Overwrite AGENTS.md preset content edited inside the project
-        #[arg(long)]
+        #[arg(long, help = t!("cli.preset_force_help").to_string())]
         force: bool,
+        #[arg(long, conflicts_with = "skip_conflicts", help = t!("cli.overwrite_conflicts_help").to_string())]
+        overwrite_conflicts: bool,
+        #[arg(long, help = t!("cli.skip_conflicts_help").to_string())]
+        skip_conflicts: bool,
     },
     /// Remove a preset from a project
     Uninstall {
@@ -383,6 +409,32 @@ enum PresetAction {
         #[arg(long)]
         project: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum PresetFileAction {
+    #[command(about = t!("cli.preset_file_list_help").to_string())]
+    List {
+        preset: String,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = t!("cli.preset_file_read_help").to_string())]
+    Read { preset: String, path: PathBuf },
+    #[command(about = t!("cli.preset_file_write_help").to_string())]
+    Write {
+        preset: String,
+        path: PathBuf,
+        source: PathBuf,
+    },
+    #[command(about = t!("cli.preset_file_rename_help").to_string())]
+    Rename {
+        preset: String,
+        from: PathBuf,
+        to: PathBuf,
+    },
+    #[command(about = t!("cli.preset_file_delete_help").to_string())]
+    Delete { preset: String, path: PathBuf },
 }
 
 fn parse_target(input: &str) -> std::result::Result<InstallTarget, String> {
@@ -440,6 +492,8 @@ struct SkillOutput {
     id: String,
     name: String,
     description: String,
+    original_description: String,
+    custom_description: Option<String>,
     origin: kitter::SkillOrigin,
     path: PathBuf,
     group: Option<String>,
@@ -482,6 +536,7 @@ struct PresetOutput {
     skills: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     agents_md: Option<String>,
+    files: Vec<PathBuf>,
     projects: Vec<PresetProjectOutput>,
 }
 
@@ -491,6 +546,7 @@ struct PresetProjectOutput {
     targets: Vec<InstallTarget>,
     needs_sync: bool,
     agents_md_modified: bool,
+    files: Vec<FileStatus>,
 }
 
 #[derive(Serialize)]
@@ -512,9 +568,9 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let cli = Cli::parse();
     kitter::i18n::apply_language(kitter::config::Language::System);
     kitter::i18n::apply_language(kitter::AppConfig::load()?.language);
+    let cli = Cli::parse();
     if let Command::Agents { json, action } = cli.command {
         return inspect_agents(action, json);
     }
@@ -526,6 +582,11 @@ fn run() -> Result<()> {
         Command::Agents { .. } => unreachable!(),
         Command::List { tag, json } => list_skills(&library, tag.as_deref(), json),
         Command::Show { skill, json } => show_skill(&library, &skill, json),
+        Command::Describe { skill, text, .. } => {
+            library.set_description(&skill, text.as_deref().unwrap_or_default())?;
+            println!("{}", t!("cli.description_saved"));
+            Ok(())
+        }
         Command::Files { skill } => {
             let skill = library.resolve_skill(&skill)?;
             for file in library.files_by_storage(&skill.record.storage_name)? {
@@ -710,6 +771,8 @@ fn skill_output(
         id: format!("id:{}", skill.record.storage_name),
         name: skill.record.name.clone(),
         description: skill.record.description.clone(),
+        original_description: skill.original_description,
+        custom_description: skill.record.custom_description.clone(),
         origin: skill.record.origin.clone(),
         path: skill.path,
         group: skill
@@ -726,12 +789,17 @@ fn skill_output(
 }
 
 fn add_skills(library: &mut SkillLibrary, add: AddSource) -> Result<()> {
+    let mut install_mode = kitter::LocalInstallMode::Link;
     let (scan, selected, group) = match add {
         AddSource::Local {
             path,
+            copy,
             skills,
             group,
         } => {
+            if copy {
+                install_mode = kitter::LocalInstallMode::Copy;
+            }
             let path = path.canonicalize().with_context(|| {
                 t!("errors.source_folder_missing", path = path.display()).to_string()
             })?;
@@ -766,7 +834,8 @@ fn add_skills(library: &mut SkillLibrary, add: AddSource) -> Result<()> {
         }
         selected.into_iter().collect()
     };
-    let summary = scan.import_selected(library, &selected, group.as_deref())?;
+    let summary =
+        scan.import_selected_with_mode(library, &selected, group.as_deref(), install_mode)?;
     println!(
         "{}",
         t!(
@@ -1680,6 +1749,12 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
             for skill in &output.skills {
                 println!("  {skill}");
             }
+            if !output.files.is_empty() {
+                println!("{}", t!("cli.files_heading"));
+                for path in &output.files {
+                    println!("  {}", path.display());
+                }
+            }
             println!("{}", t!("cli.projects_heading"));
             for project in &output.projects {
                 let state = if project.agents_md_modified {
@@ -1750,11 +1825,14 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
             };
             presets.set_agents_md(&id, &content)
         }
+        PresetAction::File { action } => manage_preset_files(&mut presets, action),
         PresetAction::Install {
             preset,
             project,
             target,
             yes,
+            overwrite_conflicts,
+            skip_conflicts,
         } => {
             let id = presets.resolve(&preset)?.id.clone();
             let project = canonical_project(&project)?;
@@ -1775,7 +1853,15 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
             if !confirm_install(&plan, yes)? {
                 return Ok(());
             }
-            let report = presets.install_reviewed(&id, &project, &targets, &skills, plan)?;
+            let decisions = preset_file_decisions(
+                &presets,
+                &id,
+                &project,
+                overwrite_conflicts,
+                skip_conflicts,
+            )?;
+            let report = presets
+                .install_reviewed_with_files(&id, &project, &targets, &skills, plan, &decisions)?;
             finish_batch(
                 "common.installed_skills",
                 report.installed,
@@ -1786,6 +1872,8 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
             preset,
             project,
             force,
+            overwrite_conflicts,
+            skip_conflicts,
         } => {
             let ids = match preset {
                 Some(preset) => vec![presets.resolve(&preset)?.id.clone()],
@@ -1806,15 +1894,30 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
                     .filter(|path| project.as_ref().is_none_or(|project| project == path))
                     .collect::<Vec<_>>();
                 for path in projects {
-                    match presets.sync(&id, &path, &skills, force) {
+                    let result = preset_file_decisions(
+                        &presets,
+                        &id,
+                        &path,
+                        overwrite_conflicts,
+                        skip_conflicts,
+                    )
+                    .and_then(|decisions| {
+                        presets.sync_with_files(&id, &path, &skills, force, &decisions)
+                    });
+                    match result {
                         Ok(report) => {
                             synced += 1;
                             failures.extend(failure_messages(report.failures));
                         }
                         Err(error) => {
-                            let modified = presets
-                                .status(&id, &path, &skills)
-                                .is_ok_and(|status| status.agents_md == AgentsMdState::Modified);
+                            let modified =
+                                presets.status(&id, &path, &skills).is_ok_and(|status| {
+                                    status.agents_md == AgentsMdState::Modified
+                                        || status
+                                            .files
+                                            .iter()
+                                            .any(|f| f.state == FileState::Modified && !f.removed)
+                                });
                             let mut failure = t!(
                                 "errors.item_detail",
                                 item = format!("{id} → {}", path.display()),
@@ -1842,6 +1945,79 @@ fn manage_presets(library: &SkillLibrary, action: PresetAction) -> Result<()> {
             )
         }
     }
+}
+
+fn manage_preset_files(presets: &mut PresetStore, action: PresetFileAction) -> Result<()> {
+    match action {
+        PresetFileAction::List { preset, json } => {
+            let id = &presets.resolve(&preset)?.id;
+            let files = presets.files(id)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&files)?);
+            } else {
+                for path in files {
+                    println!("{}", path.display());
+                }
+            }
+            Ok(())
+        }
+        PresetFileAction::Read { preset, path } => {
+            print!(
+                "{}",
+                presets.read_file(&presets.resolve(&preset)?.id, &path)?
+            );
+            Ok(())
+        }
+        PresetFileAction::Write {
+            preset,
+            path,
+            source,
+        } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            let content = if source.as_os_str() == "-" {
+                let mut bytes = Vec::new();
+                std::io::Read::read_to_end(&mut std::io::stdin(), &mut bytes)?;
+                bytes
+            } else {
+                std::fs::read(&source).with_context(|| {
+                    t!("errors.read_failed", path = source.display()).to_string()
+                })?
+            };
+            presets.write_file(&id, &path, &content)
+        }
+        PresetFileAction::Rename { preset, from, to } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            presets.rename_file(&id, &from, &to)
+        }
+        PresetFileAction::Delete { preset, path } => {
+            let id = presets.resolve(&preset)?.id.clone();
+            presets.delete_file(&id, &path)
+        }
+    }
+}
+
+fn preset_file_decisions(
+    presets: &PresetStore,
+    id: &str,
+    project: &Path,
+    overwrite: bool,
+    skip: bool,
+) -> Result<FileDecisions> {
+    let conflicts = presets.file_conflicts(id, project)?;
+    if !conflicts.is_empty() && !overwrite && !skip {
+        let conflict = kitter::preset::PresetFileConflicts {
+            paths: conflicts.into_iter().map(|f| f.path).collect(),
+        };
+        let message =
+            kitter::i18n::UserError::new(format!("{conflict}\n{}", t!("cli.file_conflict_hint")));
+        return Err(anyhow::Error::new(conflict).context(message));
+    }
+    let decision = if overwrite {
+        FileConflictDecision::Overwrite
+    } else {
+        FileConflictDecision::Skip
+    };
+    Ok(conflicts.into_iter().map(|f| (f.path, decision)).collect())
 }
 
 fn failure_messages(failures: Vec<SkillFailure>) -> Vec<String> {
@@ -1873,6 +2049,7 @@ fn preset_output(
                 targets: installation.targets.clone(),
                 needs_sync: status.needs_sync(),
                 agents_md_modified: status.agents_md == AgentsMdState::Modified,
+                files: status.files,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -1886,6 +2063,7 @@ fn preset_output(
         name: preset.name.clone(),
         skills: names,
         agents_md,
+        files: presets.files(&preset.id)?,
         projects,
     })
 }

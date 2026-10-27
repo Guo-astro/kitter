@@ -1082,6 +1082,70 @@ impl KitterApp {
         row.into_any_element()
     }
 
+    fn start_description_edit(
+        &mut self,
+        storage_name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(description) = self
+            .model
+            .skills
+            .iter()
+            .find(|skill| skill_storage_name(skill) == storage_name)
+            .map(|skill| skill.record.description.clone())
+        else {
+            return;
+        };
+        self.skills_view.description_input.update(cx, |input, cx| {
+            input.set_value(description, window, cx);
+            input.focus_handle(cx).focus(window, cx);
+        });
+        self.skills_view.editing_description = Some(storage_name);
+        cx.notify();
+    }
+
+    pub(super) fn commit_description_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(storage_name) = self.skills_view.editing_description.take() else {
+            return;
+        };
+        let value = self
+            .skills_view
+            .description_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        let unchanged = self
+            .model
+            .skills
+            .iter()
+            .find(|skill| skill_storage_name(skill) == storage_name)
+            .is_none_or(|skill| skill.record.description == value);
+        if !unchanged {
+            // Matching the SKILL.md text again means going back to it.
+            let original = self
+                .model
+                .skills
+                .iter()
+                .find(|skill| skill_storage_name(skill) == storage_name)
+                .is_some_and(|skill| skill.original_description == value);
+            let value = if original { "" } else { value.as_str() };
+            match self
+                .model
+                .library
+                .set_description_by_storage(&storage_name, value)
+            {
+                Ok(()) => self.refresh(cx),
+                Err(error) => {
+                    let message = self.error_message(error);
+                    self.show_notice(message, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
     fn sync_skill_list_rows(&self, rows: Vec<SkillListRow>) -> Arc<[SkillListRow]> {
         let mut previous = self.skills_view.list_rows.borrow_mut();
         if previous.as_ref() != rows.as_slice() {
@@ -1383,8 +1447,13 @@ impl KitterApp {
                 .min_h_0()
                 .px(px(8.))
                 .pb(px(8.))
+                .relative()
                 .overflow_hidden()
-                .child(virtual_list),
+                .child(virtual_list)
+                .child(kit::scrollbar(
+                    "skill-list-scrollbar",
+                    &self.skills_view.list,
+                )),
         );
         layout::content(
             &self.shell.content_layout,
@@ -1751,7 +1820,7 @@ impl KitterApp {
             .text_size(px(FS_EMPH))
             .line_height(relative(1.5))
             .text_color(p.secondary)
-            .child(self.selectable_text("skill-detail-description", 102, description, window, cx));
+            .child(description);
         if can_expand_description && !description_expanded {
             description_text = description_text
                 .line_clamp(DESCRIPTION_COLLAPSED_LINES)
@@ -1767,14 +1836,51 @@ impl KitterApp {
                             0.,
                             linear_color_stop(p.base, 0.),
                             linear_color_stop(p.base.opacity(0.), 1.),
-                        )),
+                        ))
+                        .group_hover("skill-description", |fade| {
+                            fade.bg(linear_gradient(
+                                0.,
+                                linear_color_stop(p.hover, 0.),
+                                linear_color_stop(p.hover.opacity(0.), 1.),
+                            ))
+                        }),
                 );
         }
+        let editing_description =
+            self.skills_view.editing_description.as_deref() == Some(storage_name.as_str());
+        let edit_storage_name = storage_name.clone();
         let mut description_section = div()
             .mt(px(16.))
             .max_w(px(DESCRIPTION_MAX_WIDTH))
-            .child(description_text);
-        if can_expand_description {
+            .when(editing_description, |section| {
+                section.child(
+                    div()
+                        .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                            if event.keystroke.key == "escape" {
+                                this.skills_view.editing_description = None;
+                                cx.notify();
+                            }
+                        }))
+                        .child(kit::textarea(p, &self.skills_view.description_input)),
+                )
+            })
+            .when(!editing_description, |section| {
+                section.child(
+                    div()
+                        .id("skill-description")
+                        .group("skill-description")
+                        .mx(px(-6.))
+                        .px(px(6.))
+                        .rounded(px(R_SM))
+                        .cursor_text()
+                        .hover(|this| this.bg(p.hover))
+                        .child(description_text)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.start_description_edit(edit_storage_name.clone(), window, cx);
+                        })),
+                )
+            });
+        if can_expand_description && !editing_description {
             let description_name = skill.record.name.clone();
             let toggle_label = if description_expanded {
                 t!("skills.less").to_string()
@@ -2066,29 +2172,6 @@ impl KitterApp {
         let p = self.palette();
         let snapshot = self.content_snapshot(skill);
         let files = &snapshot.files;
-        let mut directories = Vec::<PathBuf>::new();
-        for file in files {
-            let mut parent = file.parent();
-            while let Some(path) = parent {
-                if !path.as_os_str().is_empty() && !directories.iter().any(|item| item == path) {
-                    directories.push(path.to_path_buf());
-                }
-                parent = path.parent();
-            }
-        }
-        directories.sort();
-        let mut entries = directories
-            .into_iter()
-            .map(|path| (path, true))
-            .chain(files.iter().cloned().map(|path| (path, false)))
-            .collect::<Vec<_>>();
-        entries.sort_by(|left, right| {
-            left.0
-                .to_string_lossy()
-                .to_lowercase()
-                .cmp(&right.0.to_string_lossy().to_lowercase())
-                .then_with(|| right.1.cmp(&left.1))
-        });
         let mut tree = div()
             .id("content-tree-scroll")
             .w(px(220.))
@@ -2096,168 +2179,35 @@ impl KitterApp {
             .flex_none()
             .bg(p.surface)
             .py(px(8.))
+            .track_scroll(&self.skills_view.content_tree_scroll)
             .overflow_y_scroll();
-        for (file, is_directory) in entries {
-            if is_directory {
-                let hidden_by_parent = file
-                    .ancestors()
-                    .skip(1)
-                    .filter(|path| !path.as_os_str().is_empty())
-                    .any(|path| {
-                        self.skills_view
-                            .collapsed_content_directories
-                            .contains(path)
-                    });
-                if hidden_by_parent {
-                    continue;
-                }
-                let depth = file.components().count().saturating_sub(1) as f32;
-                let collapsed = self
-                    .skills_view
-                    .collapsed_content_directories
-                    .contains(&file);
-                let directory_for_click = file.clone();
-                tree = tree.child(
-                    kit::list_row(
-                        p,
-                        ElementId::Name(format!("directory-{}", file.display()).into()),
-                        false,
-                    )
-                    .w_auto()
-                    .h(px(ROW_1))
-                    .mx(px(8.))
-                    .pl(px(4. + depth * 14.))
-                    .gap(px(6.))
-                    .text_color(p.secondary)
-                    .child(
-                        div()
-                            .size(px(14.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(Self::icon(
-                                if collapsed {
-                                    "icons/chevron-right.svg"
-                                } else {
-                                    "icons/chevron-down.svg"
-                                },
-                                14.,
-                                p.muted,
-                            )),
-                    )
-                    .child(
-                        div()
-                            .size(px(18.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(Self::icon(
-                                if collapsed {
-                                    "icons/folder.svg"
-                                } else {
-                                    "icons/folder-open.svg"
-                                },
-                                ICON_MD,
-                                p.secondary,
-                            )),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .font_family(MONO)
-                            .text_size(px(FS_SMALL))
-                            .truncate()
-                            .child(
-                                file.file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy()
-                                    .into_owned(),
-                            ),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this
-                            .skills_view
-                            .collapsed_content_directories
-                            .remove(&directory_for_click)
-                        {
-                            this.skills_view
-                                .collapsed_content_directories
-                                .insert(directory_for_click.clone());
-                        }
-                        cx.notify();
-                    })),
-                );
-                continue;
-            }
-            let hidden_by_parent = file
-                .parent()
-                .into_iter()
-                .flat_map(|parent| parent.ancestors())
-                .filter(|path| !path.as_os_str().is_empty())
-                .any(|path| {
-                    self.skills_view
-                        .collapsed_content_directories
-                        .contains(path)
-                });
-            if hidden_by_parent {
-                continue;
-            }
-            let selected = file == self.skills_view.selected_file;
-            let file_for_click = file.clone();
-            let depth = file.parent().map_or(0, |path| path.components().count()) as f32;
-            tree = tree.child(
-                kit::list_row(
-                    p,
-                    ElementId::Name(format!("file-{}", file.display()).into()),
-                    selected,
-                )
-                .w_auto()
-                .mx(px(8.))
-                .pl(px(4. + depth * 14.))
-                .gap(px(6.))
-                .child(
-                    div()
-                        .size(px(14.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center(),
-                )
-                .child(
-                    div()
-                        .size(px(18.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(Self::icon("icons/file.svg", ICON_MD, p.muted)),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .font_family(MONO)
-                        .text_size(px(FS_SMALL))
-                        .truncate()
-                        .child(
-                            file.file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .into_owned(),
-                        ),
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.skills_view.selected_file = file_for_click.clone();
+        for entry in file_tree::rows(
+            p,
+            "",
+            files,
+            None,
+            &self.skills_view.selected_file,
+            &self.skills_view.collapsed_content_directories,
+        ) {
+            let path = entry.path;
+            tree = tree.child(if entry.directory {
+                entry.row.on_click(cx.listener(move |this, _, _, cx| {
+                    let collapsed = &mut this.skills_view.collapsed_content_directories;
+                    if !collapsed.remove(&path) {
+                        collapsed.insert(path.clone());
+                    }
+                    cx.notify();
+                }))
+            } else {
+                entry.row.on_click(cx.listener(move |this, _, _, cx| {
+                    this.skills_view.selected_file = path.clone();
                     *this.skills_view.content_snapshot.borrow_mut() = None;
                     this.skills_view
                         .content_scroll
                         .set_offset(point(px(0.), px(0.)));
                     cx.notify();
-                })),
-            );
+                }))
+            });
         }
         let content = snapshot.content;
         let preview = div()
@@ -2288,20 +2238,48 @@ impl KitterApp {
             )
             .child(
                 div()
-                    .id("content-preview-scroll")
-                    .track_scroll(&self.skills_view.content_scroll)
+                    .relative()
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
-                    .overflow_y_scroll()
-                    .p(px(24.))
-                    .font_family(MONO)
-                    .text_size(px(FS_BODY))
-                    .line_height(relative(1.6))
-                    .text_color(p.secondary)
-                    .whitespace_normal()
-                    .child(self.selectable_text("content-preview", 201, content, window, cx)),
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .id("content-preview-scroll")
+                            .track_scroll(&self.skills_view.content_scroll)
+                            .flex_1()
+                            .min_h_0()
+                            .min_w_0()
+                            .overflow_y_scroll()
+                            .p(px(24.))
+                            .font_family(MONO)
+                            .text_size(px(FS_BODY))
+                            .line_height(relative(1.6))
+                            .text_color(p.secondary)
+                            .whitespace_normal()
+                            .child(self.selectable_text(
+                                "content-preview",
+                                201,
+                                content,
+                                window,
+                                cx,
+                            )),
+                    )
+                    .child(kit::scrollbar(
+                        "content-preview-scrollbar",
+                        &self.skills_view.content_scroll,
+                    )),
             );
+        let tree = div()
+            .relative()
+            .h_full()
+            .flex_none()
+            .child(tree)
+            .child(kit::scrollbar(
+                "content-tree-scrollbar",
+                &self.skills_view.content_tree_scroll,
+            ));
         div().flex_1().min_h_0().flex().child(tree).child(preview)
     }
 }
@@ -2314,11 +2292,13 @@ mod tests {
 
     fn skill(name: &str, group_id: Option<&str>) -> SkillSummary {
         SkillSummary {
+            original_description: String::new(),
             version: None,
             record: SkillRecord {
                 name: name.into(),
                 storage_name: format!("storage-{name}"),
                 description: String::new(),
+                custom_description: None,
                 origin: SkillOrigin::Unknown,
                 update_available: false,
                 group_id: group_id.map(str::to_string),

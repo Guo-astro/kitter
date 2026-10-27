@@ -37,6 +37,7 @@ fn single_update_readds_only_the_selected_skill_and_preserves_it_on_failure() {
                     name: name.into(),
                     storage_name: name.into(),
                     description: String::new(),
+                    custom_description: None,
                     origin: kitter::SkillOrigin::Npx {
                         repository: "owner/repo".into(),
                         skill: name.into(),
@@ -159,6 +160,7 @@ fn cli_groups_git_and_npx_skills_and_reuses_remote_metadata() {
                     name: name.into(),
                     storage_name: String::new(),
                     description: String::new(),
+                    custom_description: None,
                     origin,
                     update_available: false,
                     group_id: None,
@@ -300,6 +302,8 @@ fn batch_update_fixture_child() {
             kitter::SkillOrigin::Local {
                 path: source.clone(),
                 source_root: None,
+                install_mode: kitter::LocalInstallMode::Link,
+                source_hash: None,
             }
         } else {
             kitter::SkillOrigin::Npx {
@@ -315,6 +319,7 @@ fn batch_update_fixture_child() {
                     name: name.into(),
                     storage_name: name.into(),
                     description: String::new(),
+                    custom_description: None,
                     origin,
                     update_available: true,
                     group_id: None,

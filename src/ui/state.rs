@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-use gpui::{Entity, FocusHandle, ListState, ScrollHandle};
+use gpui::{Entity, FocusHandle, ListState, ScrollHandle, UniformListScrollHandle};
 use gpui_base::TextSelectionHandle;
 use gpui_component::{
     input::{EditorState, InputState},
@@ -60,12 +60,16 @@ pub(super) struct ShellState {
 
 pub(super) struct SkillsState {
     pub expanded_description: Option<String>,
+    /// Storage name of the skill whose description is being edited.
+    pub editing_description: Option<String>,
+    pub description_input: Entity<gpui_component::input::TextareaState>,
     pub tab: super::DetailTab,
     pub selection: SkillSelection,
     pub selected_file: PathBuf,
     pub skill_search: Entity<InputState>,
     pub content_snapshot: RefCell<Option<ContentSnapshot>>,
     pub content_scroll: ScrollHandle,
+    pub content_tree_scroll: ScrollHandle,
     pub list: ListState,
     pub list_rows: RefCell<Arc<[super::skills_page::SkillListRow]>>,
     pub selectable_text_handles: RefCell<BTreeMap<String, TextSelectionHandle>>,
@@ -91,6 +95,8 @@ pub(super) struct ProjectsState {
     pub context_estimates: RefCell<BTreeMap<PathBuf, ContextEstimateCache>>,
     pub context_estimate_tasks: RefCell<BTreeMap<PathBuf, u64>>,
     pub scan_generation: u64,
+    pub list_scroll: ScrollHandle,
+    pub skills_scroll: UniformListScrollHandle,
 }
 
 pub(super) struct AddFlowState {
@@ -107,6 +113,7 @@ pub(super) struct AddFlowState {
     pub error: Option<String>,
     pub group_enabled: bool,
     pub group_name: Option<String>,
+    pub local_mode: crate::LocalInstallMode,
     pub primary_input: Entity<InputState>,
     pub source_select: Entity<SelectState<Vec<SourceChoice>>>,
 }
@@ -159,10 +166,16 @@ pub(super) struct PresetsState {
     pub edit: Option<PresetEdit>,
     pub error: Option<String>,
     pub agents_md: Entity<EditorState>,
-    /// The preset whose AGENTS.md is currently loaded into the editor.
-    pub agents_md_for: RefCell<Option<String>>,
+    /// The preset file currently loaded into the editor.
+    pub agents_md_for: RefCell<Option<(String, PathBuf)>>,
+    pub selected_file: PathBuf,
+    pub collapsed_dirs: HashSet<PathBuf>,
+    pub tree_scroll: ScrollHandle,
+    /// Install or sync waiting for the user to resolve file conflicts.
+    pub pending_conflict: Option<super::preset_actions::ConflictAction>,
     pub skill_search: Entity<InputState>,
     pub picked_skills: HashSet<String>,
     pub confirmation: Option<PresetConfirmation>,
     pub statuses: RefCell<BTreeMap<(String, PathBuf), Option<PresetStatus>>>,
+    pub list_scroll: ScrollHandle,
 }

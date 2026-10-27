@@ -159,6 +159,35 @@ impl KitterApp {
             );
         }
         if self.add_flow.kind == AddKind::Local {
+            let mode = self.add_flow.local_mode;
+            let mut modes = kit::segmented(p);
+            for (id, value, label) in [
+                (
+                    "local-mode-link",
+                    crate::LocalInstallMode::Link,
+                    t!("add.local_mode_link"),
+                ),
+                (
+                    "local-mode-copy",
+                    crate::LocalInstallMode::Copy,
+                    t!("add.local_mode_copy"),
+                ),
+            ] {
+                modes = modes.child(kit::segment(p, id, label.to_string(), mode == value).when(
+                    !pending,
+                    |segment| {
+                        segment.on_click(cx.listener(move |this, _, _, cx| {
+                            this.add_flow.local_mode = value;
+                            this.notify_dialog(cx);
+                        }))
+                    },
+                ));
+            }
+            form = form.child(kit::field(
+                p,
+                t!("add.local_mode").to_string(),
+                div().flex().child(modes),
+            ));
             form = form.child(
                 kit::picker(
                     p,

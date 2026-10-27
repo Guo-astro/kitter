@@ -88,6 +88,7 @@ impl SkillLibrary {
                     name: KITTER_SKILL_NAME.to_string(),
                     storage_name: KITTER_SKILL_STORAGE.to_string(),
                     description: String::new(),
+                    custom_description: None,
                     origin: SkillOrigin::Builtin,
                     update_available: false,
                     group_id: None,
@@ -322,6 +323,12 @@ impl SkillLibrary {
 
     pub fn list(&self) -> Result<Vec<SkillSummary>> {
         let mut result = vec![];
+        let installed = self
+            .config
+            .recent_projects
+            .iter()
+            .map(|project| crate::project::installed_sources(project))
+            .collect::<Vec<_>>();
         for entry in fs::read_dir(&self.config.library_dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -340,6 +347,7 @@ impl SkillLibrary {
                     name: storage_name.clone(),
                     storage_name: storage_name.clone(),
                     description: String::new(),
+                    custom_description: None,
                     origin: SkillOrigin::Unknown,
                     update_available: false,
                     group_id: None,
@@ -348,10 +356,20 @@ impl SkillLibrary {
             if record.storage_name.is_empty() {
                 record.storage_name = storage_name.clone();
             }
-            record.description = description.unwrap_or_default();
+            let original_description = description.unwrap_or_default();
+            record.description = record
+                .custom_description
+                .clone()
+                .unwrap_or_else(|| original_description.clone());
             result.push(SkillSummary {
+                original_description,
                 version,
-                installed_projects: self.install_count(&record.name, &path),
+                installed_projects: path.canonicalize().map_or(0, |source| {
+                    installed
+                        .iter()
+                        .filter(|sources| sources.contains(&source))
+                        .count()
+                }),
                 record,
                 manual_only: crate::effective_skills::is_manual_skill(&path),
                 path,
@@ -367,11 +385,15 @@ impl SkillLibrary {
         Ok(result)
     }
 
-    fn install_count(&self, name: &str, source: &Path) -> usize {
+    #[cfg(test)]
+    fn install_count(&self, _name: &str, source: &Path) -> usize {
+        let Ok(source) = source.canonicalize() else {
+            return 0;
+        };
         self.config
             .recent_projects
             .iter()
-            .filter(|project| crate::project::is_installed_any_from_path(project, name, source))
+            .filter(|project| crate::project::installed_sources(project).contains(&source))
             .count()
     }
 
@@ -512,7 +534,16 @@ impl SkillLibrary {
             record = existing;
         }
         let mut restored_override = None;
-        if let Some(source) = &local_source {
+        let local_copy = matches!(
+            record.origin,
+            SkillOrigin::Local {
+                install_mode: crate::LocalInstallMode::Copy,
+                ..
+            }
+        );
+        if let Some(source) = &local_source
+            && !local_copy
+        {
             crate::directory_link::create(source, &destination)?;
             record.update_available = false;
         } else {
@@ -520,7 +551,14 @@ impl SkillLibrary {
                 .prefix(".kitter-import-")
                 .tempdir_in(&self.config.library_dir)?;
             let staged = staging.path().join("skill");
-            copy_tree(source, &staged)?;
+            if local_copy {
+                crate::source::local::copy_tree(source, &staged)?;
+                if let SkillOrigin::Local { source_hash, .. } = &mut record.origin {
+                    *source_hash = Some(crate::source::local::tree_hash(&staged)?);
+                }
+            } else {
+                copy_tree(source, &staged)?;
+            }
             if restoring && let Some(previous) = self.registry.trigger_overrides.get(&storage_name)
             {
                 let source = TriggerSource::read(&staged)?;
@@ -679,6 +717,8 @@ impl SkillLibrary {
             let mut record = candidate.record();
             record.storage_name = storage.clone();
             record.group_id = existing.as_ref().and_then(|r| r.group_id.clone());
+            record.custom_description =
+                existing.as_ref().and_then(|r| r.custom_description.clone());
             record.last_operated_at = operation_stamp();
             let source = record.origin.source();
             let source_record = self
@@ -786,6 +826,11 @@ impl SkillLibrary {
         storage_name: String,
         mut record: SkillRecord,
     ) -> Result<()> {
+        record.custom_description = self
+            .registry
+            .skills
+            .get(&storage_name)
+            .and_then(|existing| existing.custom_description.clone());
         if self.is_linked_source(&storage_name) {
             crate::user_bail!("errors.linked_update_required");
         }
@@ -811,7 +856,17 @@ impl SkillLibrary {
         let previous_registry = self.registry.clone();
         let previous_config = self.config.clone();
         let result = (|| -> Result<()> {
-            copy_tree(source, &destination)?;
+            if matches!(
+                record.origin,
+                SkillOrigin::Local {
+                    install_mode: crate::LocalInstallMode::Copy,
+                    ..
+                }
+            ) {
+                crate::source::local::copy_tree(source, &destination)?;
+            } else {
+                copy_tree(source, &destination)?;
+            }
             if let Some(override_entry) = self.registry.trigger_overrides.get_mut(&storage_name) {
                 override_entry.source = TriggerSource::read(&destination)?;
                 override_entry
@@ -1095,6 +1150,39 @@ impl SkillLibrary {
             suffix += 1;
         }
         id
+    }
+
+    /// Set a Kitter-only display description; blank input restores SKILL.md's description.
+    pub fn set_description(&mut self, selector: &str, description: &str) -> Result<()> {
+        let skill = self.resolve_skill(selector)?;
+        self.set_description_by_storage(&skill.record.storage_name, description)
+    }
+
+    pub fn set_description_by_storage(
+        &mut self,
+        storage_name: &str,
+        description: &str,
+    ) -> Result<()> {
+        let mut record = self.resolve_skill(&format!("id:{storage_name}"))?.record;
+        record.custom_description = match description.trim() {
+            "" => None,
+            text => Some(text.to_string()),
+        };
+        let previous = self
+            .registry
+            .skills
+            .insert(storage_name.to_string(), record);
+        if let Err(error) = self.save() {
+            if let Some(previous) = previous {
+                self.registry
+                    .skills
+                    .insert(storage_name.to_string(), previous);
+            } else {
+                self.registry.skills.remove(storage_name);
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub fn record(&self, name: &str) -> Result<SkillRecord> {
@@ -1418,6 +1506,7 @@ mod tests {
                     name: "demo".into(),
                     storage_name: String::new(),
                     description: String::new(),
+                    custom_description: None,
                     origin: SkillOrigin::Unknown,
                     update_available: false,
                     group_id: None,
@@ -1484,6 +1573,7 @@ mod tests {
                 name: KITTER_SKILL_NAME.to_string(),
                 storage_name: KITTER_SKILL_STORAGE.to_string(),
                 description: String::new(),
+                custom_description: None,
                 origin: SkillOrigin::Builtin,
                 update_available: false,
                 group_id: None,
@@ -1877,9 +1967,12 @@ mod tests {
                     name: "demo".into(),
                     storage_name: String::new(),
                     description: String::new(),
+                    custom_description: None,
                     origin: SkillOrigin::Local {
                         path: source.clone(),
                         source_root: None,
+                        install_mode: crate::LocalInstallMode::Link,
+                        source_hash: None,
                     },
                     update_available: false,
                     group_id: Some(group.id.clone()),
@@ -1919,6 +2012,7 @@ mod tests {
                     name: "demo".into(),
                     storage_name: String::new(),
                     description: String::new(),
+                    custom_description: None,
                     origin: SkillOrigin::Unknown,
                     update_available: false,
                     group_id: Some(group.id.clone()),
@@ -1929,6 +2023,8 @@ mod tests {
         library.registry.skills.get_mut("demo").unwrap().origin = SkillOrigin::Local {
             path: source.clone(),
             source_root: None,
+            install_mode: crate::LocalInstallMode::Link,
+            source_hash: None,
         };
         library.save().unwrap();
         let installed = library.skill_path_by_storage("demo").unwrap();
@@ -1965,6 +2061,7 @@ mod tests {
                         name: "demo".into(),
                         storage_name: String::new(),
                         description: String::new(),
+                        custom_description: None,
                         origin: SkillOrigin::Unknown,
                         update_available: false,
                         group_id: None,
@@ -2013,6 +2110,7 @@ mod tests {
                     name: "demo".into(),
                     storage_name: String::new(),
                     description: String::new(),
+                    custom_description: None,
                     origin: SkillOrigin::Unknown,
                     update_available: false,
                     group_id: None,

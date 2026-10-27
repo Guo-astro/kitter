@@ -371,6 +371,7 @@ mod tests {
     }
     fn summary(path: PathBuf) -> SkillSummary {
         SkillSummary {
+            original_description: String::new(),
             version: None,
             path,
             installed_projects: 0,
@@ -379,6 +380,7 @@ mod tests {
                 name: "fixture".into(),
                 storage_name: "fixture-key".into(),
                 description: "Fixture".into(),
+                custom_description: None,
                 origin: SkillOrigin::Unknown,
                 update_available: false,
                 group_id: None,

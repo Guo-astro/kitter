@@ -370,6 +370,23 @@ pub fn is_installed_any(project: &Path, name: &str, library_dir: &Path) -> bool 
     is_installed_any_from_path(project, name, &library_dir.join(name))
 }
 
+/// Resolved locations of everything in the project's skill folders, so many
+/// skills can be checked against one scan.
+pub fn installed_sources(project: &Path) -> std::collections::HashSet<PathBuf> {
+    let mut roots = AgentRegistry::global()
+        .install_targets()
+        .iter()
+        .filter_map(|target| installation_root(project, target))
+        .collect::<Vec<_>>();
+    roots.sort();
+    roots.dedup();
+    roots
+        .iter()
+        .flat_map(|root| fs::read_dir(root).into_iter().flatten().flatten())
+        .filter_map(|entry| entry.path().canonicalize().ok())
+        .collect()
+}
+
 pub fn is_installed_any_from_path(project: &Path, name: &str, source: &Path) -> bool {
     let source = source.canonicalize().ok();
     let Some(source) = source else {
