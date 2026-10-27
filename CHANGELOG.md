@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.3 — 2026-10-27
+
+- Added copy mode for local skills, with update detection from the original folder.
+- Added editable skill descriptions that leave SKILL.md untouched.
+- Added instruction files to presets, with a file tree, nested folders, and conflict handling on install.
+- Added scrollbars to long lists, file trees, and previews.
+- Added `kitter add local --copy`, `kitter describe`, and `kitter preset file` commands.
+- Improved startup speed with large skill libraries.
+- Closing the window now quits Kitter on macOS.
+
+[Full changelog](https://github.com/what1f/kitter/compare/v0.2.2...v0.2.3)
+
 ## v0.2.2 — 2026-10-23
 
 - Added batch skill updates with progress and an Update all action.
